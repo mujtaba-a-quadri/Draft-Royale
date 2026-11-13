@@ -1,0 +1,171 @@
+class_name DDCard
+extends RefCounted
+
+## Card definitions. Everything the arena needs to build a unit or resolve a spell
+## lives here so deck building / relics can later mutate copies of these values.
+
+const CARDS := {
+	"hero": {
+		"name": "Hero",
+		"cost": 3,
+		"type": "troop",
+		"blurb": "Armoured duelist. Enormous HP for 3 gold. Also rides the dragon down.",
+		"hp": 150.0, "dmg": 15.0, "speed": 1.05, "reach": 0.4, "interval": 1.0,
+		"radius": 0.45, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.86, 0.87, 0.93),
+	},
+	"snowman": {
+		"name": "Snowman",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "Immobile decoy. Soaks hits, hits nothing.",
+		"hp": 90.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 1.0,
+		"radius": 0.5, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 30.0,
+		"buildings_only": false,
+		"accent": Color(0.78, 0.9, 1.0),
+	},
+	"slate": {
+		"name": "Slate",
+		"cost": 3,
+		"type": "troop",
+		"blurb": "200 HP jawbreaker. Ignores troops, walks at structures, and builds up a rolling charge.",
+		"hp": 200.0, "dmg": 25.0, "speed": 0.62, "reach": 0.35, "interval": 1.6,
+		"radius": 0.5, "splash": 0.0, "aggro": 4.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": true,
+		"roll": {"interval": 3.0, "speed_mult": 2.0, "max_level": 2, "damage_bonus": 0.5},
+		"accent": Color(0.277, 0.133, 0.023, 1.0),
+	},
+	"alchemist": {
+		"name": "Alchemist",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "Splash potions. Below half HP he turns on his own tower and blows up.",
+		"hp": 67.0, "dmg": 45.0, "speed": 1.05, "reach": 3.2, "interval": 2.0,
+		"radius": 0.42, "splash": 1.4, "aggro": 7.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"accent": Color(0.5, 0.82, 0.4),
+	},
+	"idol": {
+		"name": "Golden Idol",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "Enemies cannot resist it. Break it and a boulder takes revenge.",
+		"hp": 35.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 1.0,
+		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.98, 0.8, 0.3),
+	},
+	"fireball": {
+		"name": "Fireball",
+		"cost": 5,
+		"type": "spell",
+		"blurb": "Big splash anywhere on the board.",
+		"hp": 0.0, "dmg": 100.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 2.0, "splash": 2.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(1.0, 0.55, 0.15),
+	},
+	"firebolt": {
+		"name": "Firebolt",
+		"cost": 2,
+		"type": "spell",
+		"blurb": "Cheap single-target nuke. Finishes what your troops started.",
+		"hp": 0.0, "dmg": 70.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.85, "splash": 0.85, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(1.0, 0.78, 0.28),
+	},
+	"fu": {
+		"name": "Boomerang-Fu",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "Holds still until his boomerang comes home. Kicks out of melee to throw again.",
+		"hp": 90.0, "dmg": 30.0, "speed": 1.1, "reach": 3.6, "interval": 1.4,
+		"radius": 0.42, "splash": 0.0, "aggro": 8.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"cooldown_per_tile": 0.18,
+		"boomerang": {
+			"throw_speed_tiles": 10.0,
+			"melee_range": 1.2,
+			"melee_dmg": 18.0,
+			"melee_interval": 0.45,
+			"combo_hits": 2,
+			"kick_dmg": 26.0,
+			"kick_push": 3.0,
+			"self_push": 2.2,
+		},
+		"accent": Color(0.45, 0.68, 0.95),
+	},
+	"hedgehog": {
+		"name": "Hedgehog",
+		"cost": 3,
+		"type": "troop",
+		"blurb": "Three burrowers. In melee they curl up: reduced damage taken, quills bite back, and the burst shoves enemies just out of reach.",
+		"hp": 60.0, "dmg": 10.0, "speed": 1.0, "reach": 0.6, "interval": 1.2,
+		"radius": 0.4, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"swarm_offsets": [[0.0, -0.8], [-0.75, 0.6], [0.75, 0.6]],
+		"curl": {
+			"range": 1.05, "thorn_range": 2.2,
+			"burst_dmg": 12.0, "thorn_dmg": 8.0,
+			"push": 0.7, "push_time": 0.22, "damage_mult": 0.45,
+		},
+		"accent": Color(0.66, 0.52, 0.38),
+	},
+	"zombie": {
+		"name": "Zombie Horde",
+		"cost": 6,
+		"type": "troop",
+		"blurb": "Six bruisers that refuse to stay dead. Anything they kill gets back up as one of theirs.",
+		"hp": 111.0, "dmg": 15.0, "speed": 0.85, "reach": 0.5, "interval": 1.0,
+		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"swarm_offsets": [[-0.8, -0.9], [0.8, -0.9], [-0.8, 0.1], [0.8, 0.1], [-0.8, 1.1], [0.8, 1.1]],
+		"accent": Color(0.55, 0.72, 0.42),
+	},
+	"hawk": {
+		"name": "Honeycreeper Flock",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "Four flyers in a diamond. The red i'iwi leads and soaks two tower shots; the rest die to one.",
+		"hp": 10.0, "dmg": 6.0, "speed": 1.9, "reach": 0.7, "interval": 1.0,
+		"radius": 0.26, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"flying_unit": true,
+		"lead_hp": 20.0,
+		"swarm_offsets": [[0.0, 1.0], [-0.75, -0.15], [0.75, -0.15], [0, -0.8], [0.4, 0.8]],
+		"accent": Color(0.99, 0.8, 0.22),
+	},
+	"dragon": {
+		"name": "The Chained Dragon",
+		"cost": 9,
+		"type": "troop",
+		"blurb": "Chained, it can only claw. At half HP the chains break: it flies, burns structures and scorches friends underneath.",
+		"hp": 420.0, "dmg": 45.0, "speed": 0.55, "reach": 1.6, "interval": 1.4,
+		"radius": 1.15, "splash": 0.0, "aggro": 7.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.9, 0.45, 0.3),
+	},
+}
+
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "fu", "hawk", "zombie", "hedgehog"]
+
+
+static func get_card(kind: String) -> Dictionary:
+	return CARDS.get(kind, CARDS["slate"])
+
+
+static func cost(kind: String) -> int:
+	return int(get_card(kind)["cost"])
+
+
+static func is_spell(kind: String) -> bool:
+	return String(get_card(kind)["type"]) == "spell"
+
+
+static func pretty(kind: String) -> String:
+	return String(get_card(kind)["name"])

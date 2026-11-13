@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+
+# verification captures from dev_capture.gd
+debug/
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
