@@ -17,7 +17,7 @@ godot --path .                 # play
 | --- | --- |
 | Left click a card in either side panel | Select that card for that player |
 | Left click the board | Deploy it (troops: your half only, spells: anywhere) |
-| Esc | Clear selection |
+| Right click (anywhere) or Esc | Clear the armed card |
 | Hover a troop or tower (no card armed) | Name + HP, **pale yellow aggro ring**, **pale red attack-range ring** |
 | B | Toggle the bot for player 2 |
 | 1 / 2 / 3 (**Tab / debug view only**) | Debug gold: +1 to player 1 / both players / player 2 |
@@ -25,7 +25,8 @@ godot --path .                 # play
 
 Both hands are live at once: the left panel is Player 1 (blue, bottom half),
 the right panel is Player 2 (red, top half). Only one card can be armed at a
-time so a single mouse is never ambiguous.
+time so a single mouse is never ambiguous — and the bot playing its own card
+never disarms yours.
 
 ## Board
 

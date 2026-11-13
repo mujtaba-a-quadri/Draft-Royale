@@ -602,6 +602,11 @@ func _highest_hp_enemy_tower(player: int) -> Node:
 	return best
 
 
+func clear_selection() -> void:
+	selected_player = -1
+	selected_index = -1
+
+
 func _debug_gold(player: int, message: String) -> void:
 	gold[player] = minf(gold_max, float(gold[player]) + 1.0)
 	if message != "":
@@ -614,8 +619,7 @@ func pick_card(player: int, index: int) -> void:
 	if view_mode == 0 and player == 1:
 		return
 	if index < 0:
-		selected_player = -1
-		selected_index = -1
+		clear_selection()
 		return
 	if selected_player == player and selected_index == index:
 		selected_player = -1
@@ -668,8 +672,9 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 	if queues[team].size() > 0:
 		hand.append(queues[team].pop_front())
 	queues[team].append(kind)
-	selected_player = -1
-	selected_index = -1
+	# only clear the selection that belongs to the player who played
+	if selected_player == team:
+		clear_selection()
 
 
 func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) -> Node:
@@ -784,8 +789,10 @@ func on_tower_destroyed(tower: Node) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		selected_player = -1
-		selected_index = -1
+		clear_selection()
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		clear_selection()
+		return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
 		set_view_mode(1 - view_mode)
 		return

@@ -150,6 +150,10 @@ func _draw_card(font: Font, i: int, kind: String) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton) or not event.pressed:
 		return
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		arena.clear_selection()
+		accept_event()
+		return
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	var p: Vector2 = event.position
