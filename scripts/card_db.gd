@@ -18,11 +18,12 @@ const CARDS := {
 	"snowman": {
 		"name": "Snowman",
 		"cost": 2,
-		"type": "troop",
+		"type": "building",
 		"blurb": "Immobile decoy. Soaks hits, hits nothing.",
 		"hp": 90.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 1.0,
 		"radius": 0.5, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 30.0,
 		"buildings_only": false,
+		"footprint": [1, 1],
 		"death_aoe": {"radius": 3.0, "dmg": 30.0, "slow": 0.3, "slow_time": 3.0},
 		"accent": Color(0.78, 0.9, 1.0),
 	},
@@ -51,11 +52,12 @@ const CARDS := {
 	"idol": {
 		"name": "Golden Idol",
 		"cost": 4,
-		"type": "troop",
+		"type": "building",
 		"blurb": "Enemies cannot resist it. Break it and a boulder takes revenge.",
 		"hp": 35.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 1.0,
 		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
 		"buildings_only": false,
+		"footprint": [1, 1],
 		"accent": Color(0.98, 0.8, 0.3),
 	},
 	"fireball": {
@@ -103,7 +105,8 @@ const CARDS := {
 		"cost": 3,
 		"type": "troop",
 		"blurb": "Three small spear-carriers in a wedge. They ignore the nearest threat and go for whoever is weakest.",
-		"hp": 55.0, "dmg": 10.0, "speed": 0.85, "reach": 0.7, "interval": 1.0,
+		"hp": 55.0, "dmg": 10.0, "speed": 0.85, "reach": 3.5, "interval": 1.0,
+		"shoots": "rifle",
 		"radius": 0.38, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"targets_weakest": true,
@@ -114,11 +117,12 @@ const CARDS := {
 	"warren": {
 		"name": "Lizard Warren",
 		"cost": 4,
-		"type": "troop",
+		"type": "building",
 		"blurb": "A burrow that empties itself when enemies come close: three soldiers, then a pause.",
 		"hp": 130.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
 		"radius": 0.75, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
 		"buildings_only": false,
+		"footprint": [2, 2],
 		"summon": {"unit": "lizard", "count": 3, "range": 6.0, "cooldown": 6.0},
 		"accent": Color(0.62, 0.8, 0.44),
 	},
@@ -197,13 +201,63 @@ const CARDS := {
 		"giant": true,
 		"accent": Color(0.9, 0.45, 0.3),
 	},
+	# Not in ORDER: entities that never appear in a deck but still need a real
+	# identity for the hover inspector and any card lookup.
+	"shiesty": {
+		"name": "Shiesty",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "The ability's thief. Lands on the enemy's healthiest tower, steals 1 gold and runs home. Towers ignore him; troops do not.",
+		"hp": 32.0, "dmg": 30.0, "speed": 2.2, "reach": 1.0, "interval": 1.0,
+		"radius": 0.4, "splash": 0.0, "aggro": 0.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.55, 0.8, 0.4),
+	},
+	"tentacle": {
+		"name": "Tentacle",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "The ability's grappler: burst-rises under the enemy's healthiest tower and beats on it.",
+		"hp": 20.0, "dmg": 20.0, "speed": 0.0, "reach": 1.2, "interval": 0.8,
+		"radius": 0.6, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 4.0,
+		"buildings_only": false,
+		"accent": Color(0.72, 0.45, 0.95),
+	},
+	"boulder": {
+		"name": "Boulder",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Rolled by a destroyed Golden Idol. 80 damage, 2 tile knockback and a 2 s stun to whatever it crosses.",
+		"hp": 9999.0, "dmg": 80.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.7, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.55, 0.5, 0.42),
+	},
 }
 
 const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren"]
 
 
+## Placeholder for any kind that was never registered. Shaped exactly like a real
+## card so every caller keeps working; the blurb names the kind that went missing.
+const MISSING := {
+	"name": "MissingNo.",
+	"cost": 0,
+	"type": "troop",
+	"blurb": "Unregistered card kind.",
+	"hp": 0.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+	"radius": 0.4, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+	"buildings_only": false,
+	"accent": Color(0.62, 0.5, 0.72),
+}
+
+
 static func get_card(kind: String) -> Dictionary:
-	return CARDS.get(kind, CARDS["slate"])
+	if CARDS.has(kind):
+		return CARDS[kind]
+	var d: Dictionary = MISSING.duplicate(true)
+	d["blurb"] = "Unregistered card kind \"%s\". It should not exist." % kind
+	return d
 
 
 static func cost(kind: String) -> int:
@@ -212,6 +266,56 @@ static func cost(kind: String) -> int:
 
 static func is_spell(kind: String) -> bool:
 	return String(get_card(kind)["type"]) == "spell"
+
+
+## Names for the narrow in-hand cards. The full faces keep the long names.
+const SHORT := {
+	"hawk": "Honeycreepers",
+	"dragon": "Dragon",
+	"chicken": "Hot Chicken",
+	"alchemist": "Alchemist",
+	"lizard": "Lizard Squad",
+	"hedgehog": "Hedgehog",
+	"warren": "Warren",
+	"slate": "Slate",
+	"hero": "Hero",
+	"zombie": "Zombies",
+	"fu": "Boomerang",
+	"idol": "Idol",
+	"snowman": "Snowman",
+	"fireball": "Fireball",
+	"firebolt": "Firebolt",
+}
+
+
+## Second tier, used when even the short name cannot fit the header.
+const TINY := {
+	"hawk": "Creepers",
+	"lizard": "Lizards",
+	"chicken": "Chicken",
+	"fu": "Boomer",
+	"alchemist": "Alchy",
+	"zombie": "Zombs",
+	"hedgehog": "Hogs",
+	"firebolt": "Bolt",
+}
+
+
+static func short_name(kind: String) -> String:
+	return String(SHORT.get(kind, get_card(kind)["name"]))
+
+
+static func tiny_name(kind: String) -> String:
+	return String(TINY.get(kind, short_name(kind)))
+
+
+## Card size for a hand of this many cards spanning a given width.
+## Fewer cards means every card gets wider and taller.
+static func hand_size(span: float, count: int) -> Vector2:
+	var n := maxi(count, 1)
+	var gap := 5.0
+	var w := clampf((span - float(n - 1) * gap) / float(n), 118.0, 216.0)
+	return Vector2(w, w * 1.22)
 
 
 static func pretty(kind: String) -> String:

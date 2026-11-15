@@ -13,6 +13,7 @@ var dmg := 0.0
 var radius_t := 1.0
 var tower_mult := 1.0
 var burn := 0.0
+var burn_ticks := 4
 var knock := 0.0
 var launch := "closest"
 var fired := false
@@ -27,6 +28,7 @@ func setup(a: Node2D, k: String, tm: int) -> void:
 	radius_t = float(d.get("splash", 0.0))
 	tower_mult = float(d.get("tower_mult", 1.0))
 	burn = float(d.get("burn", 0.0))
+	burn_ticks = int(d.get("burn_ticks", 4))
 	knock = float(d.get("knock", 0.0))
 	launch = String(d.get("launch", "closest"))
 	z_index = 20
@@ -46,5 +48,5 @@ func _physics_process(_delta: float) -> void:
 		origin = tw.position + Vector2(0.0, -float(area.TILE) * 0.9)
 	area.spawn_projectile(origin, position, team, dmg, radius_t, kind,
 		0, "bolt", false, null, 0.0, null,
-		{"burn": burn, "knock": knock, "tower_mult": tower_mult, "spell": true})
+		{"burn": burn, "burn_ticks": burn_ticks, "knock": knock, "tower_mult": tower_mult, "spell": true})
 	queue_free()

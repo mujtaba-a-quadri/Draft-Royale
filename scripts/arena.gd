@@ -51,6 +51,9 @@ var units: Array = []
 var gold := [5.0, 5.0]
 var gold_max := 10.0
 var gold_rate := 1.0 / 2.4
+const HAND_MAX := 8
+const DRAW_INTERVAL := 4.0
+var draw_timer := [DRAW_INTERVAL, DRAW_INTERVAL]
 var hands := [[], []]
 var queues := [[], []]
 var selected_player := -1
@@ -221,14 +224,76 @@ func _build_hud() -> void:
 			panel.position = Vector2(0.0, 804.0)
 		else:
 			panel.compact = true
-			panel.size = Vector2(1600.0, 66.0)
-			panel.position = Vector2(0.0, 736.0)
+			# Tab view: the opponent's hand is a column down the right edge
+			panel.size = Vector2(214.0, 700.0)
+			panel.position = Vector2(1382.0, 56.0)
 		add_child(panel)
 		panels.append(panel)
 	panels[1].visible = false
 
 
 ## Called by the hand panel when a dragged card is dropped on the board.
+## One coin per tile, laid along the bottom-left edge for blue and mirrored for
+## red. Full coins are solid, spent ones grey, and the one filling right now is
+## drawn larger with a near-white arc that only turns gold when it completes.
+func _draw_gold_pieces() -> void:
+	var maxp := int(gold_max)
+	var r := TILE * 0.3
+	for team in 2:
+		for i in maxp:
+			# blue runs along the bottom-left UI strip, red mirrored across the
+			# vertical so it sits on their side of the board
+			var ty := 29.5 - float(i) if team == 0 else 0.5 + float(i)
+			var at: Vector2 = tile_center(17.5, ty)
+			var filled: float = clampf(float(gold[team]) - float(i), 0.0, 1.0)
+			if filled >= 1.0:
+				draw_circle(at, r, Color(0.98, 0.78, 0.22))
+				draw_circle(at + Vector2(-r * 0.3, -r * 0.3), r * 0.4, Color(1.0, 0.94, 0.62, 0.9))
+				draw_arc(at, r, 0.0, TAU, 20, Color(0.55, 0.38, 0.05), 1.6, true)
+			elif filled > 0.0:
+				draw_circle(at, r * 1.35, Color(0.3, 0.3, 0.34, 0.95))
+				draw_arc(at, r * 1.35, -PI * 0.5, -PI * 0.5 + TAU * filled, 22, Color(1.0, 1.0, 0.84), 3.2, true)
+				draw_arc(at, r * 1.35, 0.0, TAU, 22, Color(0.52, 0.52, 0.58), 1.2, true)
+			else:
+				draw_circle(at, r, Color(0.28, 0.28, 0.32))
+				draw_arc(at, r, 0.0, TAU, 18, Color(0.44, 0.44, 0.5), 1.2, true)
+
+
+## Cards tick in every DRAW_INTERVAL seconds; drawing with a full hand throws
+## away the leftmost card (the one furthest from where new cards arrive).
+func draw_card(team: int) -> bool:
+	if queues[team].is_empty():
+		return false
+	if hands[team].size() >= HAND_MAX:
+		var dropped: String = hands[team][0]
+		hands[team].remove_at(0)
+		queues[team].append(dropped)
+	var k: String = queues[team].pop_front()
+	hands[team].append(k)
+	return true
+
+
+func _tick_draw(delta: float) -> void:
+	if match_over:
+		return
+	for p in 2:
+		draw_timer[p] = float(draw_timer[p]) - delta
+		if float(draw_timer[p]) <= 0.0:
+			draw_timer[p] = DRAW_INTERVAL
+			draw_card(p)
+
+
+## True when any living unit stands inside this screen-space rect. Used to let
+## the enlarged hover card fade so it does not hide the board (occlusion).
+func any_units_under(rect: Rect2) -> bool:
+	for u in units:
+		if not is_instance_valid(u) or u.dead:
+			continue
+		if rect.has_point(u.position):
+			return true
+	return false
+
+
 func try_deploy_at(world: Vector2) -> void:
 	if match_over or selection_kind() == "":
 		return
@@ -244,6 +309,12 @@ func set_view_mode(m: int) -> void:
 	view_mode = m
 	if panels.size() == 2:
 		panels[1].visible = m == 1
+		if m == 0:
+			panels[1].size = Vector2(214.0, 700.0)
+			panels[1].position = Vector2(1382.0, 56.0)
+		else:
+			panels[1].size = Vector2(214.0, 700.0)
+			panels[1].position = Vector2(1382.0, 56.0)
 	if m == 0 and selected_player == 1:
 		selected_player = -1
 		selected_index = -1
@@ -269,6 +340,8 @@ func _physics_process(delta: float) -> void:
 		gold[p] = minf(gold_max, gold[p] + gold_rate * delta)
 		ability_cd[p] = maxf(0.0, float(ability_cd[p]) - delta)
 	_tick_control(delta)
+	separate_units()
+	_tick_draw(delta)
 	_tick_reservations(delta)
 
 
@@ -310,6 +383,62 @@ func tile_rect(col: int, row: int) -> Rect2:
 ## Screen rect covering cols c0..c1 of a single row (orientation agnostic).
 func row_span(c0: int, c1: int, row: int) -> Rect2:
 	return tile_rect(c0, row).merge(tile_rect(c1, row))
+
+
+## Building covering this tile. Footprints are explicit tile lists, so a 2x2 can
+## sit centred on the corner between four tiles.
+func building_at(t: Vector2i) -> Node:
+	for u in units:
+		if not is_instance_valid(u) or u.dead:
+			continue
+		if u.get("stationary") != true:
+			continue
+		var occ = u.get("occupied_tiles")
+		if occ != null and (occ as Array).size() > 0:
+			if (occ as Array).has(t):
+				return u
+			continue
+		if tile_of(u.position) == t:
+			return u
+	return null
+
+
+## Tiles a building of this footprint covers, anchored at the clicked tile, plus
+## the screen position its art should sit at (corner-centred for 2x2).
+func footprint_layout(t: Vector2i, fp: Array) -> Dictionary:
+	var fw := int(fp[0])
+	var fh := int(fp[1])
+	var tiles: Array = []
+	if fw <= 1 and fh <= 1:
+		tiles.append(t)
+		return {"tiles": tiles, "center": tile_center(float(t.x) + 0.5, float(t.y) + 0.5)}
+	for dy in range(-(fh - 1), 1):
+		for dx in range(-(fw - 1), 1):
+			var nt := Vector2i(t.x + dx, t.y + dy)
+			if valid_tile(nt):
+				tiles.append(nt)
+	var center := tile_center(float(t.x) + 0.5 - float(fw - 1) * 0.5, float(t.y) + 0.5 - float(fh - 1) * 0.5)
+	return {"tiles": tiles, "center": center}
+
+
+## Nearest free tile centre, diagonals included.
+func free_spot_near(at: Vector2) -> Vector2:
+	if building_at(tile_of(at)) == null:
+		return at
+	var t := tile_of(at)
+	var best := at
+	var best_d := INF
+	for dy in range(-4, 5):
+		for dx in range(-4, 5):
+			var nt := Vector2i(t.x + dx, t.y + dy)
+			if not valid_tile(nt) or building_at(nt) != null:
+				continue
+			var c := tile_center(float(nt.x) + 0.5, float(nt.y) + 0.5)
+			var dd := c.distance_squared_to(at)
+			if dd < best_d:
+				best_d = dd
+				best = c
+	return best
 
 
 func valid_tile(t: Vector2i) -> bool:
@@ -403,6 +532,41 @@ func _rebuild_control() -> void:
 		control_layer.queue_redraw()
 
 
+## Units push past each other instead of stacking: overlap is split by mass
+## (radius) and buildings never give ground.
+func separate_units() -> void:
+	var n := units.size()
+	for i in n:
+		var a = units[i]
+		if not is_instance_valid(a) or a.dead:
+			continue
+		if a.get("stationary") == true:
+			continue
+		var ra: float = float(a.get_radius_t())
+		for j in range(i + 1, n):
+			var b = units[j]
+			if not is_instance_valid(b) or b.dead:
+				continue
+			if bool(a.get("flying")) != bool(b.get("flying")):
+				continue
+			var rb: float = float(b.get_radius_t())
+			var need: float = (ra + rb) * 0.85 * TILE
+			var d: Vector2 = b.position - a.position
+			var dist := d.length()
+			if dist >= need or dist < 0.001:
+				continue
+			var overlap := (need - dist) * 0.5
+			var dir := d / dist
+			if b.get("stationary") == true:
+				a.position -= dir * overlap * 2.0
+			else:
+				# heavier body wins the contest
+				var wa := rb / (ra + rb)
+				var wb := ra / (ra + rb)
+				a.position -= dir * overlap * 2.0 * wa
+				b.position += dir * overlap * 2.0 * wb
+
+
 func controlled(team: int, t: Vector2i) -> bool:
 	if not valid_tile(t):
 		return false
@@ -490,7 +654,7 @@ func nearest_own_tower(team: int, pos: Vector2) -> Node:
 const GIANT_KINDS := ["dragon"]
 
 
-func apply_burn_at(center: Vector2, radius_t: float, burn: float, team: int) -> void:
+func apply_burn_at(center: Vector2, radius_t: float, burn: float, team: int, ticks: int = 4) -> void:
 	if burn <= 0.0:
 		return
 	for e in enemy_entities(team):
@@ -499,13 +663,13 @@ func apply_burn_at(center: Vector2, radius_t: float, burn: float, team: int) -> 
 		var d: float = tiles_between(center, e.position)
 		if radius_t <= 0.0:
 			if d <= float(e.get_radius_t()) + 0.25:
-				e.apply_burn(burn)
+				e.apply_burn(burn, ticks)
 		elif d <= radius_t + float(e.get_radius_t()) * 0.5:
-			e.apply_burn(burn)
+			e.apply_burn(burn, ticks)
 
 
 func spell_blast(center: Vector2, radius_t: float, dmg: float, team: int, tower_mult: float,
-		burn: float, knock_tiles: float, kind: String) -> void:
+		burn: float, knock_tiles: float, kind: String, burn_ticks: int = 4) -> void:
 	for e in enemy_entities(team).duplicate():
 		if not is_instance_valid(e) or e.dead:
 			continue
@@ -518,7 +682,7 @@ func spell_blast(center: Vector2, radius_t: float, dmg: float, team: int, tower_
 		if amount > 0.0:
 			e.take_damage(amount, center)
 		if burn > 0.0 and e.has_method("apply_burn"):
-			e.apply_burn(burn)
+			e.apply_burn(burn, burn_ticks)
 		if knock_tiles > 0.0 and not e.is_tower():
 			var kind_s := String(e.get("kind"))
 			if e.get("stationary") == true or GIANT_KINDS.has(kind_s):
@@ -595,14 +759,16 @@ func route_point(from: Vector2, goal: Vector2) -> Vector2:
 		return goal
 	var bc := nearest_bridge_col(f.x)
 	var lane: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) + 0.5).lerp(tile_center(bc + 0.5, float(RIVER_BOTTOM) + 0.5), 0.5)
-	var own_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.5) if toward_enemy else tile_center(bc + 0.5, float(RIVER_TOP) - 0.5)
-	var far_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) - 1.5) if toward_enemy else tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.5)
-	# the axis we approach along is the one the river runs across
-	var cross := Vector2(1, 0) if LANDSCAPE else Vector2(0, 1)
-	var along := absf((from - lane).dot(cross))
-	if along > TILE * 1.6:
-		return Vector2(lane.x, from.y) if LANDSCAPE else Vector2(from.x, lane.y)
-	return far_bank if own_bank.distance_to(from) < far_bank.distance_to(from) else own_bank
+	var far_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) - 1.2) if toward_enemy else tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.2)
+	# line up with the bridge lane first (the axis the bridge runs along),
+	# then step across; never aim at the lane from the wrong side or units
+	# oscillate on the bank forever
+	var off := absf(from.y - lane.y) if LANDSCAPE else absf(from.x - lane.x)
+	if off > TILE * 0.7:
+		# aim at the bridge mouth on our own bank so the walk in is diagonal
+		var bank: Vector2 = tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.0) if toward_enemy else tile_center(bc + 0.5, float(RIVER_TOP) - 1.0)
+		return bank
+	return far_bank
 
 
 func nearest_bridge_col(col: int) -> float:
@@ -795,6 +961,7 @@ func use_ability(player: int) -> bool:
 		if victim.get("stunned") != null:
 			victim.stunned = TENTACLE_TIME
 		banner_flash("Tentacle grabs %s!" % DDCard.pretty(String(victim.kind)))
+		draw_card(player)
 		return true
 	var tower: Node = _highest_hp_enemy_tower(player)
 	if tower == null:
@@ -805,6 +972,7 @@ func use_ability(player: int) -> bool:
 	var g := DDShiesty.new()
 	g.dmg = GOBLIN_DMG
 	g.setup(self, player, tower, king)
+	draw_card(player)
 	units.append(g)
 	add_child(g)
 	banner_flash("Shiesty is on the job!")
@@ -942,6 +1110,12 @@ func can_deploy(team: int, kind: String, world: Vector2) -> bool:
 		return false
 	if DDCard.is_spell(kind):
 		return true
+	# a 1x1 building blocks its tile outright; a 2x2 lets you in and shoves you off
+	var b := building_at(t)
+	if b != null:
+		var fp: Array = b.get("footprint") if b.get("footprint") != null else [1, 1]
+		if int(fp[0]) * int(fp[1]) == 1:
+			return false
 	for tw in towers:
 		if is_instance_valid(tw) and not tw.dead and int(tw.team) != team:
 			if tiles_between(world, tw.position) < TOWER_BUFFER:
@@ -974,8 +1148,7 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 	gold[team] -= DDCard.cost(kind)
 	spawn_troop(kind, team, world)
 	hand.remove_at(index)
-	if queues[team].size() > 0:
-		hand.append(queues[team].pop_front())
+	# no automatic draw: the card cycles to the back of the deck
 	queues[team].append(kind)
 	# only clear the selection that belongs to the player who played
 	if selected_player == team:
@@ -992,11 +1165,22 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 	var data: Dictionary = DDCard.get_card(kind)
 	var world_tile := tile_of(world)
 	var snapped := tile_center(float(world_tile.x) + 0.5, float(world_tile.y) + 0.5)
+	var fp: Array = data.get("footprint", [1, 1])
+	var occupied: Array = []
+	if int(fp[0]) > 1 or int(fp[1]) > 1:
+		# 2x2 buildings sit centred on the corner between four tiles and claim all four
+		var layout := footprint_layout(world_tile, fp)
+		snapped = layout["center"]
+		occupied = layout["tiles"]
+	else:
+		# a building under our feet shoves the body off to the nearest free tile
+		snapped = free_spot_near(snapped)
 	var offsets: Array = data.get("swarm_offsets", [])
 	if offsets.is_empty() or single:
 		var u := DDUnit.new()
 		u.setup(kind, team, self)
 		u.position = snapped
+		u.occupied_tiles = occupied
 		units.append(u)
 		add_child(u)
 		return u
@@ -1243,7 +1427,7 @@ func _draw() -> void:
 	for edge_row in [BAND_TOP, BAND_BOTTOM + 1]:
 		var er := tile_rect(col_min(edge_row), edge_row)
 		var across := board_rect().size.y if LANDSCAPE else board_rect().size.x
-		var start := board_rect().position.y if LANDSCAPE else board_rect().position.x
+		var start: float = board_rect().position.y if LANDSCAPE else board_rect().position.x
 		var at: float = er.position.x if LANDSCAPE else er.position.y
 		var k2 := 0.0
 		while k2 < across:
@@ -1274,7 +1458,14 @@ func _draw() -> void:
 			var at := tile_center(float(tt.x) + 0.5, float(tt.y) + 0.5)
 			var ok := can_deploy(sel_player, kind, m)
 			var col2 := Color(0.5, 1.0, 0.6, 0.85) if ok else Color(1.0, 0.35, 0.35, 0.85)
-			draw_rect(Rect2(at - Vector2(TILE, TILE) * 0.5, Vector2(TILE, TILE)), col2, false, 2.5)
+			var pfp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
+			if int(pfp[0]) > 1 or int(pfp[1]) > 1:
+				var lay := footprint_layout(tt, pfp)
+				at = lay["center"]
+				for ot in (lay["tiles"] as Array):
+					draw_rect(tile_rect((ot as Vector2i).x, (ot as Vector2i).y), col2, false, 2.5)
+			else:
+				draw_rect(Rect2(at - Vector2(TILE, TILE) * 0.5, Vector2(TILE, TILE)), col2, false, 2.5)
 			if DDCard.is_spell(kind):
 				var rad: float = maxf(float(DDCard.get_card(kind)["splash"]), 0.5) * TILE
 				draw_circle(at, rad, Color(1.0, 0.6, 0.2, 0.16 if ok else 0.1))
@@ -1312,16 +1503,14 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(ORIGIN.x, 30.0),
 			"DEBUG  1 = +1 gold P1   2 = +1 both   3 = +1 P2   B = bot",
 			HORIZONTAL_ALIGNMENT_LEFT, 620.0, 13, Color(0.75, 0.8, 0.95, 0.75))
-	# opponent chip (top right, clear of the board)
-	var strip := Rect2(1372.0, 8.0, 216.0, 40.0)
+	# opponent label only — their gold is drawn as coins on the board
+	var strip := Rect2(1372.0, 8.0, 216.0, 34.0)
 	draw_rect(strip, Color(0.1, 0.1, 0.14, 0.96), true)
 	draw_rect(strip, DDArt.OUTLINE, false, 2.0)
 	draw_rect(Rect2(strip.position, Vector2(strip.size.x, 4.0)), RED, true)
-	draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 14.0, strip.position.y + 26.0), "OPPONENT",
+	draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 14.0, strip.position.y + 23.0), "OPPONENT",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, RED.lightened(0.3))
-	DDArt.coin(self, Vector2(strip.position.x + 128.0, strip.position.y + 21.0), 10.0)
-	draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 143.0, strip.position.y + 27.0),
-		"%d" % int(floor(gold[1])), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.98, 0.85, 0.45))
+	_draw_gold_pieces()
 	# hero prompt
 	for p in 2:
 		if hero_prompt_active(p):

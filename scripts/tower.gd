@@ -17,6 +17,12 @@ var clock := 0.0
 var target: Node = null
 var w := 0.0
 var h := 0.0
+const BURN_RATE := 0.2
+var burn_stack := 0.0
+var burn_ticks := 0
+var burn_max_ticks := 4
+var burn_timer := 0.0
+var burn_pulse := 0.0
 
 
 func setup(tm: int, ar: Node2D, is_crown: bool) -> void:
@@ -51,6 +57,23 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 		return
 	atk_cd = maxf(0.0, atk_cd - delta)
+	# burn: towers take 20 % of the stack per tick instead of a troop's 40 %
+	if burn_pulse > 0.0:
+		burn_pulse = maxf(0.0, burn_pulse - delta * 1.7)
+	if burn_timer > 0.0:
+		burn_timer -= delta
+		if burn_timer <= 0.0:
+			var tick_dmg := floorf(burn_stack * BURN_RATE)
+			burn_ticks += 1
+			burn_pulse = 1.0
+			if tick_dmg <= 0.0 or burn_ticks >= burn_max_ticks:
+				burn_stack = 0.0
+				burn_ticks = 0
+				burn_timer = 0.0
+			else:
+				burn_stack = maxf(0.0, burn_stack - tick_dmg)
+				burn_timer = 1.0
+				take_damage(tick_dmg, position)
 	if target == null or not _target_valid(target) or area.tiles_between(position, target.position) > reach + 1.5:
 		target = _acquire()
 	if target == null:
@@ -89,6 +112,16 @@ func _acquire() -> Node:
 	return best
 
 
+func apply_burn(amount: float, max_ticks: int = 4) -> void:
+	if dead or amount <= 0.0:
+		return
+	burn_stack += amount
+	burn_ticks = 0
+	burn_max_ticks = maxi(max_ticks, 1)
+	if burn_timer <= 0.0:
+		burn_timer = 1.0
+
+
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0:
 		return
@@ -115,6 +148,11 @@ func _draw() -> void:
 	DDArt.tower(self, w, h, col, flash, crown)
 	if hp <= 0.0:
 		return
+	if burn_timer > 0.0:
+		var bc := DDUnit.burn_color(burn_ticks, burn_max_ticks)
+		var a := 0.18 + 0.42 * burn_pulse
+		draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, a), true)
+		draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, 0.8), false, 2.0)
 	var bw := w * 1.05
 	var by := -h * 0.5 - 22.0
 	draw_rect(Rect2(-bw * 0.5, by, bw, 7.0), Color(0.08, 0.07, 0.1, 0.85), true)

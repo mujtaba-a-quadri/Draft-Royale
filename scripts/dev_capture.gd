@@ -124,6 +124,12 @@ func _ready() -> void:
 	elif scenario == "lizard":
 		shot_times = []
 		run_time = 7.5
+	elif scenario == "cross":
+		shot_times = []
+		run_time = 14.0
+	elif scenario == "bld":
+		shot_times = []
+		run_time = 5.0
 	else:
 		shot_times = [2.0, 5.0, 8.0, 11.0]
 		run_time = 13.5
@@ -183,6 +189,10 @@ func _process(delta: float) -> void:
 		_chicken_steps()
 	elif scenario == "lizard":
 		_lizard_steps()
+	elif scenario == "cross":
+		_cross_steps()
+	elif scenario == "bld":
+		_bld_steps()
 	elif scenario == "flash":
 		if _at(1.0):
 			var kinds := ["snowman", "slate", "alchemist", "hero"]
@@ -640,6 +650,63 @@ func _juice_steps() -> void:
 		print("[juice] hurt_frames right after damage=%d" % alch.hurt_frames)
 	if _at(1.35):
 		print("[juice] hurt_frames half a second later=%d" % alch.hurt_frames)
+
+
+func _bld_steps() -> void:
+	if _at(0.3):
+		arena.spawn_troop("snowman", 0, arena.tile_center(9.5, 20.5))
+		arena.spawn_troop("warren", 0, arena.tile_center(6.5, 20.5))
+		print("[bld] deploy on snowman tile=%s | on warren tile=%s" % [
+			str(arena.can_deploy(0, "hero", arena.tile_center(9.5, 20.5))),
+			str(arena.can_deploy(0, "hero", arena.tile_center(6.5, 20.5)))])
+	if _at(0.9):
+		var h = arena.spawn_troop("hero", 0, arena.tile_center(6.5, 20.5))
+		var t2: Vector2i = arena.tile_of(h.position)
+		print("[bld] hero dropped on the warren landed at tile=(%d,%d), warren anchor=(6,20)" % [t2.x, t2.y])
+	if _at(1.3):
+		alch = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 17.5))
+		var snow: Node = arena.building_at(Vector2i(9, 20))
+		if snow != null:
+			snow.apply_impulse(Vector2(1, 0), 2.0, 0.3)
+			probe = snow
+			print("[bld] shoved the snowman 2 tiles")
+	if _at(1.9):
+		print("[bld] snowman moved %.2f tiles (buildings do not budge)" % (
+			probe.position.distance_to(arena.tile_center(9.5, 20.5)) / arena.TILE))
+	if _at(2.1):
+		arena.spawn_troop("hero", 0, arena.tile_center(3.5, 22.5))
+		arena.spawn_troop("hero", 0, arena.tile_center(3.5, 22.5))
+	if _at(2.8):
+		var list: Array = []
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "hero" and u.team == 0:
+				list.append(u.position)
+		if list.size() >= 2:
+			print("[bld] two heroes on one tile are now %.2f tiles apart" % (list[0].distance_to(list[1]) / arena.TILE))
+
+
+func _cross_steps() -> void:
+	if _at(0.2):
+		alch = arena.spawn_troop("hero", 0, arena.tile_center(9.5, 21.5))
+		alch.deploy_timer = 0.0
+		print("[cross] hero spawned on its own bank, walking to the enemy king tower")
+	if _at(3.0) or _at(6.0) or _at(9.0) or _at(12.0):
+		var t2: Vector2i = arena.tile_of(alch.position)
+		print("[cross] t%.0f tile=(%d,%d) hp=%d" % [elapsed, t2.x, t2.y, int(alch.hp)])
+	# burn on a tower: 40 burn = 20 % per tick for a tower
+	if _at(1.0):
+		arena.towers[1].apply_burn(40.0, 6)
+	if _at(2.4) or _at(3.4) or _at(4.4):
+		print("[cross] tower hp=%d burn=%.1f tick=%d" % [int(arena.towers[1].hp), arena.towers[1].burn_stack, arena.towers[1].burn_ticks])
+	# lizard rifle
+	if _at(2.5):
+		var lz = arena.spawn_troop("lizard", 0, arena.tile_center(3.5, 20.5), true)
+		lz.deploy_timer = 0.0
+		probe = arena.spawn_troop("snowman", 1, arena.tile_center(3.5, 17.5))
+		probe.deploy_timer = 0.0
+		print("[cross] lizard at 3.0 tiles from a snowman")
+	if _at(4.5):
+		print("[cross] snowman hp=%d (rifle should have landed)" % int(probe.hp))
 
 
 func _lizard_steps() -> void:

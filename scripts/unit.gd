@@ -68,13 +68,19 @@ var burn_per_hit := 0.0
 var targets_weakest := false
 var presence_shift := 0
 var summon_cfg: Dictionary = {}
+var shoots := ""
+var is_b := false
+var occupied_tiles: Array = []
+var footprint: Array = [1, 1]
 var summon_cd := 0.0
 enum Status { NONE, SLOW, BURN }
 var status: int = Status.NONE
 var slow_amount := 0.0
 var slow_time := 0.0
+const BURN_RATE := 0.4
 var burn_stack := 0.0
 var burn_ticks := 0
+var burn_max_ticks := 4
 var burn_timer := 0.0
 var burn_pulse := 0.0
 var boom_cfg: Dictionary = {}
@@ -123,6 +129,9 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	targets_weakest = bool(d.get("targets_weakest", false))
 	presence_shift = int(d.get("presence_shift", 0))
 	summon_cfg = d.get("summon", {})
+	shoots = String(d.get("shoots", ""))
+	footprint = d.get("footprint", [1, 1])
+	is_b = String(d.get("type", "troop")) == "building"
 	ground_speed = speed
 	ground_reach = reach
 	deploy_timer = DEPLOY_DELAY
@@ -131,7 +140,7 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 
 
 func is_building() -> bool:
-	return stationary
+	return is_b or stationary
 
 
 func is_tower() -> bool:
@@ -153,7 +162,10 @@ func get_radius_t() -> float:
 # ------------------------------------------------------------------- primitives
 
 func apply_impulse(dir: Vector2, tiles: float, duration: float) -> void:
-	if dead or duration <= 0.0:
+	if is_b:
+		return
+	# buildings are planted: shoves do nothing to them
+	if dead or duration <= 0.0 or is_b:
 		return
 	knock_vel = dir.normalized() * (tiles * arena.TILE / duration)
 	knock_time = duration
@@ -190,7 +202,7 @@ func slow(amount: float, seconds: float) -> void:
 
 ## Burn: a stack that eats 30 % of itself per second. Four seconds without a
 ## fresh application and the whole thing goes out.
-func apply_burn(amount: float) -> void:
+func apply_burn(amount: float, max_ticks: int = 4) -> void:
 	if dead or amount <= 0.0:
 		return
 	if status != Status.BURN:
@@ -200,6 +212,7 @@ func apply_burn(amount: float) -> void:
 	status = Status.BURN
 	burn_stack += amount
 	burn_ticks = 0
+	burn_max_ticks = maxi(max_ticks, 1)
 
 
 func catch_projectile() -> void:
@@ -264,7 +277,7 @@ func _physics_process(delta: float) -> void:
 		burn_timer -= delta
 		if burn_timer <= 0.0:
 			burn_timer += 1.0
-			var tick_dmg := floorf(burn_stack * 0.3)
+			var tick_dmg := floorf(burn_stack * BURN_RATE)
 			if tick_dmg <= 0.0:
 				clear_status()
 			else:
@@ -272,7 +285,7 @@ func _physics_process(delta: float) -> void:
 				burn_ticks += 1
 				burn_pulse = 1.0
 				take_damage(tick_dmg, position)
-				if dead or burn_ticks >= 4 or burn_stack <= 0.0:
+				if dead or burn_ticks >= burn_max_ticks or burn_stack <= 0.0:
 					clear_status()
 	elif status == Status.SLOW:
 		slow_time = maxf(0.0, slow_time - delta)
@@ -390,6 +403,12 @@ func _attack() -> void:
 	if not chicken_cfg.is_empty():
 		_attack_chicken()
 		return
+	if shoots != "":
+		_mark_attack()
+		atk_cd = interval
+		arena.spawn_projectile(position, target.position, team, dmg, 0.0, shoots,
+			get_instance_id(), "bolt", false, self, 950.0, target)
+		return
 	var dist: float = arena.tiles_between(position, target.position)
 	atk_cd = interval + cooldown_per_tile * dist
 	if absf(target.position.x - position.x) > 1.0:
@@ -412,6 +431,20 @@ func _attack() -> void:
 			arena.reserve_damage(get_instance_id(), target, hit_dmg)
 			target.take_damage(hit_dmg, position, self)
 			arena.release_reservation(get_instance_id())
+
+
+## Burn tint walks red → orange → yellow across its ticks; the tick that ends
+## the burn flashes white.
+static func burn_color(ticks: int, max_ticks: int) -> Color:
+	if max_ticks <= 1:
+		return Color(1, 1, 1)
+	if ticks >= max_ticks - 1:
+		return Color(1.0, 1.0, 1.0)
+	var f := clampf(float(ticks) / float(max_ticks - 1), 0.0, 1.0)
+	var red := Color(0.95, 0.18, 0.12)
+	var orange := Color(1.0, 0.55, 0.12)
+	var yellow := Color(1.0, 0.92, 0.3)
+	return red.lerp(orange, f * 2.0) if f < 0.5 else orange.lerp(yellow, (f - 0.5) * 2.0)
 
 
 func _attack_chicken() -> void:
@@ -569,12 +602,24 @@ func _tick_summon(delta: float) -> void:
 		return
 	summon_cd = float(summon_cfg["cooldown"])
 	var kind_s := String(summon_cfg["unit"])
-	var n := int(summon_cfg["count"])
-	var ydir := -1.0 if team == 0 else 1.0
-	for i in n:
-		var ang := TAU * float(i) / float(n) + PI * 0.5
-		var at: Vector2 = position + Vector2(cos(ang) * 1.0, sin(ang) * 1.0 + ydir * 0.5) * float(arena.TILE)
-		arena.spawn_troop(kind_s, team, at, true)
+	var closest: Node = null
+	var best := INF
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d2: float = arena.tiles_between(position, e.position)
+		if d2 <= rng_t and d2 < best:
+			best = d2
+			closest = e
+	var dir := Vector2(-1.0 if team == 0 else 1.0, 0.0)
+	if closest != null:
+		var raw: Vector2 = closest.position - position
+		if raw.length() > 0.001:
+			var step := TAU / 16.0
+			var snapped := roundf(raw.angle() / step) * step
+			dir = Vector2(cos(snapped), sin(snapped))
+	var at: Vector2 = position + dir * 1.3 * float(arena.TILE)
+	arena.spawn_troop(kind_s, team, at, true)
 	arena.shake(2.0)
 
 
@@ -769,10 +814,11 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, px * 1.15, Color(0.18, 0.32, 0.85, 0.45))
 		draw_arc(Vector2.ZERO, px * 1.15, 0.0, TAU, 20, Color(0.35, 0.55, 1.0, 0.6), 2.0, true)
 	elif status == Status.BURN:
-		var pulse := 0.2 + 0.45 * burn_pulse
-		draw_circle(Vector2.ZERO, px * (1.08 + 0.16 * burn_pulse), Color(1.0, 0.42, 0.1, pulse))
-		draw_arc(Vector2.ZERO, px * (1.08 + 0.16 * burn_pulse), 0.0, TAU, 20,
-			Color(1.0, 0.72, 0.25, 0.45 + 0.4 * burn_pulse), 2.0, true)
+		var c := burn_color(burn_ticks, burn_max_ticks)
+		var pulse := 0.2 + 0.5 * burn_pulse
+		draw_circle(Vector2.ZERO, px * (1.08 + 0.18 * burn_pulse), Color(c.r, c.g, c.b, pulse))
+		draw_arc(Vector2.ZERO, px * (1.08 + 0.18 * burn_pulse), 0.0, TAU, 20,
+			Color(c.r, c.g, c.b, 0.5 + 0.4 * burn_pulse), 2.0, true)
 	if hurt_frames > 0:
 		draw_circle(Vector2.ZERO, px * 1.0, Color(1.0, 0.55, 0.72, 0.62))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

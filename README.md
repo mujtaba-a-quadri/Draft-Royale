@@ -71,7 +71,7 @@ never disarms yours.
 | Hedgehog | 3 | 60 each | 10 / 1.2 s | Three burrowers. In melee they **curl**: 45 % incoming damage, the quill burst deals 12 and shoves enemies 0.7 tiles (thorns range 2.2 keeps them inside it), and every hit taken inside thorns range returns 8 fixed damage |
 | Zombie Horde | 6 | 111 each | 15 / 1.0 s each | Six melee bruisers in a 2x3 block. **Anything a zombie kills rises as a full-HP zombie on the killer's side** |
 | Honeycreeper Flock | 4 | 10 each (lead 20) | 6 / 1.0 s each | Flying swarm of 5 in a diamond, lead i'iwi in front. Ground troops can't touch them; they can hit the flying dragon. Alchemist and Boomerang-Fu can hit air too |
-| Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s (range 0.7) | Wedge of three. **Always retargets the weakest troop in range**, not the nearest, and its presence cone sits **one row further forward** |
+| Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s **rifle at 3.5 tiles** | Wedge of three. **Always retargets the weakest troop in range**, not the nearest, and its presence cone sits **one row further forward** |
 | Lizard Warren | 4 | 130 | – | Stationary burrow. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
 | Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn, then **10 claws + 5 burn** after 3 hits on one target | Pecks from range; three hits and it takes to the air (becomes a flyer) to claw at close range |
 | Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick (never on air — he throws at flyers even point blank) | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
@@ -191,13 +191,30 @@ The bot uses its ability too, whenever it is ready and it can spare the gold
 Force a specific assignment for testing: `--ability=tentacle` or `--ability=shiesty`
 (player 1 gets it, player 2 gets the other).
 
+### Buildings
+
+The Snowman and Golden Idol are **1x1 buildings**; the Lizard Warren is a **2x2 building**. Buildings are
+stationary and **immune to knockback and shoves**.
+
+* You cannot deploy onto a **1x1** building tile at all (a swarm's outer bodies can still spill onto it).
+* The **2x2** Warren sits **centred on the corner between four tiles** (its preview outlines all four),
+  and it shoves any body that lands on it off to the nearest free tile, diagonals included.
+* **Gold is drawn on the board**: one coin per tile, ten in a row along the bottom edge starting one
+  tile in from the bottom-left corner for blue, and the mirrored top edge for red. Full coins are
+  solid, spent ones grey, and the one filling is drawn larger with a near-white timer arc that only
+  turns solid gold when it completes. There are no numeric gold totals anywhere.
+* Troops no longer share a tile: overlapping bodies separate every physics tick, heavier bodies giving
+  less ground, and flying never collides with ground.
+
 ### Statuses
 
 Only **one** status can be on a unit; the newest application replaces whatever was there.
 
-* **Burn** — orange tint that pulses on every tick. Each second it deals `floor(30 % of the stack)`
-  and removes that much from the stack, so it decays slowly. Four ticks without a fresh application
-  and the whole thing goes out. A 40 burn on a 90 hp dummy ticks 12 / 8 / 6 / 4 and stops.
+* **Burn** — pulses on every tick and its colour walks **red → orange → yellow** across the burn,
+  flashing **white** on the tick that ends it. Each second it deals `floor(rate × stack)` and removes
+  that much from the stack: **40 % for troops, 20 % for towers**. Ticks without a fresh application
+  and the whole thing goes out — the duration is per card (`burn_ticks`, default 4). Towers can burn.
+  A 40 burn on a 90 hp troop ticks 16 / 10 / 6 / 4; on a tower 8 / 6 / 5 / 4.
 * **Slow** — dark blue tint; movement only, for a fixed duration.
 
 ### Orientation

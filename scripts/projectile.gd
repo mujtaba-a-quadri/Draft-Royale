@@ -36,6 +36,7 @@ var spin := 0.0
 var home_point := Vector2.ZERO
 var target_node: Node = null
 var burn := 0.0
+var burn_ticks := 4
 var knock_tiles := 0.0
 var tower_mult := 1.0
 var spell_blast := false
@@ -46,6 +47,7 @@ func setup(a: Node2D, f: Vector2, t: Vector2, tm: int, dm: float, sp: float, k: 
 		speed_override: float = 0.0, target_n: Node = null, payload: Dictionary = {}) -> void:
 	target_node = target_n
 	burn = float(payload.get("burn", 0.0))
+	burn_ticks = int(payload.get("burn_ticks", 4))
 	knock_tiles = float(payload.get("knock", 0.0))
 	tower_mult = float(payload.get("tower_mult", 1.0))
 	spell_blast = bool(payload.get("spell", false))
@@ -106,7 +108,7 @@ func _travel_out(delta: float) -> void:
 				if dmg > 0.0:
 					target_node.take_damage(dmg, position)
 				if burn > 0.0 and target_node.has_method("apply_burn"):
-					target_node.apply_burn(burn)
+					target_node.apply_burn(burn, burn_ticks)
 				_finish_out()
 				return
 	elif pierce:
@@ -159,13 +161,13 @@ func _pierce_hits() -> void:
 			hit[key] = true
 			u.take_damage(dmg, position)
 			if burn > 0.0 and u.has_method("apply_burn"):
-				u.apply_burn(burn)
+				u.apply_burn(burn, burn_ticks)
 
 
 func _impact() -> void:
 	area.release_reservation(owner_id)
 	if spell_blast:
-		area.spell_blast(to, splash, dmg, team, tower_mult, burn, knock_tiles, kind)
+		area.spell_blast(to, splash, dmg, team, tower_mult, burn, knock_tiles, kind, burn_ticks)
 		return
 	if splash > 0.0:
 		area.damage_at_point(to, splash, dmg, team, tower_mult)
@@ -184,6 +186,10 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, 7.0 * fl, Color(1.0, 0.45, 0.12, 0.55))
 		draw_circle(Vector2.ZERO, 4.0 * fl, Color(1.0, 0.75, 0.3))
 		draw_arc(Vector2.ZERO, 7.0 * fl, 0.0, TAU, 16, Color(1.0, 0.9, 0.55, 0.8), 1.5, true)
+		return
+	if kind == "rifle":
+		draw_line(Vector2(-9, 0), Vector2(3, 0), Color(1.0, 0.86, 0.5, 0.9), 2.0, true)
+		draw_circle(Vector2(4, 0), 2.2, Color(1.0, 0.95, 0.7))
 		return
 	if kind == "chicken":
 		draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.55, 0.15, 0.85))

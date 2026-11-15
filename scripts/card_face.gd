@@ -46,67 +46,89 @@ static func rate_text(d: Dictionary) -> String:
 	return " · ".join(parts)
 
 
+## Largest integer size no bigger than start that fits the space, never below floor_size.
+static func fitted(font: Font, text: String, avail: float, start: float, floor_size: float) -> int:
+	var s := start
+	while s > floor_size and font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, int(s)).x > avail:
+		s -= 1.0
+	return int(maxf(s, floor_size))
+
+
 static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0) -> void:
-	if kind == "" or rect.size.x < 30.0:
+	if kind == "" or rect.size.x < 26.0:
 		return
 	var d: Dictionary = DDCard.get_card(kind)
 	var accent: Color = d["accent"]
 	var font := ThemeDB.fallback_font
 	var a := clampf(alpha, 0.0, 1.0)
-	var sc := rect.size.x / 190.0
-	var head_h := rect.size.y * 0.2
-	# body
+	var w := rect.size.x
+	var h := rect.size.y
+	var head_h := h * 0.185
 	ci.draw_rect(rect, Color(0.96, 0.93, 0.85, a))
-	ci.draw_rect(rect, Color(0.13, 0.12, 0.16, a), false, 2.0 * sc)
-	# header band
-	ci.draw_rect(Rect2(rect.position, Vector2(rect.size.x, head_h)), Color(accent.darkened(0.4), a))
-	# cost medallion
-	var cr := head_h * 0.42
-	var cc := rect.position + Vector2(cr + 4.0 * sc, head_h * 0.5)
-	ci.draw_circle(cc, cr, Color(0.12, 0.1, 0.16, a))
-	ci.draw_circle(cc, cr, Color(accent.lightened(0.3), a), false, 1.5 * sc)
-	ci.draw_string(font, cc + Vector2(-cr, cr * 0.42), str(int(d["cost"])), HORIZONTAL_ALIGNMENT_CENTER,
-		cr * 2.0, int(15.0 * sc), Color(1, 1, 1, a))
-	# name + hp
-	ci.draw_string(font, rect.position + Vector2(head_h * 0.95, head_h * 0.68), String(d["name"]),
-		HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - head_h * 1.9, int(12.0 * sc), Color(1, 1, 1, a))
-	ci.draw_string(font, rect.position + Vector2(rect.size.x * 0.45, head_h * 0.68), hp_text(d),
-		HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x * 0.53, int(11.0 * sc), Color(1.0, 0.95, 0.8, a))
-	# art
-	var art := Rect2(rect.position + Vector2(4.0 * sc, head_h + 3.0 * sc),
-		Vector2(rect.size.x - 8.0 * sc, rect.size.y * 0.44))
+	ci.draw_rect(rect, Color(0.13, 0.12, 0.16, a), false, 2.0)
+	ci.draw_rect(Rect2(rect.position, Vector2(w, head_h)), Color(accent.darkened(0.4), a))
+	var cr := head_h * 0.40
+	var cc := rect.position + Vector2(cr + 3.0, head_h * 0.5)
+	ci.draw_circle(cc, cr, Color(0.86, 0.68, 0.18, a))
+	ci.draw_circle(cc + Vector2(-cr * 0.28, -cr * 0.28), cr * 0.38, Color(1.0, 0.94, 0.62, a * 0.9))
+	ci.draw_arc(cc, cr, 0.0, TAU, 16, Color(0.45, 0.32, 0.05, a), 1.2, true)
+	ci.draw_string(font, cc + Vector2(-cr, cr * 0.44), str(int(d["cost"])), HORIZONTAL_ALIGNMENT_CENTER,
+		cr * 2.0, int(clampf(cr * 1.5, 8.0, 18.0)), Color(0.2, 0.18, 0.16, a))
+	var name_avail := w - cr * 2.0 - 10.0
+	var name_start: float = clampf(w * 0.155, 8.0, 19.0)
+	var nm := DDCard.short_name(kind)
+	var nsize := fitted(font, nm, name_avail, name_start, 9.0)
+	if font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x > name_avail:
+		nm = DDCard.tiny_name(kind)
+		nsize = fitted(font, nm, name_avail, name_start, 7.0)
+	ci.draw_string(font, rect.position + Vector2(cr * 2.0 + 6.0, head_h * 0.74), nm,
+		HORIZONTAL_ALIGNMENT_CENTER, name_avail, nsize, Color(1, 1, 1, a))
+	var art := Rect2(rect.position + Vector2(4.0, head_h + 2.0), Vector2(w - 8.0, h * 0.42))
 	for i in 8:
 		var f := float(i) / 7.0
 		ci.draw_rect(Rect2(art.position.x, art.position.y + f * art.size.y, art.size.x, art.size.y / 7.0 + 1.0),
 			Color(accent.lightened(0.70 - f * 0.3), a))
-	ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.16), 0.0, Vector2.ONE)
+	ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
 	if kind == "dragon":
-		DDArt.dragon(ci, art.size.y * 0.42, 1.0, 0.0, false)
+		DDArt.dragon(ci, art.size.y * 0.40, 1.0, 0.0, false)
 	elif kind == "hawk":
-		DDArt.bird(ci, art.size.y * 0.36, 1.0, 0.0, true)
+		DDArt.bird(ci, art.size.y * 0.34, 1.0, 0.0, true)
 	else:
-		DDArt.creature(ci, kind, art.size.y * 0.36, 1.0, 0.0)
+		DDArt.creature(ci, kind, art.size.y * 0.34, 1.0, 0.0)
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	ci.draw_rect(art, Color(0.13, 0.12, 0.16, a), false, 1.5 * sc)
-	# stat strip
-	var sy := art.end.y + 2.0 * sc
-	ci.draw_rect(Rect2(rect.position.x + 2.0 * sc, sy, rect.size.x - 4.0 * sc, rect.size.y * 0.08),
-		Color(accent.lightened(0.55), a))
-	ci.draw_string(font, Vector2(rect.position.x + 5.0 * sc, sy + rect.size.y * 0.06), String(d["type"]).to_upper(),
-		HORIZONTAL_ALIGNMENT_LEFT, -1, int(9.0 * sc), Color(0.3, 0.26, 0.22, a))
-	var spd := float(d.get("speed", 0.0))
-	var rt := "STAT" if bool(d.get("stationary", false)) else ("%.2f t/s" % spd if spd > 0.0 else "")
-	ci.draw_string(font, Vector2(rect.position.x, sy + rect.size.y * 0.06), rt, HORIZONTAL_ALIGNMENT_RIGHT,
-		rect.size.x - 5.0 * sc, int(9.0 * sc), Color(0.3, 0.26, 0.22, a))
+	ci.draw_rect(art, Color(0.13, 0.12, 0.16, a), false, 1.4)
+	# HP ribbon under the art
+	var bh := h * 0.105
+	var bw := w * 0.86
+	var br := Rect2(rect.position.x + (w - bw) * 0.5, art.end.y - bh * 0.55, bw, bh)
+	ci.draw_rect(br, Color(accent.darkened(0.25), a))
+	ci.draw_rect(br, Color(0.13, 0.12, 0.16, a), false, 1.4)
+	var hp_txt := "%d HP" % int(d["hp"])
+	var n := int(d.get("count", 0))
+	if d.has("swarm_offsets") and n <= 1:
+		n = (d["swarm_offsets"] as Array).size()
+	if n > 1:
+		hp_txt += " ×%d" % n
+	hp_txt += " · %s" % String(d["type"]).capitalize()
+	ci.draw_string(font, Vector2(br.position.x, br.position.y + bh * 0.74), hp_txt, HORIZONTAL_ALIGNMENT_CENTER,
+		bw - 4.0, fitted(font, hp_txt, bw - 8.0, clampf(bh * 0.72, 7.0, 14.0), 6.0), Color(1.0, 0.97, 0.86, a))
 	# attack box
-	var atk_y := sy + rect.size.y * 0.08 + 2.0 * sc
-	var atk := Rect2(rect.position.x + 3.0 * sc, atk_y, rect.size.x - 6.0 * sc, rect.end.y - atk_y - 3.0 * sc)
+	var atk_y := br.end.y + 3.0
+	var atk := Rect2(rect.position.x + 3.0, atk_y, w - 6.0, rect.end.y - atk_y - 3.0)
 	ci.draw_rect(atk, Color(accent.lightened(0.45), a))
-	ci.draw_rect(atk, Color(0.13, 0.12, 0.16, a), false, 1.2 * sc)
+	ci.draw_rect(atk, Color(0.13, 0.12, 0.16, a), false, 1.2)
 	var dmg := int(d.get("dmg", 0))
-	ci.draw_string(font, atk.position + Vector2(5.0 * sc, atk.size.y * 0.45), String(ATTACK_NAMES.get(kind, "Attack")),
-		HORIZONTAL_ALIGNMENT_LEFT, atk.size.x * 0.6, int(10.0 * sc), Color(0.16, 0.12, 0.1, a))
-	ci.draw_string(font, atk.position + Vector2(atk.size.x * 0.5, atk.size.y * 0.45), str(dmg) if dmg > 0 else "—",
-		HORIZONTAL_ALIGNMENT_RIGHT, atk.size.x * 0.5 - 5.0 * sc, int(14.0 * sc), Color(accent.darkened(0.35), a))
-	ci.draw_string(font, atk.position + Vector2(5.0 * sc, atk.size.y * 0.85), rate_text(d),
-		HORIZONTAL_ALIGNMENT_LEFT, atk.size.x - 10.0 * sc, int(8.0 * sc), Color(0.32, 0.28, 0.24, a))
+	var atk_name := String(ATTACK_NAMES.get(kind, "Attack"))
+	var atk_avail := atk.size.x * 0.58 - 6.0
+	ci.draw_string(font, atk.position + Vector2(5.0, atk.size.y * 0.42), atk_name,
+		HORIZONTAL_ALIGNMENT_LEFT, atk_avail, fitted(font, atk_name, atk_avail, clampf(w * 0.10, 7.0, 14.0), 6.0),
+		Color(0.16, 0.12, 0.1, a))
+	var dmg_txt := str(dmg) if dmg > 0 else "—"
+	var dmg_avail := atk.size.x * 0.58 - 4.0
+	ci.draw_string(font, atk.position + Vector2(atk.size.x * 0.42, atk.size.y * 0.48), dmg_txt,
+		HORIZONTAL_ALIGNMENT_RIGHT, dmg_avail, fitted(font, dmg_txt, dmg_avail, clampf(w * 0.16, 9.0, 24.0), 8.0),
+		Color(accent.darkened(0.35), a))
+	var rate := rate_text(d)
+	ci.draw_string(font, atk.position + Vector2(5.0, atk.size.y * 0.82), rate,
+		HORIZONTAL_ALIGNMENT_LEFT, atk.size.x - 8.0, fitted(font, rate, atk.size.x - 10.0, clampf(w * 0.066, 6.0, 11.0), 6.0),
+		Color(0.32, 0.28, 0.24, a))
