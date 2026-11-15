@@ -29,6 +29,8 @@ func setup(tm: int, ar: Node2D, is_crown: bool) -> void:
 	team = tm
 	area = ar
 	crown = is_crown
+	if is_crown:
+		reach += 2.0
 	max_hp = 250.0
 	hp = max_hp
 	w = area.TILE * 1.75
@@ -145,7 +147,18 @@ func _draw() -> void:
 			draw_rect(rr, wall.darkened(0.15), true)
 			draw_rect(rr, DDArt.OUTLINE, false, 2.0)
 		return
-	DDArt.tower(self, w, h, col, flash, crown)
+	if crown:
+		var ab := ""
+		if area != null and area.ability.size() > int(team):
+			ab = String(area.ability[int(team)])
+		var ready := false
+		if area != null and area.has_method("ability_ready"):
+			ready = bool(area.ability_ready(int(team)))
+		draw_circle(Vector2(0, h * 0.28), w * 0.62, Color(0, 0, 0, 0.18))
+		var team_col := Color(0.45, 0.7, 1.0) if int(team) == 0 else Color(1.0, 0.42, 0.42)
+		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col)
+	else:
+		DDArt.tower(self, w, h, col, flash, crown)
 	if hp <= 0.0:
 		return
 	if burn_timer > 0.0:

@@ -93,6 +93,9 @@ func _draw() -> void:
 	if shelf_mode():
 		_draw_shelf(font)
 		return
+	if player == 1:
+		_draw_opponent(font)
+		return
 	var h: Array = hand()
 	# gold + labels on the left
 	if not compact:
@@ -117,9 +120,9 @@ func _draw() -> void:
 		var r := card_rect(i)
 		if i == hover:
 			var grow := r.size * 1.25
-			var pos := r.position + Vector2(-r.size.x * 0.12, -r.size.y * 0.28)
+			var pos := r.position + Vector2(-r.size.x * 0.12, -r.size.y * 0.95)
 			pos.x = clampf(pos.x, 8.0, size.x - grow.x - 8.0)
-			pos.y = maxf(pos.y, 4.0)
+			pos.y = -grow.y + 26.0
 			var big := Rect2(pos, grow)
 			# fade the card if troops stand behind it, so the board stays readable
 			var hidden_behind: bool = arena.any_units_under(Rect2(global_position + big.position, big.size))
@@ -139,13 +142,7 @@ func _draw() -> void:
 	if arena.hands[player].size() >= arena.HAND_MAX:
 		_draw_discard_warning(font, h)
 	# buttons
-	toggle_rect = Rect2(14.0, 14.0, 220.0, 34.0)
-	draw_rect(toggle_rect, Color(0.16, 0.16, 0.22, 1.0), true)
-	draw_rect(toggle_rect, Color(0.5, 0.5, 0.62, 0.8), false, 2.0)
-	draw_string(font, toggle_rect.position + Vector2(12, 23), "TAB — BOTH HANDS", HORIZONTAL_ALIGNMENT_CENTER,
-		toggle_rect.size.x - 24.0, 14, Color(0.85, 0.86, 0.95))
-	ability_rect = Rect2(14.0, 54.0, 220.0, 74.0)
-	_draw_ability(font)
+	toggle_rect = Rect2()
 
 
 ## The opponent does not show a hand: their gold reads as ten coins instead.
@@ -198,6 +195,43 @@ func _draw_discard_warning(font: Font, h: Array) -> void:
 		Color(0.82, 0.82, 0.86, 0.75 + 0.25 * pulse))
 
 
+## Opponent hand: faces when revealed by TAB, ornate backs when hidden. The
+## formation is the same either way — two columns once they hold six or more.
+func _draw_opponent(font: Font) -> void:
+	var h: Array = hand()
+	var n := h.size()
+	var cols := 2 if n >= 6 else 1
+	var gap := 6.0
+	var cw := (size.x - 16.0 - float(cols - 1) * gap) / float(cols)
+	var ch := cw * 1.45
+	for i in n:
+		var col: int = i % cols
+		var row: int = i / cols
+		var r := Rect2(8.0 + float(col) * (cw + gap), 34.0 + float(row) * (ch + gap), cw, ch)
+		if r.end.y > size.y:
+			break
+		if arena.view_mode == 1:
+			DDCardFace.draw(self, String(h[i]), r, 0.94)
+		else:
+			_draw_card_back(r)
+
+
+func _draw_card_back(r: Rect2) -> void:
+	draw_rect(r, Color(0.1, 0.08, 0.09))
+	draw_rect(r.grow(-3.0), Color(0.92, 0.74, 0.2), false, 2.0)
+	draw_rect(r.grow(-7.0), Color(0.85, 0.15, 0.15), false, 1.5)
+	for i in 5:
+		var y := r.position.y + r.size.y * (0.16 + float(i) * 0.14)
+		var col := Color(0.9, 0.72, 0.18) if i % 2 == 0 else Color(0.12, 0.1, 0.1)
+		draw_rect(Rect2(r.position.x + r.size.x * 0.16, y, r.size.x * 0.68, r.size.y * 0.07), col)
+	var c := r.get_center()
+	draw_circle(c, r.size.x * 0.24, Color(0.12, 0.1, 0.1))
+	draw_circle(c, r.size.x * 0.24, Color(0.92, 0.74, 0.2), false, 2.0)
+	for i in 8:
+		var ang := TAU * float(i) / 8.0
+		draw_line(c, c + Vector2(cos(ang), sin(ang)) * r.size.x * 0.2, Color(0.85, 0.15, 0.15), 2.0, true)
+
+
 func _draw_ability(font: Font) -> void:
 	var label: String = arena.ability_name(player)
 	var ready: bool = arena.ability_ready(player)
@@ -233,6 +267,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			dragging = -1
 			arena.clear_selection()
 			accept_event()
 			return

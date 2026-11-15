@@ -288,6 +288,79 @@ static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(bx + r * 0.42 * facing, -r * 0.12 + bob), Vector2(bx + r * 0.3 * facing, -r * 0.5 + bob), Color(0.75, 0.55, 0.28), 3.5, true)
 
 
+## Commander towers: the furthest-back tower wears a face of its own.
+## Blue side reads as a celestial jelly, red side as a spear goblin. Both light
+## up when that player's ability is ready.
+static func commander(ci: CanvasItem, kind: String, r: float, t: float, ready: bool, team_col: Color) -> void:
+	if kind == "tentacle":
+		_jelly(ci, r, t, ready, team_col)
+	else:
+		_goblin_commander(ci, r, t, ready, team_col)
+
+
+static func _jelly(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color) -> void:
+	var core := Color(0.55, 0.35, 0.95).lerp(team_col, 0.45 if not ready else 0.75)
+	var rim := Color(0.8, 0.55, 1.0) if not ready else Color(0.7, 0.9, 1.0)
+	for i in 4:
+		ci.draw_circle(Vector2(0, -r * 0.5), r * (0.95 - float(i) * 0.16), Color(core.r, core.g, core.b, 0.13 + float(i) * 0.05))
+	ci.draw_circle(Vector2(0, -r * 0.5), r * 0.38, Color(1, 1, 1, 0.85))
+	ci.draw_arc(Vector2(0, -r * 0.5), r * 0.7, 0.0, TAU, 28, rim, 2.0, true)
+	# crown tendrils
+	for i in 7:
+		var a := -PI * 0.85 + PI * 0.7 * float(i) / 6.0
+		var p := Vector2(cos(a), sin(a)) * r * 0.34 + Vector2(0, -r * 0.72)
+		ci.draw_line(Vector2(0, -r * 0.5), p, Color(0.85, 0.6, 1.0, 0.9), 2.0, true)
+	# chained tail sweeping behind toward the back of the arena
+	var speed := 4.2 if ready else 1.6
+	var chain := Color(0.85, 0.45, 1.0) if not ready else Color(0.6, 0.85, 1.0)
+	var prev := Vector2(0, r * 0.05)
+	for k in 9:
+		var f := float(k) / 8.0
+		var px := r * 2.6 * f
+		var py := r * 0.35 + sin(t * speed - f * 2.2) * r * 0.55 * f
+		var p2 := Vector2(px, py)
+		ci.draw_line(prev, p2, Color(chain.r, chain.g, chain.b, 0.55), 3.0, true)
+		ci.draw_circle(p2, r * (0.20 - 0.1 * f), Color(chain.r, chain.g, chain.b, 0.85))
+		ci.draw_arc(p2, r * (0.20 - 0.1 * f), 0.0, TAU, 12, Color(1, 1, 1, 0.35), 1.2, true)
+		prev = p2
+
+
+static func _goblin_commander(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color) -> void:
+	var skin := Color(0.52, 0.82, 0.34)
+	var dark := Color(0.33, 0.58, 0.2)
+	# ears
+	for s in [-1.0, 1.0]:
+		ci.draw_colored_polygon(PackedVector2Array([
+			Vector2(s * r * 0.45, -r * 0.1), Vector2(s * r * 1.15, -r * 0.55), Vector2(s * r * 0.5, r * 0.25),
+		]), skin.darkened(0.1))
+	# head
+	ci.draw_circle(Vector2(0, -r * 0.15), r * 0.62, skin)
+	ci.draw_arc(Vector2(0, -r * 0.15), r * 0.62, 0.0, TAU, 22, Color(0.13, 0.12, 0.16), 2.2, true)
+	# grin
+	ci.draw_arc(Vector2(0, r * 0.05), r * 0.34, 0.15 * PI, 0.85 * PI, 14, Color(0.15, 0.1, 0.1), 3.0, true)
+	# eyes: red with flames when the ability is up
+	var eye := Color(0.1, 0.1, 0.12) if not ready else team_col.lightened(0.15)
+	if ready:
+		ci.draw_circle(Vector2(0, -r * 0.3), r * 0.5, Color(team_col.r, team_col.g, team_col.b, 0.18))
+	for s in [-1.0, 1.0]:
+		var e := Vector2(s * r * 0.26, -r * 0.3)
+		ci.draw_circle(e, r * 0.13, eye)
+		if ready:
+			for k in 3:
+				var fl := Vector2(e.x + sin(t * 9.0 + float(k)) * r * 0.06, e.y - r * (0.22 + 0.12 * float(k)))
+				ci.draw_circle(fl, r * (0.08 - 0.02 * float(k)), Color(team_col.r, team_col.g, team_col.b, 0.8 - 0.2 * float(k)))
+	# spear, thrown rather than held as a staff
+	var tip := Vector2(r * 0.95, -r * 0.95)
+	ci.draw_line(Vector2(-r * 0.15, r * 0.35), tip, Color(0.62, 0.45, 0.28), 3.0, true)
+	ci.draw_colored_polygon(PackedVector2Array([
+		tip + Vector2(r * 0.26, -r * 0.1), tip + Vector2(-r * 0.02, -r * 0.2), tip + Vector2(-r * 0.02, r * 0.16),
+	]), Color(0.85, 0.88, 0.92))
+	ci.draw_polyline(PackedVector2Array([
+		tip + Vector2(r * 0.26, -r * 0.1), tip + Vector2(-r * 0.02, -r * 0.2),
+		tip + Vector2(-r * 0.02, r * 0.16), tip + Vector2(r * 0.26, -r * 0.1),
+	]), Color(0.13, 0.12, 0.16), 1.4, true)
+
+
 ## Lizard soldier: small green spear-carrier, crest up, spear levelled.
 static func _lizard(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	var dir: float = 1.0 if facing >= 0.0 else -1.0

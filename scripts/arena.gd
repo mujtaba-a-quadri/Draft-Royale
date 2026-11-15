@@ -52,7 +52,7 @@ var gold := [5.0, 5.0]
 var gold_max := 10.0
 var gold_rate := 1.0 / 2.4
 const HAND_MAX := 8
-const DRAW_INTERVAL := 4.0
+const DRAW_INTERVAL := 8.0
 var draw_timer := [DRAW_INTERVAL, DRAW_INTERVAL]
 var hands := [[], []]
 var queues := [[], []]
@@ -72,7 +72,7 @@ var bot_players := [false, true]
 var debug_shelf := false
 var debug_kind := ""
 var ability := ["tentacle", "shiesty"]
-var ability_cd := [0.0, 0.0]
+var ability_cd := [ABILITY_COOLDOWN, ABILITY_COOLDOWN]
 var damage_guard := 0
 var stat_shiesty_escaped := 0
 var stat_shiesty_caught := 0
@@ -229,7 +229,7 @@ func _build_hud() -> void:
 			panel.position = Vector2(1382.0, 56.0)
 		add_child(panel)
 		panels.append(panel)
-	panels[1].visible = false
+	panels[1].visible = true
 
 
 ## Called by the hand panel when a dragged card is dropped on the board.
@@ -308,7 +308,7 @@ func try_deploy_at(world: Vector2) -> void:
 func set_view_mode(m: int) -> void:
 	view_mode = m
 	if panels.size() == 2:
-		panels[1].visible = m == 1
+		panels[1].visible = true
 		if m == 0:
 			panels[1].size = Vector2(214.0, 700.0)
 			panels[1].position = Vector2(1382.0, 56.0)
@@ -934,6 +934,27 @@ func ability_valid(player: int) -> bool:
 	return _highest_hp_enemy_tower(player) != null
 
 
+## Circular ability button that floats over the player's king tower.
+func ability_button_rect(player: int) -> Rect2:
+	var k: Node = _king_of(player)
+	var at: Vector2 = k.position if is_instance_valid(k) else tile_center(9.5, 27.5)
+	var sz := 46.0
+	return Rect2(at + Vector2(-sz * 0.5, -float(TILE) * 1.75), Vector2(sz, sz))
+
+
+func _draw_ability_button(player: int) -> void:
+	var r := ability_button_rect(player)
+	var ready := ability_ready(player)
+	var f: float = clampf(1.0 - float(ability_cd[player]) / ABILITY_COOLDOWN, 0.0, 1.0)
+	draw_circle(r.get_center(), 23.0, Color(0.1, 0.1, 0.14, 0.95))
+	draw_arc(r.get_center(), 23.0, 0.0, TAU, 28, Color(0.35, 0.75, 0.45) if ready else Color(0.45, 0.45, 0.55), 2.5, true)
+	if not ready:
+		draw_arc(r.get_center(), 23.0, -PI * 0.5, -PI * 0.5 + TAU * f, 28, Color(0.55, 0.85, 1.0), 3.0, true)
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x - 30.0, r.end.y + 14.0), ability_name(player),
+		HORIZONTAL_ALIGNMENT_CENTER, r.size.x + 60.0, 11,
+		Color(0.85, 0.95, 0.85) if ready else Color(0.7, 0.7, 0.8))
+
+
 func ability_ready(player: int) -> bool:
 	if player < 0 or player > 1:
 		return false
@@ -1306,6 +1327,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_tree().reload_current_scene()
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var am := get_global_mouse_position()
+		var king: Node = _king_of(0)
+		if ability_button_rect(0).has_point(am) or (is_instance_valid(king) and king.position.distance_to(am) < float(TILE) * 1.15):
+			use_ability(0)
+			return
 		if match_over:
 			return
 		var world: Vector2 = event.position
@@ -1485,6 +1511,7 @@ func _draw() -> void:
 		var pulse := 0.5 + 0.5 * absf(sin(clock * 6.0))
 		draw_arc(tp, TILE * 1.15, 0.0, TAU, 32, Color(0.55, 0.85, 1.0, 0.5 + 0.4 * pulse), 2.5, true)
 		draw_arc(tp, TILE * 0.55, 0.0, TAU, 24, Color(1.0, 0.95, 0.75, 0.7), 2.0, true)
+	_draw_ability_button(0)
 	# hover inspection (only when nothing is armed)
 	if selection_kind() == "" and not match_over:
 		_draw_hover(get_global_mouse_position())
@@ -1510,6 +1537,9 @@ func _draw() -> void:
 	draw_rect(Rect2(strip.position, Vector2(strip.size.x, 4.0)), RED, true)
 	draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 14.0, strip.position.y + 23.0), "OPPONENT",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, RED.lightened(0.3))
+	if view_mode == 0:
+		draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 96.0, strip.position.y + 23.0), "TAB to reveal",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.72, 0.72, 0.82))
 	_draw_gold_pieces()
 	# hero prompt
 	for p in 2:
