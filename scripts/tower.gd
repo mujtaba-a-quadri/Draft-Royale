@@ -58,7 +58,9 @@ func _physics_process(delta: float) -> void:
 		return
 	if atk_cd <= 0.0 and area.tiles_between(position, target.position) <= reach:
 		atk_cd = interval
-		area.spawn_projectile(position, target.position, team, dmg, 0.0, "tower")
+		# aimed shot: the bolt hits only the unit it was fired at, never splash
+		area.spawn_projectile(position, target.position, team, dmg, 0.0, "tower",
+			0, "bolt", false, null, 0.0, target)
 	queue_redraw()
 
 
@@ -73,6 +75,8 @@ func _acquire() -> Node:
 	var best_d := INF
 	for u in area.enemy_units(team):
 		if not is_instance_valid(u) or u.dead:
+			continue
+		if u.get("tower_ignore") == true:
 			continue
 		var d: float = area.tiles_between(position, u.position)
 		if d > reach:

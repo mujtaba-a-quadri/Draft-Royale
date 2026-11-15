@@ -182,7 +182,7 @@ func _score(kind: String, pos: Vector2) -> float:
 			var push := clampf(1.0 - dt / 13.0, 0.0, 1.0)
 			s += push * push * 4.5
 	var t: Vector2i = arena.tile_of(pos)
-	if arena.row_is_band(t.y) and arena.tile_claim(player, t) <= 0.0 and not arena.tile_contested(t):
+	if arena.row_is_band(t.y) and arena.controlled(player, t):
 		s += 1.3
 	if data.has("swarm_offsets"):
 		s *= 1.55

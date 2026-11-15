@@ -6,7 +6,7 @@ extends Node2D
 ## neutral no-man's land: you may only deploy inside it on tiles your ground
 ## troops have claimed within the last CLAIM_TIME seconds.
 
-const TILE := 27.0
+const TILE := 38.0
 const GRID_W := 18
 const GRID_H := 30
 const OUTER_COL_MIN := 1
@@ -26,10 +26,18 @@ const TENTACLE_DMG := 20.0
 const TENTACLE_TIME := 4.0
 const GOBLIN_DMG := 30.0
 
-const ORIGIN := Vector2(470.0, 46.0)
+## Orientation. LANDSCAPE = true  → your half on the LEFT, enemy on the RIGHT,
+##                                   hand along the bottom of the screen.
+##              LANDSCAPE = false → the original portrait board: your half at the
+##                                   BOTTOM, enemy at the top, hands on the sides.
+## Everything else (simulation, art, effects) is orientation-agnostic — flip this
+## one flag and the board turns, provided the HUD is laid out to match.
+const LANDSCAPE := true
 
-const GRASS_A := Color(0.42, 0.68, 0.36)
-const GRASS_B := Color(0.38, 0.62, 0.33)
+const ORIGIN := Vector2(230.0, 56.0)
+
+const GRASS_A := Color(0.45, 0.72, 0.38)
+const GRASS_B := Color(0.38, 0.62, 0.32)
 const BAND_A := Color(0.36, 0.5, 0.26)
 const BAND_B := Color(0.33, 0.46, 0.24)
 const WATER := Color(0.22, 0.45, 0.72)
@@ -58,12 +66,17 @@ var panels: Array = []
 var view_mode := 0
 var bots: Array = [null, null]
 var bot_players := [false, true]
-var ability := ["tentacle", "goblin"]
+var debug_shelf := false
+var debug_kind := ""
+var ability := ["tentacle", "shiesty"]
 var ability_cd := [0.0, 0.0]
 var damage_guard := 0
-var stat_goblin_escaped := 0
-var stat_goblin_caught := 0
-var claim := [[], []]
+var stat_shiesty_escaped := 0
+var stat_shiesty_caught := 0
+var control := [[], []]
+var control_layer: Node2D = null
+var preview: Node2D = null
+var unit_tiles := {}
 var reservations := {}
 
 
@@ -71,8 +84,8 @@ func _ready() -> void:
 	for t in 2:
 		var arr: Array = []
 		arr.resize(GRID_W * GRID_H)
-		arr.fill(0.0)
-		claim[t] = arr
+		arr.fill(false)
+		control[t] = arr
 	var forced := ""
 	for a in OS.get_cmdline_user_args():
 		if a == "--bots=both":
@@ -82,14 +95,16 @@ func _ready() -> void:
 		elif a.begins_with("--ability="):
 			forced = a.substr(10)
 	if forced == "tentacle":
-		ability = ["tentacle", "goblin"]
-	elif forced == "goblin":
-		ability = ["goblin", "tentacle"]
+		ability = ["tentacle", "shiesty"]
+	elif forced == "shiesty" or forced == "goblin":
+		ability = ["shiesty", "tentacle"]
 	else:
 		var arng := RandomNumberGenerator.new()
 		arng.randomize()
-		ability = ["tentacle", "goblin"] if arng.randf() < 0.5 else ["goblin", "tentacle"]
+		ability = ["tentacle", "shiesty"] if arng.randf() < 0.5 else ["shiesty", "tentacle"]
 	_build_board_state()
+	_build_control_layer()
+	_build_preview()
 	_build_decks()
 	_build_hud()
 	_setup_bots()
@@ -163,6 +178,23 @@ func _build_board_state() -> void:
 		add_child(tw)
 
 
+func _build_preview() -> void:
+	var p = DDDeployPreview.new()
+	p.arena = self
+	p.z_index = 16
+	p.visible = false
+	add_child(p)
+	preview = p
+
+
+func _build_control_layer() -> void:
+	var layer := DDControlLayer.new()
+	layer.arena = self
+	layer.z_index = 2
+	add_child(layer)
+	control_layer = layer
+
+
 func _build_decks() -> void:
 	for p in 2:
 		var deck: Array = DDCard.ORDER.duplicate()
@@ -183,11 +215,29 @@ func _build_hud() -> void:
 		var panel := HandPanel.new()
 		panel.player = p
 		panel.arena = self
-		panel.size = Vector2(430.0, 808.0)
-		panel.position = Vector2(10.0, 46.0) if p == 0 else Vector2(960.0, 46.0)
+		if p == 0:
+			panel.compact = false
+			panel.size = Vector2(1600.0, 196.0)
+			panel.position = Vector2(0.0, 804.0)
+		else:
+			panel.compact = true
+			panel.size = Vector2(1600.0, 66.0)
+			panel.position = Vector2(0.0, 736.0)
 		add_child(panel)
 		panels.append(panel)
 	panels[1].visible = false
+
+
+## Called by the hand panel when a dragged card is dropped on the board.
+func try_deploy_at(world: Vector2) -> void:
+	if match_over or selection_kind() == "":
+		return
+	if not board_rect().has_point(world):
+		return
+	if debug_kind != "":
+		deploy_debug(world)
+	elif selected_player >= 0 and selected_index >= 0:
+		deploy(selected_player, selected_index, world)
 
 
 func set_view_mode(m: int) -> void:
@@ -237,11 +287,29 @@ func col_max(row: int) -> int:
 
 
 func tile_of(world: Vector2) -> Vector2i:
-	return Vector2i(int(floor((world.x - ORIGIN.x) / TILE)), int(floor((world.y - ORIGIN.y) / TILE)))
+	var gx := int(floorf((world.x - ORIGIN.x) / TILE))
+	var gy := int(floorf((world.y - ORIGIN.y) / TILE))
+	if LANDSCAPE:
+		return Vector2i(gy, GRID_H - 1 - gx)
+	return Vector2i(gx, gy)
 
 
+## tx/ty are tile coordinates where the centre of tile (col,row) is (col+0.5, row+0.5).
 func tile_center(tx: float, ty: float) -> Vector2:
+	if LANDSCAPE:
+		return ORIGIN + Vector2(float(GRID_H) - ty, tx) * TILE
 	return ORIGIN + Vector2(tx, ty) * TILE
+
+
+func tile_rect(col: int, row: int) -> Rect2:
+	if LANDSCAPE:
+		return Rect2(ORIGIN + Vector2(float(GRID_H - 1 - row), float(col)) * TILE, Vector2(TILE, TILE))
+	return Rect2(ORIGIN + Vector2(float(col), float(row)) * TILE, Vector2(TILE, TILE))
+
+
+## Screen rect covering cols c0..c1 of a single row (orientation agnostic).
+func row_span(c0: int, c1: int, row: int) -> Rect2:
+	return tile_rect(c0, row).merge(tile_rect(c1, row))
 
 
 func valid_tile(t: Vector2i) -> bool:
@@ -255,40 +323,90 @@ func band_index(t: Vector2i) -> int:
 
 
 func rect_for_arena() -> Rect2:
-	return Rect2(ORIGIN, Vector2(GRID_W, GRID_H) * TILE)
+	return board_rect()
 
 
 func board_rect() -> Rect2:
+	if LANDSCAPE:
+		return Rect2(ORIGIN, Vector2(GRID_H, GRID_W) * TILE)
 	return Rect2(ORIGIN, Vector2(GRID_W, GRID_H) * TILE)
 
 
 # ------------------------------------------------------------------- control
 
-func _tick_control(delta: float) -> void:
-	for t in 2:
-		var arr: Array = claim[t]
-		for i in arr.size():
-			if float(arr[i]) > 0.0:
-				arr[i] = maxf(0.0, float(arr[i]) - delta)
+const CONTROL_REACH := 3
+
+
+## Control is presence based: a ground unit holds the tiles 3 across to each
+## side and 3 back toward its own half. It never contests the enemy's — both
+## teams can hold the same tile.
+func _tick_control(_delta: float) -> void:
+	# only rebuild when some unit has actually changed tile (cheap cache)
+	var seen := {}
+	var changed := false
 	for u in units:
 		if not is_instance_valid(u) or u.dead:
 			continue
 		if u.get("flying") == true:
 			continue
-		var t2 := tile_of(u.position)
-		if not row_is_band(t2.y) or t2.x < 0 or t2.x >= GRID_W:
+		if u.get("gives_presence") == false:
 			continue
-		claim[int(u.team)][band_index(t2)] = CLAIM_TIME
+		var t := tile_of(u.position)
+		var id: int = u.get_instance_id()
+		seen[id] = t
+		if unit_tiles.get(id) != t:
+			changed = true
+	if seen.size() != unit_tiles.size():
+		changed = true
+	if not changed:
+		return
+	unit_tiles = seen
+	_rebuild_control()
 
 
-func tile_claim(team: int, t: Vector2i) -> float:
+var control_rebuilds := 0
+
+
+func _rebuild_control() -> void:
+	control_rebuilds += 1
+	for t in 2:
+		var arr: Array = control[t]
+		for i in arr.size():
+			arr[i] = false
+	for u in units:
+		if not is_instance_valid(u) or u.dead:
+			continue
+		if u.get("flying") == true:
+			continue
+		if u.get("gives_presence") == false:
+			continue
+		var ut := int(u.team)
+		var back := 1 if ut == 0 else -1
+		var base := tile_of(u.position)
+		var shift := 0
+		if u.get("presence_shift") != null:
+			shift = int(u.get("presence_shift"))
+		# cone: 3 tiles wide at the unit, then 5, 7, 9 going back toward its own half
+		for k in range(0, CONTROL_REACH + 1):
+			var half := 1 + k
+			var ty: int = base.y + (k - shift) * back
+			if ty < 0 or ty >= GRID_H:
+				continue
+			for dx in range(-half, half + 1):
+				var tx: int = base.x + dx
+				if tx < 0 or tx >= GRID_W:
+					continue
+				if not valid_tile(Vector2i(tx, ty)):
+					continue
+				control[ut][ty * GRID_W + tx] = true
+	if control_layer != null:
+		control_layer.queue_redraw()
+
+
+func controlled(team: int, t: Vector2i) -> bool:
 	if not valid_tile(t):
-		return 0.0
-	return float(claim[team][band_index(t)])
-
-
-func tile_contested(t: Vector2i) -> bool:
-	return tile_claim(0, t) > 0.05 and tile_claim(1, t) > 0.05
+		return false
+	return bool(control[team][band_index(t)])
 
 
 func control_counts() -> Array:
@@ -296,11 +414,13 @@ func control_counts() -> Array:
 	for row in range(BAND_TOP, BAND_BOTTOM + 1):
 		for col in range(col_min(row), col_max(row) + 1):
 			var t := Vector2i(col, row)
-			if tile_contested(t):
+			var a := controlled(0, t)
+			var b := controlled(1, t)
+			if a and b:
 				out[2] += 1
-			elif tile_claim(0, t) > 0.05:
+			elif a:
 				out[0] += 1
-			elif tile_claim(1, t) > 0.05:
+			elif b:
 				out[1] += 1
 	return out
 
@@ -345,6 +465,73 @@ func nearest_enemy_tower(team: int, pos: Vector2) -> Node:
 			best_d = d
 			best = t
 	return best
+
+
+func crown_tower(team: int) -> Node:
+	for t in towers:
+		if is_instance_valid(t) and not t.dead and int(t.team) == team and bool(t.get("crown")):
+			return t
+	return null
+
+
+func nearest_own_tower(team: int, pos: Vector2) -> Node:
+	var best: Node = null
+	var best_d := INF
+	for t in towers:
+		if not is_instance_valid(t) or t.dead or int(t.team) != team:
+			continue
+		var d := pos.distance_squared_to(t.position)
+		if d < best_d:
+			best_d = d
+			best = t
+	return best
+
+
+const GIANT_KINDS := ["dragon"]
+
+
+func apply_burn_at(center: Vector2, radius_t: float, burn: float, team: int) -> void:
+	if burn <= 0.0:
+		return
+	for e in enemy_entities(team):
+		if not is_instance_valid(e) or e.dead or not e.has_method("apply_burn"):
+			continue
+		var d: float = tiles_between(center, e.position)
+		if radius_t <= 0.0:
+			if d <= float(e.get_radius_t()) + 0.25:
+				e.apply_burn(burn)
+		elif d <= radius_t + float(e.get_radius_t()) * 0.5:
+			e.apply_burn(burn)
+
+
+func spell_blast(center: Vector2, radius_t: float, dmg: float, team: int, tower_mult: float,
+		burn: float, knock_tiles: float, kind: String) -> void:
+	for e in enemy_entities(team).duplicate():
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d: float = tiles_between(center, e.position)
+		if d > radius_t + float(e.get_radius_t()) * 0.5:
+			continue
+		var amount := dmg
+		if e.is_tower() and tower_mult != 1.0:
+			amount = dmg * tower_mult
+		if amount > 0.0:
+			e.take_damage(amount, center)
+		if burn > 0.0 and e.has_method("apply_burn"):
+			e.apply_burn(burn)
+		if knock_tiles > 0.0 and not e.is_tower():
+			var kind_s := String(e.get("kind"))
+			if e.get("stationary") == true or GIANT_KINDS.has(kind_s):
+				continue
+			var dir: Vector2 = e.position - center
+			if dir.length() > 0.01 and e.has_method("apply_impulse"):
+				e.apply_impulse(dir.normalized(), knock_tiles, 0.28)
+	var col := Color(1.0, 0.55, 0.15) if kind == "fireball" else Color(1.0, 0.8, 0.3)
+	var b := DDBurst.new()
+	b.setup(self, maxf(radius_t, 0.6), col)
+	b.position = center
+	add_child(b)
+	shake(7.0 if kind == "fireball" else 3.0)
 
 
 func register_unit(u: Node) -> void:
@@ -400,36 +587,37 @@ func is_doomed(t: Node) -> bool:
 # ------------------------------------------------------------------- movement
 
 func route_point(from: Vector2, goal: Vector2) -> Vector2:
-	var water_top := ORIGIN.y + float(RIVER_TOP) * TILE
-	var water_bottom := ORIGIN.y + float(RIVER_BOTTOM + 1) * TILE
-	var fr := int((from.y - ORIGIN.y) / TILE)
-	var gr := int((goal.y - ORIGIN.y) / TILE)
-	var going_down := gr > RIVER_BOTTOM and fr <= RIVER_BOTTOM
-	var going_up := gr < RIVER_TOP and fr >= RIVER_TOP
-	if not going_down and not going_up:
+	var f := tile_of(from)
+	var g := tile_of(goal)
+	var toward_enemy := g.y < RIVER_TOP and f.y >= RIVER_TOP
+	var toward_home := g.y > RIVER_BOTTOM and f.y <= RIVER_BOTTOM
+	if not toward_enemy and not toward_home:
 		return goal
-	var bx := nearest_bridge_x(from.x)
-	var tol := TILE * 0.8
-	if absf(from.x - bx) > tol:
-		return Vector2(bx, water_top - TILE * 0.7) if going_down else Vector2(bx, water_bottom + TILE * 0.7)
-	if going_down:
-		return Vector2(bx, water_bottom + TILE * 0.8)
-	return Vector2(bx, water_top - TILE * 0.8)
+	var bc := nearest_bridge_col(f.x)
+	var lane: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) + 0.5).lerp(tile_center(bc + 0.5, float(RIVER_BOTTOM) + 0.5), 0.5)
+	var own_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.5) if toward_enemy else tile_center(bc + 0.5, float(RIVER_TOP) - 0.5)
+	var far_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) - 1.5) if toward_enemy else tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.5)
+	# the axis we approach along is the one the river runs across
+	var cross := Vector2(1, 0) if LANDSCAPE else Vector2(0, 1)
+	var along := absf((from - lane).dot(cross))
+	if along > TILE * 1.6:
+		return Vector2(lane.x, from.y) if LANDSCAPE else Vector2(from.x, lane.y)
+	return far_bank if own_bank.distance_to(from) < far_bank.distance_to(from) else own_bank
 
 
-func nearest_bridge_x(x: float) -> float:
-	var a: float = ORIGIN.x + BRIDGE_COL_A * TILE
-	var b: float = ORIGIN.x + BRIDGE_COL_B * TILE
-	return a if absf(a - x) <= absf(b - x) else b
+func nearest_bridge_col(col: int) -> float:
+	var a := BRIDGE_COL_A
+	var b := BRIDGE_COL_B
+	return a if absf(a - float(col)) <= absf(b - float(col)) else b
 
 
 # --------------------------------------------------------------------- spawns
 
 func spawn_projectile(from: Vector2, to: Vector2, team: int, dmg: float, splash: float, kind: String,
 		owner_id: int = 0, mode: String = "bolt", pierce: bool = false, owner_node: Node = null,
-		speed_px: float = 0.0) -> void:
+		speed_px: float = 0.0, target_node: Node = null, payload: Dictionary = {}) -> void:
 	var p := DDProjectile.new()
-	p.setup(self, from, to, team, dmg, splash, kind, owner_id, mode, pierce, owner_node, speed_px)
+	p.setup(self, from, to, team, dmg, splash, kind, owner_id, mode, pierce, owner_node, speed_px, target_node, payload)
 	add_child(p)
 
 
@@ -440,24 +628,56 @@ func spawn_trail(at: Vector2, facing: float, team: int) -> void:
 	add_child(t)
 
 
-func spawn_splash_burst(center: Vector2, radius_t: float, dmg: float, team: int, color: Color) -> void:
-	damage_at_point(center, radius_t, dmg, team)
+func spawn_splash_burst(center: Vector2, radius_t: float, dmg: float, team: int, color: Color, tower_mult: float = 1.0) -> void:
+	damage_at_point(center, radius_t, dmg, team, tower_mult)
 	var b := DDBurst.new()
 	b.setup(self, radius_t, color)
 	b.position = center
 	add_child(b)
 
 
-func damage_at_point(center: Vector2, radius_t: float, dmg: float, team: int) -> void:
+func damage_at_point(center: Vector2, radius_t: float, dmg: float, team: int, tower_mult: float = 1.0) -> void:
 	for e in enemy_entities(team):
 		if not is_instance_valid(e):
 			continue
+		var amount := dmg
+		if tower_mult != 1.0 and e.is_tower():
+			amount = dmg * tower_mult
 		var d: float = tiles_between(center, e.position)
 		if radius_t <= 0.0:
 			if d <= float(e.get_radius_t()) + 0.25:
-				e.take_damage(dmg, center)
+				e.take_damage(amount, center)
 		elif d <= radius_t + float(e.get_radius_t()) * 0.5:
-			e.take_damage(dmg, center)
+			e.take_damage(amount, center)
+
+
+func show_damage() -> bool:
+	return view_mode == 1
+
+
+func spawn_damage_text(at: Vector2, amount: float, tint: Color) -> void:
+	if not show_damage():
+		return
+	var d = DDDamageText.new()
+	d.setup(self, at, amount, tint)
+	add_child(d)
+
+
+func death_aoe(center: Vector2, radius_t: float, dmg: float, slow_amount: float, slow_time: float, owner_team: int) -> void:
+	# troops only — the blast does not chip towers
+	for e in enemy_units(owner_team).duplicate():
+		if not is_instance_valid(e) or e.dead:
+			continue
+		if tiles_between(center, e.position) > radius_t + float(e.get_radius_t()) * 0.5:
+			continue
+		e.take_damage(dmg, center)
+		if e.has_method("slow"):
+			e.slow(slow_amount, slow_time)
+	var b := DDBurst.new()
+	b.setup(self, radius_t, Color(0.35, 0.55, 1.0))
+	b.position = center
+	add_child(b)
+	shake(4.0)
 
 
 func dragon_breath(center: Vector2, radius_t: float, dmg: float, owner_team: int) -> void:
@@ -482,11 +702,27 @@ func dragon_breath(center: Vector2, radius_t: float, dmg: float, owner_team: int
 	shake(3.0)
 
 
+const BOULDER_DIRECTIONS := 16
+
+
+const BOULDER_RUNUP := 2.5
+
+
 func spawn_boulder(from: Vector2, dir: Vector2, team: int) -> void:
 	var b := DDBoulder.new()
-	b.setup(self, dir, team)
-	b.position = from
+	var snap := snap_direction(dir)
+	# it breaks loose 2.5 tiles behind the idol so it rolls through the spot
+	b.setup(self, snap, team, 1.0, from)
+	b.position = from - snap * BOULDER_RUNUP * TILE
 	add_child(b)
+
+
+func snap_direction(dir: Vector2) -> Vector2:
+	if dir.length() < 0.001:
+		return Vector2(0, -1)
+	var step := TAU / float(BOULDER_DIRECTIONS)
+	var snapped := roundf(dir.angle() / step) * step
+	return Vector2(cos(snapped), sin(snapped))
 
 
 func shake(amount: float) -> void:
@@ -503,7 +739,7 @@ func banner_flash(text: String) -> void:
 # --------------------------------------------------------------- hero abilities
 
 func ability_name(player: int) -> String:
-	return "TENTACLE" if String(ability[player]) == "tentacle" else "GOBLIN RAID"
+	return "TENTACLE" if String(ability[player]) == "tentacle" else "SHIESTY"
 
 
 func ability_status(player: int) -> String:
@@ -515,7 +751,7 @@ func ability_status(player: int) -> String:
 		return "%dg" % ABILITY_COST
 	if String(ability[player]) == "tentacle" and _highest_hp_enemy_unit(player) == null:
 		return "no target"
-	if String(ability[player]) == "goblin" and _highest_hp_enemy_tower(player) == null:
+	if String(ability[player]) == "shiesty" and _highest_hp_enemy_tower(player) == null:
 		return "no tower"
 	return "READY"
 
@@ -530,6 +766,12 @@ func ability_valid(player: int) -> bool:
 	if String(ability[player]) == "tentacle":
 		return _highest_hp_enemy_unit(player) != null
 	return _highest_hp_enemy_tower(player) != null
+
+
+func ability_ready(player: int) -> bool:
+	if player < 0 or player > 1:
+		return false
+	return float(ability_cd[player]) <= 0.0
 
 
 func use_ability(player: int) -> bool:
@@ -560,12 +802,12 @@ func use_ability(player: int) -> bool:
 	gold[player] = float(gold[player]) - float(ABILITY_COST)
 	ability_cd[player] = ABILITY_COOLDOWN
 	var king := _king_of(player)
-	var g := DDGoblin.new()
+	var g := DDShiesty.new()
 	g.dmg = GOBLIN_DMG
 	g.setup(self, player, tower, king)
 	units.append(g)
 	add_child(g)
-	banner_flash("A goblin is launched at the tower!")
+	banner_flash("Shiesty is on the job!")
 	return true
 
 
@@ -605,6 +847,65 @@ func _highest_hp_enemy_tower(player: int) -> Node:
 func clear_selection() -> void:
 	selected_player = -1
 	selected_index = -1
+	debug_kind = ""
+
+
+func selection_kind() -> String:
+	if debug_kind != "":
+		return debug_kind
+	if selected_player >= 0 and selected_index >= 0:
+		var h: Array = hands[selected_player]
+		if selected_index < h.size():
+			return String(h[selected_index])
+	return ""
+
+
+func selection_owner() -> int:
+	return 0 if debug_kind != "" else selected_player
+
+
+func pick_debug_card(kind: String) -> void:
+	if kind == "":
+		return
+	if debug_kind == kind:
+		clear_selection()
+		return
+	debug_kind = kind
+	selected_player = 0
+	selected_index = -1
+
+
+func toggle_debug_shelf() -> void:
+	debug_shelf = not debug_shelf
+	debug_kind = ""
+	banner_flash("DEBUG: all-cards shelf %s" % ("ON" if debug_shelf else "OFF"))
+
+
+func deploy_debug(world: Vector2) -> void:
+	if debug_kind == "" or match_over:
+		return
+	var t := tile_of(world)
+	var team := 0
+	if t.y <= BAND_TOP - 1:
+		team = 1
+	elif row_is_band(t.y):
+		var c0 := controlled(0, t)
+		var c1 := controlled(1, t)
+		if c0 and c1:
+			team = randi() % 2
+		elif c1:
+			team = 1
+		elif c0:
+			team = 0
+		else:
+			team = 0 if t.y >= BAND_BOTTOM - 1 else 1
+	else:
+		team = 0
+	if not can_deploy(team, debug_kind, world):
+		banner_flash("No room for %s there for player %d" % [DDCard.pretty(debug_kind), team + 1])
+		return
+	spawn_troop(debug_kind, team, world)
+	banner_flash("DEBUG: %s for player %d" % [DDCard.pretty(debug_kind), team + 1])
 
 
 func _debug_gold(player: int, message: String) -> void:
@@ -648,11 +949,15 @@ func can_deploy(team: int, kind: String, world: Vector2) -> bool:
 	if team == 0:
 		if t.y >= BAND_BOTTOM + 1:
 			return true
+		if t.y >= BAND_BOTTOM - 1:
+			return true
 	else:
 		if t.y <= BAND_TOP - 1:
 			return true
+		if t.y <= BAND_TOP + 1:
+			return true
 	if row_is_band(t.y):
-		return tile_claim(team, t) > 0.4 and not tile_contested(t)
+		return controlled(team, t)
 	return false
 
 
@@ -685,9 +990,8 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 		add_child(s)
 		return s
 	var data: Dictionary = DDCard.get_card(kind)
-	var snapped := tile_center(
-		floorf((world.x - ORIGIN.x) / TILE) + 0.5,
-		floorf((world.y - ORIGIN.y) / TILE) + 0.5)
+	var world_tile := tile_of(world)
+	var snapped := tile_center(float(world_tile.x) + 0.5, float(world_tile.y) + 0.5)
 	var offsets: Array = data.get("swarm_offsets", [])
 	if offsets.is_empty() or single:
 		var u := DDUnit.new()
@@ -796,6 +1100,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
 		set_view_mode(1 - view_mode)
 		return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_A and view_mode == 1:
+		toggle_debug_shelf()
+		return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_B:
 		toggle_bot(1)
 		return
@@ -822,11 +1129,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			if hero_prompt_active(p) and hero_prompt_rect(p).has_point(world):
 				launch_hero(p)
 				return
-		if selected_player >= 0 and board_rect().has_point(world):
+		if debug_kind != "" and board_rect().has_point(world):
+			deploy_debug(world)
+		elif selected_player >= 0 and board_rect().has_point(world):
 			deploy(selected_player, selected_index, world)
 		elif not board_rect().has_point(world):
-			selected_player = -1
-			selected_index = -1
+			clear_selection()
 
 
 # --------------------------------------------------------------------- render
@@ -892,98 +1200,92 @@ func _draw() -> void:
 		var c0 := col_min(row)
 		var c1 := col_max(row)
 		for col in range(c0, c1 + 1):
-			var rect := Rect2(ORIGIN + Vector2(float(col), float(row)) * TILE, Vector2(TILE, TILE))
+			var rect := tile_rect(col, row)
 			var base := GRASS_A if (row + col) % 2 == 0 else GRASS_B
 			if row_is_band(row):
 				base = BAND_A if (row + col) % 2 == 0 else BAND_B
 			draw_rect(rect, base)
-	# halves tint
+	# halves tint (orientation agnostic: one row at a time)
 	for row in GRID_H:
 		var c0 := col_min(row)
-		var span := Rect2(ORIGIN + Vector2(float(c0), float(row)) * TILE, Vector2(float(col_max(row) - c0 + 1), 1.0) * TILE)
+		var span := row_span(c0, col_max(row), row)
 		if row < BAND_TOP:
 			draw_rect(span, Color(0.92, 0.35, 0.35, 0.07))
 		elif row > BAND_BOTTOM:
 			draw_rect(span, Color(0.35, 0.55, 1.0, 0.07))
 	# river
-	var river_span := Rect2(ORIGIN + Vector2(0.0, RIVER_TOP) * TILE, Vector2(GRID_W, float(RIVER_BOTTOM - RIVER_TOP + 1)) * TILE)
+	var river_span := tile_rect(col_min(RIVER_TOP), RIVER_TOP).merge(tile_rect(col_max(RIVER_BOTTOM), RIVER_BOTTOM))
 	draw_rect(river_span, WATER)
 	for i in 6:
-		var y := river_span.position.y + 10.0 + float(i) * 9.0
 		var phase := clock * 0.8 + float(i)
-		var x := river_span.position.x + fmod(phase * 26.0, river_span.size.x)
-		draw_line(Vector2(x, y), Vector2(x + 34.0, y), WATER_HI, 2.0, true)
+		if LANDSCAPE:
+			var x := river_span.position.x + 10.0 + float(i) * 9.0
+			var y := river_span.position.y + fmod(phase * 26.0, river_span.size.y)
+			draw_line(Vector2(x, y), Vector2(x, y + 34.0), WATER_HI, 2.0, true)
+		else:
+			var y2 := river_span.position.y + 10.0 + float(i) * 9.0
+			var x2 := river_span.position.x + fmod(phase * 26.0, river_span.size.x)
+			draw_line(Vector2(x2, y2), Vector2(x2 + 34.0, y2), WATER_HI, 2.0, true)
 	# bridges
-	for bx in [BRIDGE_COL_A, BRIDGE_COL_B]:
-		var br := Rect2(ORIGIN + Vector2(bx - 1.0, RIVER_TOP) * TILE, Vector2(2.0 * TILE, float(RIVER_BOTTOM - RIVER_TOP + 1) * TILE))
+	for bx in [int(BRIDGE_COL_A), int(BRIDGE_COL_B)]:
+		var br := tile_rect(bx - 1, RIVER_TOP).merge(tile_rect(bx, RIVER_BOTTOM))
 		draw_rect(br, WOOD)
-		for k in 6:
-			var y2 := br.position.y + 4.0 + float(k) * 9.0
-			draw_line(Vector2(br.position.x + 2.0, y2), Vector2(br.end.x - 2.0, y2), Color(0.45, 0.31, 0.2), 1.5, true)
-		draw_rect(br, DDArt.OUTLINE, false, 2.5)
-	# control tint (after water so river claims read)
-	for row in range(BAND_TOP, BAND_BOTTOM + 1):
-		for col in range(col_min(row), col_max(row) + 1):
-			var t := Vector2i(col, row)
-			var c0: float = tile_claim(0, t)
-			var c1: float = tile_claim(1, t)
-			if c0 <= 0.02 and c1 <= 0.02:
-				continue
-			var rect := Rect2(ORIGIN + Vector2(float(col), float(row)) * TILE, Vector2(TILE, TILE))
-			var f0 := clampf(c0 / CLAIM_TIME, 0.0, 1.0)
-			var f1 := clampf(c1 / CLAIM_TIME, 0.0, 1.0)
-			if c0 > 0.05 and c1 > 0.05:
-				draw_rect(rect, Color(0.72, 0.45, 0.95, 0.42))
-				draw_rect(rect, Color(0.85, 0.6, 1.0, 0.85), false, 1.5)
-			elif c0 > 0.05:
-				draw_rect(rect, Color(0.36, 0.62, 0.95, 0.3 + 0.3 * f0))
-				if f0 > 0.6:
-					draw_rect(rect, Color(0.6, 0.82, 1.0, 0.55), false, 1.0)
+		for k in 5:
+			if LANDSCAPE:
+				var x2 := br.position.x + 6.0 + float(k) * 16.0
+				draw_line(Vector2(x2, br.position.y + 2.0), Vector2(x2, br.end.y - 2.0), Color(0.45, 0.31, 0.2), 1.5, true)
 			else:
-				draw_rect(rect, Color(0.95, 0.42, 0.44, 0.3 + 0.3 * f1))
-				if f1 > 0.6:
-					draw_rect(rect, Color(1.0, 0.72, 0.7, 0.55), false, 1.0)
+				var y2 := br.position.y + 6.0 + float(k) * 16.0
+				draw_line(Vector2(br.position.x + 2.0, y2), Vector2(br.end.x - 2.0, y2), Color(0.45, 0.31, 0.2), 1.5, true)
+		draw_rect(br, DDArt.OUTLINE, false, 2.5)
+	# (control tint lives in DDControlLayer so it only repaints on change)
 	# dashed no-man's-land edges
 	for edge_row in [BAND_TOP, BAND_BOTTOM + 1]:
-		var y := ORIGIN.y + float(edge_row) * TILE
-		var x := ORIGIN.x
-		while x < ORIGIN.x + float(GRID_W) * TILE:
-			draw_line(Vector2(x, y), Vector2(x + 7.0, y), Color(1.0, 0.9, 0.55, 0.55), 2.0)
-			x += 14.0
-	# board outline (plus shape)
-	for row in GRID_H:
-		var c0 := col_min(row)
-		var c1 := col_max(row)
-		var left := ORIGIN.x + float(c0) * TILE
-		var right := ORIGIN.x + float(c1 + 1) * TILE
-		var top := ORIGIN.y + float(row) * TILE
-		var bot := top + TILE
-		draw_line(Vector2(left, top), Vector2(left, bot), DDArt.OUTLINE, 4.0, true)
-		draw_line(Vector2(right, top), Vector2(right, bot), DDArt.OUTLINE, 4.0, true)
-	draw_line(Vector2(ORIGIN.x + float(col_min(0)) * TILE, ORIGIN.y), Vector2(ORIGIN.x + float(col_max(0) + 1) * TILE, ORIGIN.y), DDArt.OUTLINE, 4.0, true)
-	var last := GRID_H - 1
-	var yb := ORIGIN.y + float(GRID_H) * TILE
-	draw_line(Vector2(ORIGIN.x + float(col_min(last)) * TILE, yb), Vector2(ORIGIN.x + float(col_max(last) + 1) * TILE, yb), DDArt.OUTLINE, 4.0, true)
-	for edge_row in [BAND_TOP, BAND_BOTTOM + 1]:
-		var y := ORIGIN.y + float(edge_row) * TILE
-		draw_line(Vector2(ORIGIN.x, y), Vector2(ORIGIN.x + TILE, y), DDArt.OUTLINE, 4.0, true)
-		draw_line(Vector2(ORIGIN.x + float(GRID_W - 1) * TILE, y), Vector2(ORIGIN.x + float(GRID_W) * TILE, y), DDArt.OUTLINE, 4.0, true)
+		var er := tile_rect(col_min(edge_row), edge_row)
+		var across := board_rect().size.y if LANDSCAPE else board_rect().size.x
+		var start := board_rect().position.y if LANDSCAPE else board_rect().position.x
+		var at: float = er.position.x if LANDSCAPE else er.position.y
+		var k2 := 0.0
+		while k2 < across:
+			if LANDSCAPE:
+				draw_line(Vector2(at, start + k2), Vector2(at, start + k2 + 9.0), Color(1.0, 0.9, 0.55, 0.55), 2.0)
+			else:
+				draw_line(Vector2(start + k2, at), Vector2(start + k2 + 9.0, at), Color(1.0, 0.9, 0.55, 0.55), 2.0)
+			k2 += 18.0
+	# board silhouette: three slabs make the plus shape
+	draw_rect(tile_rect(col_min(0), 0).merge(tile_rect(col_max(GRID_H - 1), BAND_TOP - 1)), DDArt.OUTLINE, false, 4.0)
+	draw_rect(tile_rect(col_min(BAND_TOP), BAND_TOP).merge(tile_rect(col_max(BAND_BOTTOM), BAND_BOTTOM)), DDArt.OUTLINE, false, 4.0)
+	draw_rect(tile_rect(col_min(GRID_H - 1), BAND_BOTTOM + 1).merge(tile_rect(col_max(GRID_H - 1), GRID_H - 1)), DDArt.OUTLINE, false, 4.0)
 	# deploy hint
-	if selected_player >= 0 and not match_over and selected_index >= 0:
-		var kind: String = hands[selected_player][selected_index]
+	var armed := selection_kind()
+	if armed != "" and not match_over:
+		var kind: String = armed
+		var sel_player := selection_owner()
 		if not DDCard.is_spell(kind):
 			for row in GRID_H:
 				for col in range(col_min(row), col_max(row) + 1):
 					var t := Vector2i(col, row)
-					if not can_deploy(selected_player, kind, ORIGIN + Vector2(float(col) + 0.5, float(row) + 0.5) * TILE):
+					if not can_deploy(sel_player, kind, tile_center(float(col) + 0.5, float(row) + 0.5)):
 						continue
-					draw_rect(Rect2(ORIGIN + Vector2(float(col), float(row)) * TILE, Vector2(TILE, TILE)), Color(0.9, 0.95, 0.6, 0.13))
+					draw_rect(tile_rect(col, row), Color(0.9, 0.95, 0.6, 0.13))
 		var m := get_global_mouse_position()
 		if board_rect().has_point(m):
-			var ok := can_deploy(selected_player, kind, m)
-			var col2 := Color(0.5, 1.0, 0.6, 0.8) if ok else Color(1.0, 0.35, 0.35, 0.8)
-			draw_arc(m, TILE * 0.9, 0.0, TAU, 32, col2, 2.5, true)
-			DDArt.icon(self, kind, m, TILE * 0.55, clock)
+			var tt := tile_of(m)
+			var at := tile_center(float(tt.x) + 0.5, float(tt.y) + 0.5)
+			var ok := can_deploy(sel_player, kind, m)
+			var col2 := Color(0.5, 1.0, 0.6, 0.85) if ok else Color(1.0, 0.35, 0.35, 0.85)
+			draw_rect(Rect2(at - Vector2(TILE, TILE) * 0.5, Vector2(TILE, TILE)), col2, false, 2.5)
+			if DDCard.is_spell(kind):
+				var rad: float = maxf(float(DDCard.get_card(kind)["splash"]), 0.5) * TILE
+				draw_circle(at, rad, Color(1.0, 0.6, 0.2, 0.16 if ok else 0.1))
+				draw_arc(at, rad, 0.0, TAU, 48, col2, 2.5, true)
+			if preview != null:
+				preview.show_for(kind, sel_player, at)
+		elif preview != null:
+			preview.hide_preview()
+	else:
+		if preview != null:
+			preview.hide_preview()
 	# bot intent, only rendered while both hands are on screen
 	for p in 2:
 		var tp := bot_target(p)
@@ -993,7 +1295,7 @@ func _draw() -> void:
 		draw_arc(tp, TILE * 1.15, 0.0, TAU, 32, Color(0.55, 0.85, 1.0, 0.5 + 0.4 * pulse), 2.5, true)
 		draw_arc(tp, TILE * 0.55, 0.0, TAU, 24, Color(1.0, 0.95, 0.75, 0.7), 2.0, true)
 	# hover inspection (only when nothing is armed)
-	if selected_player < 0 and not match_over:
+	if selection_kind() == "" and not match_over:
 		_draw_hover(get_global_mouse_position())
 	# control chip
 	var counts := control_counts()
@@ -1007,22 +1309,19 @@ func _draw() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(chip.position.x + 12.0, chip.position.y + 21.0), label,
 		HORIZONTAL_ALIGNMENT_CENTER, chip_w - 24.0, 15, Color(1.0, 0.93, 0.78))
 	if view_mode == 1:
-		draw_string(ThemeDB.fallback_font, Vector2(board_rect().position.x, chip.end.y + 16.0),
-			"DEBUG  1 = +1 gold P1    2 = +1 both    3 = +1 P2    B = bot",
-			HORIZONTAL_ALIGNMENT_CENTER, board_rect().size.x, 13, Color(0.75, 0.8, 0.95, 0.75))
-	# solo-mode opponent strip
-	if view_mode == 0:
-		var strip := Rect2(960.0, 46.0, 430.0, 120.0)
-		draw_rect(strip, Color(0.1, 0.1, 0.14, 0.96), true)
-		draw_rect(strip, DDArt.OUTLINE, false, 3.0)
-		draw_rect(Rect2(strip.position, Vector2(strip.size.x, 6.0)), RED, true)
-		draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 20.0, strip.position.y + 40.0), "OPPONENT",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 22, RED.lightened(0.3))
-		DDArt.coin(self, Vector2(strip.position.x + 30.0, strip.position.y + 74.0), 12.0)
-		draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 50.0, strip.position.y + 81.0),
-			"%d gold" % int(floor(gold[1])), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.98, 0.85, 0.45))
-		draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 20.0, strip.position.y + 108.0),
-			"TAB — show both hands", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 0.7, 0.8))
+		draw_string(ThemeDB.fallback_font, Vector2(ORIGIN.x, 30.0),
+			"DEBUG  1 = +1 gold P1   2 = +1 both   3 = +1 P2   B = bot",
+			HORIZONTAL_ALIGNMENT_LEFT, 620.0, 13, Color(0.75, 0.8, 0.95, 0.75))
+	# opponent chip (top right, clear of the board)
+	var strip := Rect2(1372.0, 8.0, 216.0, 40.0)
+	draw_rect(strip, Color(0.1, 0.1, 0.14, 0.96), true)
+	draw_rect(strip, DDArt.OUTLINE, false, 2.0)
+	draw_rect(Rect2(strip.position, Vector2(strip.size.x, 4.0)), RED, true)
+	draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 14.0, strip.position.y + 26.0), "OPPONENT",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, RED.lightened(0.3))
+	DDArt.coin(self, Vector2(strip.position.x + 128.0, strip.position.y + 21.0), 10.0)
+	draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 143.0, strip.position.y + 27.0),
+		"%d" % int(floor(gold[1])), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.98, 0.85, 0.45))
 	# hero prompt
 	for p in 2:
 		if hero_prompt_active(p):

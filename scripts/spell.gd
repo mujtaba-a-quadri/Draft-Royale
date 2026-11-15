@@ -1,15 +1,21 @@
 class_name DDSpell
 extends Node2D
 
+## Spells are fired out of one of the caster's towers, not dropped from the sky.
+##   launch "closest"  the friendly tower nearest the target point
+##   launch "king"     the king tower
+## The node exists for one frame: it picks the tower, spawns the bolt and dies.
+
 var kind := "fireball"
 var team := 0
 var area: Node2D = null
-var clock := 0.0
-var fall := 0.32
-var burst := 0.45
-var applied := false
-var radius_t := 2.0
-var dmg := 100.0
+var dmg := 0.0
+var radius_t := 1.0
+var tower_mult := 1.0
+var burn := 0.0
+var knock := 0.0
+var launch := "closest"
+var fired := false
 
 
 func setup(a: Node2D, k: String, tm: int) -> void:
@@ -17,34 +23,28 @@ func setup(a: Node2D, k: String, tm: int) -> void:
 	kind = k
 	team = tm
 	var d: Dictionary = DDCard.get_card(k)
-	radius_t = float(d["splash"])
-	dmg = float(d["dmg"])
+	dmg = float(d.get("dmg", 0.0))
+	radius_t = float(d.get("splash", 0.0))
+	tower_mult = float(d.get("tower_mult", 1.0))
+	burn = float(d.get("burn", 0.0))
+	knock = float(d.get("knock", 0.0))
+	launch = String(d.get("launch", "closest"))
 	z_index = 20
 
 
-func _physics_process(delta: float) -> void:
-	clock += delta
-	if not applied and clock >= fall:
-		applied = true
-		var col := Color(1.0, 0.55, 0.15) if kind == "fireball" else Color(1.0, 0.8, 0.3)
-		area.spawn_splash_burst(position, radius_t, dmg, team, col)
-		area.shake(7.0 if kind == "fireball" else 3.0)
-	if clock >= fall + burst:
-		queue_free()
-	queue_redraw()
-
-
-func _draw() -> void:
-	var r: float = radius_t * area.TILE
-	if clock < fall:
-		var f := clock / fall
-		var y := lerpf(-260.0, 0.0, f * f)
-		draw_set_transform(Vector2(0, y), 0.0, Vector2.ONE)
-		DDArt.creature(self, kind, area.TILE * 0.42, 1.0, clock * 6.0)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(1, 1, 1, 0.35), 2.0, true)
-	else:
-		var f := clampf((clock - fall) / burst, 0.0, 1.0)
-		var col := Color(1.0, 0.55, 0.15, (1.0 - f) * 0.55) if kind == "fireball" else Color(1.0, 0.8, 0.3, (1.0 - f) * 0.5)
-		draw_circle(Vector2.ZERO, r * (0.55 + f * 0.55), col)
-		draw_arc(Vector2.ZERO, r * (0.55 + f * 0.55), 0.0, TAU, 40, Color(1, 1, 1, (1.0 - f) * 0.7), 3.0, true)
+func _physics_process(_delta: float) -> void:
+	if fired:
+		return
+	fired = true
+	var origin: Vector2 = position
+	var tw: Node = null
+	if launch == "king":
+		tw = area.crown_tower(team)
+	if tw == null:
+		tw = area.nearest_own_tower(team, position)
+	if tw != null:
+		origin = tw.position + Vector2(0.0, -float(area.TILE) * 0.9)
+	area.spawn_projectile(origin, position, team, dmg, radius_t, kind,
+		0, "bolt", false, null, 0.0, null,
+		{"burn": burn, "knock": knock, "tower_mult": tower_mult, "spell": true})
+	queue_free()

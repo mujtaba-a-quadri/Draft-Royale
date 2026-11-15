@@ -21,6 +21,8 @@ godot --path .                 # play
 | Hover a troop or tower (no card armed) | Name + HP, **pale yellow aggro ring**, **pale red attack-range ring** |
 | B | Toggle the bot for player 2 |
 | 1 / 2 / 3 (**Tab / debug view only**) | Debug gold: +1 to player 1 / both players / player 2 |
+| Tab (dual view) | Shows floating **damage numbers** on troops: white under 20, amber 20+, red on a killing hit |
+| A (**Tab / debug view only**) | Toggle the **all-cards shelf**: the bottom hand becomes a 4-column grid of every card, hover for its description, click to arm and place it for free. Placing on the **top half** deploys it for the opponent; on **purple (both-controlled)** tiles the side is random |
 | R | Restart after a match ends |
 
 Both hands are live at once: the left panel is Player 1 (blue, bottom half),
@@ -33,10 +35,19 @@ never disarms yours.
 * **30 rows tall.** Rows 1-10 (top) and 19-28 (bottom) are 16 tiles wide; the
   middle band of 8 rows (11-18) bulges out to 18 tiles, so the board reads as a
   plus. River at rows 14-15, bridges at columns 4-5 and 12-13.
-* **No-man's land** — the middle band is neutral. A ground troop standing on a
-  band tile claims it for its team for 4 s after it leaves. You may only deploy
-  inside the band on tiles you currently claim and the enemy does not. Flying
-  units never claim. No deployment within 3.5 tiles of an enemy tower.
+* **Hover preview** — armed cards preview on the grid: tile outline plus a tinted ghost (or the
+  whole swarm formation) and, for spells, the splash radius.
+* **No-man's land** — the middle band of 8 rows. Each player may **always** deploy
+  on the 2 band rows nearest their own half (rows 17-18 for the bottom player,
+  11-12 for the top), so the free zone always reaches one row from the river.
+  Anything deeper needs **presence**: a ground troop projects a **cone** that opens
+  back toward its own half — 3 tiles wide on its own row, 5 one row back, 7, then 9.
+  Lizard Soldiers project the same cone **one row further forward**. Control is not exclusive — both
+  players can hold and deploy on the same tile. Flying units project no control,
+  and Shiesty projects none either. The grid is cached and only recomputed when
+  a unit changes tile (drawn by `control_layer.gd`, which repaints on that change
+  instead of every frame).
+  No deployment within 3.5 tiles of an enemy tower.
 * **View modes** — solo layout (cards on the left third, arena on the right,
   opponent info strip) and dual hotseat (both hands). Tab toggles; the panel
   button does the same.
@@ -50,17 +61,20 @@ never disarms yours.
 | Card | Cost | HP | Damage | Notes |
 | --- | --- | --- | --- | --- |
 | Hero | 3 | 150 | 25 / 1.0 s | Very high HP for the cost. Also rides down an airborne dragon |
-| Snowman | 2 | 90 | – | Stationary decoy, 30 s lifetime, draws attention (7.5 tile lure) |
+| Snowman | 2 | 90 | – | Stationary decoy, 30 s lifetime, draws attention (7.5 tile lure). **On death: 3-tile blast for 30 damage and a 3 s / 30 % slow** (troops only, dark blue tint) |
 | Slate | 3 | **200** | 12 / 1.6 s | Slow tank that ignores every moving troop — only structures and towers |
 | The Chained Dragon | 9 | **400** | claw 45 / 1.4 s → breath 45 | Chained on the ground; at half HP it flies and burns the ground |
 | Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges its caster's tower at high speed and detonates for 100 |
-| Fireball | 5 | – | 100 splash (2.0 tiles) | Spell, any position |
-| Firebolt | 2 | – | 70 splash (0.85 tiles) | Spell, any position |
-| Golden Idol | 4 | 35 | – | Stationary, taunts. On death rolls a boulder toward its killer: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
+| Fireball | 5 | – | 40 splash + **60 burn**, shoves loose units 1.2 tiles out | Fired from your **king tower**; `tower_mult` cuts tower damage |
+| Firebolt | 2 | – | **No damage — 40 burn** | An arrow of fire from your **nearest tower** |
+| Golden Idol | 4 | 35 | – | Stationary, taunts. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
 | Hedgehog | 3 | 60 each | 10 / 1.2 s | Three burrowers. In melee they **curl**: 45 % incoming damage, the quill burst deals 12 and shoves enemies 0.7 tiles (thorns range 2.2 keeps them inside it), and every hit taken inside thorns range returns 8 fixed damage |
 | Zombie Horde | 6 | 111 each | 15 / 1.0 s each | Six melee bruisers in a 2x3 block. **Anything a zombie kills rises as a full-HP zombie on the killer's side** |
 | Honeycreeper Flock | 4 | 10 each (lead 20) | 6 / 1.0 s each | Flying swarm of 5 in a diamond, lead i'iwi in front. Ground troops can't touch them; they can hit the flying dragon. Alchemist and Boomerang-Fu can hit air too |
-| Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
+| Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s (range 0.7) | Wedge of three. **Always retargets the weakest troop in range**, not the nearest, and its presence cone sits **one row further forward** |
+| Lizard Warren | 4 | 130 | – | Stationary burrow. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
+| Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn, then **10 claws + 5 burn** after 3 hits on one target | Pecks from range; three hits and it takes to the air (becomes a flyer) to claw at close range |
+| Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick (never on air — he throws at flyers even point blank) | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
 
 Tower fire: 12 damage / 1.0 s, 6 tile range.
 
@@ -88,6 +102,7 @@ without redoing animation:
 * **Attack** — a 0.14 s lunge: +20 % scale along the axis of the target direction,
   −10 % across it.
 * **Hurt** — a light pink flash for exactly 2 physics frames.
+* **Slowed** — a dark blue tint + ring for as long as the slow lasts.
 
 ## Combat primitives (shared by every card)
 
@@ -168,13 +183,58 @@ panel and shows the cooldown, or the reason it cannot fire (`2g`, `no target`,
 | Ability | Effect |
 | --- | --- |
 | **Tentacle** | Bursts from the ground under the enemy troop with the most HP. Deals **20 on reveal** (no more after that) and holds it for **4 s**. The tentacle has **20 HP**; the ensnared side's own units or towers can kill it to free their troop early |
-| **Goblin Raid** | Launches a goblin from your king tower at the enemy tower with the most HP (leftmost on a tie). It hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot, being killed on the way hands it back |
+| **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot, being killed on the way hands it back. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him |
 
 The bot uses its ability too, whenever it is ready and it can spare the gold
 (gold >= 5, so it does not starve its card economy).
 
-Force a specific assignment for testing: `--ability=tentacle` or `--ability=goblin`
+Force a specific assignment for testing: `--ability=tentacle` or `--ability=shiesty`
 (player 1 gets it, player 2 gets the other).
+
+### Statuses
+
+Only **one** status can be on a unit; the newest application replaces whatever was there.
+
+* **Burn** — orange tint that pulses on every tick. Each second it deals `floor(30 % of the stack)`
+  and removes that much from the stack, so it decays slowly. Four ticks without a fresh application
+  and the whole thing goes out. A 40 burn on a 90 hp dummy ticks 12 / 8 / 6 / 4 and stops.
+* **Slow** — dark blue tint; movement only, for a fixed duration.
+
+### Orientation
+
+The board is drawn **landscape**: your half on the LEFT, the enemy on the RIGHT, hand along the
+bottom. Flip `LANDSCAPE` in `arena.gd` to get the original portrait board back — every drawing
+primitive goes through `tile_rect()` / `tile_center()` / `tile_of()`, so nothing else has to change
+(only the HUD layout would need to follow).
+
+### The hand
+
+Cards are **compact TCG faces** — cost medallion, name, HP (`60 ×3` for swarms), tall art, stat
+strip and the attack line with its timing. No flavour text.
+
+* **Hover** enlarges a card in place (1.3×) without moving it out of the strip.
+* **Press and drag** pulls it out at normal size and it follows the cursor.
+* Over the board the card fades out (22 %) and the **board preview takes over**: tile outline,
+  tinted swarm ghost, spell radius.
+* **Release over the board** deploys; release anywhere else leaves the card armed.
+
+### Hover previews
+
+While a card is armed, the tile under the cursor is outlined on the grid and a ghost of the
+placement is drawn on the **tile centre**: swarms show the whole formation, the ghost is
+half-transparent and tinted the placing team's colour, and spells draw their damage radius.
+Legal tiles highlight green, illegal red.
+
+### Towers
+
+Towers fire an **aimed single-target bolt** — no splash, so a stacked pair only loses one body per shot.
+
+### Boomerang rules
+
+* Outbound it strikes **only the unit (or tower) it was aimed at** — one hit per throw, even against a
+  fast target, and towers are fair game.
+* On the way home it can still clip **anything closer than that target**, once each.
+* It travels at 2 tiles/s, so a long throw is a slow, readable commitment.
 
 ## The bot (utility AI v1)
 

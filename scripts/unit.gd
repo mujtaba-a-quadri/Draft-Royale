@@ -60,6 +60,23 @@ var knock_time := 0.0
 
 var curl_cfg: Dictionary = {}
 var curled := false
+var chicken_cfg: Dictionary = {}
+var chicken_hits := 0
+var chicken_target := 0
+var airborne := false
+var burn_per_hit := 0.0
+var targets_weakest := false
+var presence_shift := 0
+var summon_cfg: Dictionary = {}
+var summon_cd := 0.0
+enum Status { NONE, SLOW, BURN }
+var status: int = Status.NONE
+var slow_amount := 0.0
+var slow_time := 0.0
+var burn_stack := 0.0
+var burn_ticks := 0
+var burn_timer := 0.0
+var burn_pulse := 0.0
 var boom_cfg: Dictionary = {}
 var throw_cd := 0.0
 var throw_dist := 0.0
@@ -101,6 +118,11 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	roll_cfg = d.get("roll", {})
 	boom_cfg = d.get("boomerang", {})
 	curl_cfg = d.get("curl", {})
+	chicken_cfg = d.get("chicken", {})
+	burn_per_hit = float(d.get("burn", 0.0))
+	targets_weakest = bool(d.get("targets_weakest", false))
+	presence_shift = int(d.get("presence_shift", 0))
+	summon_cfg = d.get("summon", {})
 	ground_speed = speed
 	ground_reach = reach
 	deploy_timer = DEPLOY_DELAY
@@ -142,6 +164,42 @@ func apply_impulse(dir: Vector2, tiles: float, duration: float) -> void:
 		roll_level = 0
 		roll_timer = 0.0
 		speed = ground_speed
+
+
+## Only one status can be active; the newest one replaces whatever was there.
+func clear_status() -> void:
+	status = Status.NONE
+	slow_amount = 0.0
+	slow_time = 0.0
+	burn_stack = 0.0
+	burn_ticks = 0
+	burn_timer = 0.0
+
+
+func slow(amount: float, seconds: float) -> void:
+	if dead or amount <= 0.0:
+		return
+	if status != Status.SLOW:
+		burn_stack = 0.0
+		burn_ticks = 0
+		burn_timer = 0.0
+	status = Status.SLOW
+	slow_amount = amount
+	slow_time = maxf(slow_time, seconds)
+
+
+## Burn: a stack that eats 30 % of itself per second. Four seconds without a
+## fresh application and the whole thing goes out.
+func apply_burn(amount: float) -> void:
+	if dead or amount <= 0.0:
+		return
+	if status != Status.BURN:
+		slow_amount = 0.0
+		slow_time = 0.0
+		burn_timer = 1.0
+	status = Status.BURN
+	burn_stack += amount
+	burn_ticks = 0
 
 
 func catch_projectile() -> void:
@@ -200,6 +258,30 @@ func _physics_process(delta: float) -> void:
 	atk_cd = maxf(0.0, atk_cd - delta)
 	throw_cd = maxf(0.0, throw_cd - delta)
 
+	if burn_pulse > 0.0:
+		burn_pulse = maxf(0.0, burn_pulse - delta * 1.7)
+	if status == Status.BURN:
+		burn_timer -= delta
+		if burn_timer <= 0.0:
+			burn_timer += 1.0
+			var tick_dmg := floorf(burn_stack * 0.3)
+			if tick_dmg <= 0.0:
+				clear_status()
+			else:
+				burn_stack = maxf(0.0, burn_stack - tick_dmg)
+				burn_ticks += 1
+				burn_pulse = 1.0
+				take_damage(tick_dmg, position)
+				if dead or burn_ticks >= 4 or burn_stack <= 0.0:
+					clear_status()
+	elif status == Status.SLOW:
+		slow_time = maxf(0.0, slow_time - delta)
+		if slow_time <= 0.0:
+			clear_status()
+
+	if not summon_cfg.is_empty():
+		_tick_summon(delta)
+
 	# curled hedgehog: hold position while anything is inside thorn range
 	if not curl_cfg.is_empty() and curled:
 		if _enemy_within(float(curl_cfg["thorn_range"])) == null:
@@ -218,6 +300,8 @@ func _physics_process(delta: float) -> void:
 			target = tw
 
 	if target == null or not _target_valid(target):
+		target = _acquire()
+	elif atk_cd <= 0.0 and targets_weakest:
 		target = _acquire()
 	elif atk_cd <= 0.0:
 		var cand: Node = _acquire()
@@ -273,7 +357,8 @@ func _move(delta: float) -> void:
 	dir = dir.normalized()
 	if absf(dir.x) > 0.05:
 		facing = signf(dir.x)
-	position += dir * speed * arena.TILE * delta
+	var spd := speed * (1.0 - (slow_amount if status == Status.SLOW else 0.0))
+	position += dir * spd * arena.TILE * delta
 	moved_this_frame = true
 
 
@@ -302,6 +387,9 @@ func _attack() -> void:
 	if not boom_cfg.is_empty():
 		_attack_fu()
 		return
+	if not chicken_cfg.is_empty():
+		_attack_chicken()
+		return
 	var dist: float = arena.tiles_between(position, target.position)
 	atk_cd = interval + cooldown_per_tile * dist
 	if absf(target.position.x - position.x) > 1.0:
@@ -326,12 +414,43 @@ func _attack() -> void:
 			arena.release_reservation(get_instance_id())
 
 
+func _attack_chicken() -> void:
+	if target == null or atk_cd > 0.0:
+		return
+	if airborne:
+		var dir: Vector2 = target.position - position
+		if absf(dir.x) > 0.01:
+			facing = signf(dir.x)
+		_mark_attack()
+		atk_cd = float(chicken_cfg["claw_interval"])
+		target.take_damage(float(chicken_cfg["claw_dmg"]), position, self)
+		if burn_per_hit > 0.0 and target.has_method("apply_burn"):
+			target.apply_burn(burn_per_hit)
+		return
+	_mark_attack()
+	atk_cd = interval
+	var id: int = target.get_instance_id()
+	if id == chicken_target:
+		chicken_hits += 1
+	else:
+		chicken_target = id
+		chicken_hits = 1
+	arena.spawn_projectile(position, target.position, team, dmg, 0.0, "chicken",
+		get_instance_id(), "bolt", false, self, float(chicken_cfg["fire_speed"]), target,
+		{"burn": burn_per_hit})
+	if chicken_hits >= int(chicken_cfg["hits_to_fly"]):
+		airborne = true
+		flying = true
+		reach = float(chicken_cfg["claw_reach"])
+
+
 func _attack_fu() -> void:
 	var gap: float = arena.gap_between(position, target.position, radius_t, float(target.get_radius_t()))
 	var dist: float = arena.tiles_between(position, target.position)
 	if absf(target.position.x - position.x) > 0.6:
 		facing = signf(target.position.x - position.x)
-	if gap <= float(boom_cfg["melee_range"]):
+	var target_airborne: bool = target.get("flying") == true
+	if gap <= float(boom_cfg["melee_range"]) and not target_airborne:
 		# melee combo: quick jabs ending in a kick that re-opens throwing range
 		_mark_attack()
 		atk_cd = float(boom_cfg["melee_interval"])
@@ -350,7 +469,7 @@ func _attack_fu() -> void:
 	atk_cd = 999.0
 	var speed_px: float = float(boom_cfg["throw_speed_tiles"]) * arena.TILE
 	arena.spawn_projectile(position, target.position, team, dmg, 0.0, "boomerang",
-		get_instance_id(), "return", true, self, speed_px)
+		get_instance_id(), "return", false, self, speed_px, target)
 
 
 func _enemy_within(range_t: float) -> Node:
@@ -434,7 +553,54 @@ func _target_valid(t: Node) -> bool:
 	return true
 
 
+func _tick_summon(delta: float) -> void:
+	summon_cd = maxf(0.0, summon_cd - delta)
+	if summon_cd > 0.0:
+		return
+	var rng_t := float(summon_cfg["range"])
+	var near := false
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		if arena.tiles_between(position, e.position) <= rng_t:
+			near = true
+			break
+	if not near:
+		return
+	summon_cd = float(summon_cfg["cooldown"])
+	var kind_s := String(summon_cfg["unit"])
+	var n := int(summon_cfg["count"])
+	var ydir := -1.0 if team == 0 else 1.0
+	for i in n:
+		var ang := TAU * float(i) / float(n) + PI * 0.5
+		var at: Vector2 = position + Vector2(cos(ang) * 1.0, sin(ang) * 1.0 + ydir * 0.5) * float(arena.TILE)
+		arena.spawn_troop(kind_s, team, at, true)
+	arena.shake(2.0)
+
+
 func _acquire() -> Node:
+	if targets_weakest:
+		var weakest: Node = null
+		var worst_hp := INF
+		for e in arena.enemy_entities(team):
+			if not is_instance_valid(e) or e.dead:
+				continue
+			if e.is_tower():
+				continue
+			if e.get("flying") == true and not hits_air:
+				continue
+			if arena.is_doomed(e):
+				continue
+			if buildings_only and not e.is_building():
+				continue
+			var dw: float = arena.tiles_between(position, e.position)
+			if dw > aggro:
+				continue
+			var ehp := float(e.get("hp"))
+			if ehp < worst_hp:
+				worst_hp = ehp
+				weakest = e
+		return weakest
 	var best: Node = null
 	var best_d := INF
 	for e in arena.enemy_entities(team):
@@ -475,6 +641,9 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 	hp -= taken
 	flash = 0.5
 	hurt_frames = 2
+	if arena.show_damage():
+		var tint := Color(1.0, 0.45, 0.45) if hp <= 0.0 else (Color(1.0, 0.85, 0.5) if taken >= 20.0 else Color(0.95, 0.95, 1.0))
+		arena.spawn_damage_text(position + Vector2(0.0, -radius_t * arena.TILE - 8.0), taken, tint)
 	# quills: fixed damage back at anything hitting us from within thorn range
 	if curled and not curl_cfg.is_empty() and arena.damage_guard == 0:
 		var src_node: Node = attacker
@@ -529,6 +698,11 @@ func _die() -> void:
 	if dead:
 		return
 	dead = true
+	# death blast (snowman): damage + slow around the corpse
+	var da: Dictionary = DDCard.get_card(kind).get("death_aoe", {})
+	if not da.is_empty():
+		arena.death_aoe(position, float(da["radius"]), float(da["dmg"]),
+			float(da["slow"]), float(da["slow_time"]), team)
 	# zombies raise whatever they kill, on their own side
 	if kind != "zombie" and last_attacker != null and is_instance_valid(last_attacker):
 		if String(last_attacker.get("kind")) == "zombie":
@@ -537,9 +711,12 @@ func _die() -> void:
 				risen.deploy_timer = 0.0
 			arena.banner_flash("Another one rises...")
 	if kind == "idol":
+		var src := last_from
+		if last_attacker != null and is_instance_valid(last_attacker):
+			src = last_attacker.position
 		var dir := Vector2(0, -1)
-		if last_from != Vector2.INF:
-			dir = (last_from - position)
+		if src != Vector2.INF:
+			dir = src - position
 			if dir.length() < 0.01:
 				dir = Vector2(0, -1)
 			dir = dir.normalized()
@@ -588,6 +765,14 @@ func _draw() -> void:
 		DDArt.dragon(self, px, facing, clock, flying, 0.0)
 	else:
 		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2)
+	if status == Status.SLOW:
+		draw_circle(Vector2.ZERO, px * 1.15, Color(0.18, 0.32, 0.85, 0.45))
+		draw_arc(Vector2.ZERO, px * 1.15, 0.0, TAU, 20, Color(0.35, 0.55, 1.0, 0.6), 2.0, true)
+	elif status == Status.BURN:
+		var pulse := 0.2 + 0.45 * burn_pulse
+		draw_circle(Vector2.ZERO, px * (1.08 + 0.16 * burn_pulse), Color(1.0, 0.42, 0.1, pulse))
+		draw_arc(Vector2.ZERO, px * (1.08 + 0.16 * burn_pulse), 0.0, TAU, 20,
+			Color(1.0, 0.72, 0.25, 0.45 + 0.4 * burn_pulse), 2.0, true)
 	if hurt_frames > 0:
 		draw_circle(Vector2.ZERO, px * 1.0, Color(1.0, 0.55, 0.72, 0.62))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

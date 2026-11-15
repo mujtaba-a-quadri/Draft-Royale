@@ -34,11 +34,21 @@ var leg := 1.0
 var hit: Dictionary = {}
 var spin := 0.0
 var home_point := Vector2.ZERO
+var target_node: Node = null
+var burn := 0.0
+var knock_tiles := 0.0
+var tower_mult := 1.0
+var spell_blast := false
 
 
 func setup(a: Node2D, f: Vector2, t: Vector2, tm: int, dm: float, sp: float, k: String,
 		owner: int = 0, mode_s: String = "bolt", pierce_s: bool = false, owner_n: Node = null,
-		speed_override: float = 0.0) -> void:
+		speed_override: float = 0.0, target_n: Node = null, payload: Dictionary = {}) -> void:
+	target_node = target_n
+	burn = float(payload.get("burn", 0.0))
+	knock_tiles = float(payload.get("knock", 0.0))
+	tower_mult = float(payload.get("tower_mult", 1.0))
+	spell_blast = bool(payload.get("spell", false))
 	area = a
 	from = f
 	to = t
@@ -86,18 +96,35 @@ func _travel_out(delta: float) -> void:
 	travel += speed_px * delta
 	var f := clampf(travel / leg, 0.0, 1.0)
 	position = from.lerp(to, f)
-	if pierce:
+	# a boomerang only strikes the thing it was aimed at on the way out
+	if target_node != null and is_instance_valid(target_node):
+		var id: int = target_node.get_instance_id()
+		if not hit.has(id):
+			var tr := 0.55 + float(target_node.get_radius_t())
+			if area.tiles_between(position, target_node.position) <= tr:
+				hit[id] = true
+				if dmg > 0.0:
+					target_node.take_damage(dmg, position)
+				if burn > 0.0 and target_node.has_method("apply_burn"):
+					target_node.apply_burn(burn)
+				_finish_out()
+				return
+	elif pierce:
 		_pierce_hits()
 	if f >= 1.0:
-		if not pierce:
+		if target_node == null and not pierce:
 			_impact()
-		if mode == "return":
-			phase = Phase.BACK
-			from = position
-			travel = 0.0
-		else:
-			done = true
-			queue_free()
+		_finish_out()
+
+
+func _finish_out() -> void:
+	if mode == "return":
+		phase = Phase.BACK
+		from = position
+		travel = 0.0
+	else:
+		done = true
+		queue_free()
 
 
 func _travel_back(delta: float) -> void:
@@ -116,7 +143,8 @@ func _travel_back(delta: float) -> void:
 		queue_free()
 		return
 	position += dir.normalized() * step
-	if pierce:
+	# coming home it can still clip anything closer than the target, once each
+	if mode == "return" or pierce:
 		_pierce_hits()
 
 
@@ -130,19 +158,37 @@ func _pierce_hits() -> void:
 		if area.tiles_between(position, u.position) <= 0.6 + float(u.get_radius_t()):
 			hit[key] = true
 			u.take_damage(dmg, position)
+			if burn > 0.0 and u.has_method("apply_burn"):
+				u.apply_burn(burn)
 
 
 func _impact() -> void:
 	area.release_reservation(owner_id)
+	if spell_blast:
+		area.spell_blast(to, splash, dmg, team, tower_mult, burn, knock_tiles, kind)
+		return
 	if splash > 0.0:
-		var col := Color(0.5, 0.9, 0.45) if kind == "alchemist" else Color(1.0, 0.6, 0.2)
-		area.spawn_splash_burst(to, splash, dmg, team, col)
+		area.damage_at_point(to, splash, dmg, team, tower_mult)
+		if burn > 0.0:
+			area.apply_burn_at(to, splash, burn, team)
 	else:
-		area.damage_at_point(to, 0.0, dmg, team)
+		area.damage_at_point(to, 0.0, dmg, team, tower_mult)
+		if burn > 0.0:
+			area.apply_burn_at(to, 0.0, burn, team)
 
 
 func _draw() -> void:
 	var back := phase == Phase.BACK
+	if kind == "firebolt" or kind == "fireball":
+		var fl: float = 1.0 + 0.18 * sin(clock * 22.0)
+		draw_circle(Vector2.ZERO, 7.0 * fl, Color(1.0, 0.45, 0.12, 0.55))
+		draw_circle(Vector2.ZERO, 4.0 * fl, Color(1.0, 0.75, 0.3))
+		draw_arc(Vector2.ZERO, 7.0 * fl, 0.0, TAU, 16, Color(1.0, 0.9, 0.55, 0.8), 1.5, true)
+		return
+	if kind == "chicken":
+		draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.55, 0.15, 0.85))
+		draw_circle(Vector2.ZERO, 2.6, Color(1.0, 0.85, 0.4))
+		return
 	if kind == "alchemist":
 		draw_circle(Vector2.ZERO, radius_px, Color(0.55, 0.92, 0.5))
 		draw_arc(Vector2.ZERO, radius_px, 0.0, TAU, 20, DDArt.OUTLINE, 2.0, true)

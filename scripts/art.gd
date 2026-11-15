@@ -63,6 +63,12 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			_zombie(ci, r, t, facing)
 		"hedgehog":
 			hedgehog(ci, r, facing, t, false)
+		"chicken":
+			_chicken(ci, r, t, facing, false)
+		"lizard":
+			_lizard(ci, r, t, facing)
+		"warren":
+			_warren(ci, r, t)
 		"boulder":
 			_boulder(ci, r, t)
 		"fireball":
@@ -282,6 +288,134 @@ static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(bx + r * 0.42 * facing, -r * 0.12 + bob), Vector2(bx + r * 0.3 * facing, -r * 0.5 + bob), Color(0.75, 0.55, 0.28), 3.5, true)
 
 
+## Lizard soldier: small green spear-carrier, crest up, spear levelled.
+static func _lizard(ci: CanvasItem, r: float, t: float, facing: float) -> void:
+	var dir: float = 1.0 if facing >= 0.0 else -1.0
+	var bob := sin(t * 11.0) * r * 0.06
+	var skin := Color(0.52, 0.82, 0.42)
+	var belly := Color(0.78, 0.92, 0.6)
+	# tail
+	ci.draw_line(Vector2(-dir * r * 0.6, r * 0.25 + bob), Vector2(-dir * r * 1.25, r * 0.05 + bob), skin.darkened(0.15), r * 0.24, true)
+	# body
+	ci.draw_circle(Vector2(0, bob), r * 0.62, skin)
+	ci.draw_arc(Vector2(0, bob), r * 0.62, 0.0, TAU, 18, OUTLINE, 1.8, true)
+	ci.draw_circle(Vector2(dir * r * 0.1, r * 0.18 + bob), r * 0.34, belly)
+	# head
+	var head := Vector2(dir * r * 0.55, -r * 0.35 + bob)
+	ci.draw_circle(head, r * 0.34, skin)
+	ci.draw_arc(head, r * 0.34, 0.0, TAU, 16, OUTLINE, 1.8, true)
+	# crest
+	ci.draw_colored_polygon(PackedVector2Array([
+		head + Vector2(-dir * r * 0.1, -r * 0.3),
+		head + Vector2(dir * r * 0.05, -r * 0.75),
+		head + Vector2(dir * r * 0.26, -r * 0.22),
+	]), Color(0.95, 0.62, 0.3))
+	ci.draw_circle(head + Vector2(dir * r * 0.12, -r * 0.05), r * 0.09, Color(0.1, 0.09, 0.12))
+	# snout
+	ci.draw_colored_polygon(PackedVector2Array([
+		head + Vector2(dir * r * 0.28, r * 0.02),
+		head + Vector2(dir * r * 0.7, r * 0.14),
+		head + Vector2(dir * r * 0.28, r * 0.26),
+	]), skin.lightened(0.1))
+	# spear
+	var tip := Vector2(dir * r * 1.5, -r * 0.45 + bob)
+	ci.draw_line(Vector2(-dir * r * 0.1, r * 0.1 + bob), tip, Color(0.63, 0.45, 0.26), 2.4, true)
+	ci.draw_colored_polygon(PackedVector2Array([
+		tip + Vector2(dir * r * 0.22, 0.0),
+		tip + Vector2(-dir * r * 0.06, -r * 0.16),
+		tip + Vector2(-dir * r * 0.06, r * 0.16),
+	]), Color(0.85, 0.87, 0.9))
+	ci.draw_polyline(PackedVector2Array([
+		tip + Vector2(dir * r * 0.22, 0.0),
+		tip + Vector2(-dir * r * 0.06, -r * 0.16),
+		tip + Vector2(-dir * r * 0.06, r * 0.16),
+		tip + Vector2(dir * r * 0.22, 0.0),
+	]), OUTLINE, 1.4, true)
+
+
+## Lizard warren: a mound with a dark burrow mouth and eyes peeking out.
+static func _warren(ci: CanvasItem, r: float, t: float) -> void:
+	var dirt := Color(0.55, 0.44, 0.3)
+	var dirt_lit := Color(0.66, 0.54, 0.38)
+	ci.draw_colored_polygon(PackedVector2Array([
+		Vector2(-r * 1.1, r * 0.55),
+		Vector2(-r * 0.75, -r * 0.35),
+		Vector2(-r * 0.2, -r * 0.75),
+		Vector2(r * 0.35, -r * 0.6),
+		Vector2(r * 0.9, -r * 0.05),
+		Vector2(r * 1.1, r * 0.55),
+	]), dirt)
+	ci.draw_polyline(PackedVector2Array([
+		Vector2(-r * 1.1, r * 0.55),
+		Vector2(-r * 0.75, -r * 0.35),
+		Vector2(-r * 0.2, -r * 0.75),
+		Vector2(r * 0.35, -r * 0.6),
+		Vector2(r * 0.9, -r * 0.05),
+		Vector2(r * 1.1, r * 0.55),
+	]), OUTLINE, 2.0, true)
+	ci.draw_colored_polygon(PackedVector2Array([
+		Vector2(-r * 0.55, r * 0.55),
+		Vector2(-r * 0.7, -r * 0.1),
+		Vector2(-r * 0.1, -r * 0.5),
+		Vector2(r * 0.5, -r * 0.05),
+		Vector2(r * 0.55, r * 0.55),
+	]), dirt_lit)
+	# burrow mouth
+	ci.draw_circle(Vector2(0, r * 0.2), r * 0.42, Color(0.14, 0.11, 0.1))
+	# eyes in the dark
+	var blink := 0.5 + 0.5 * sin(t * 2.2)
+	ci.draw_circle(Vector2(-r * 0.16, r * 0.08), r * 0.09, Color(0.99, 0.85, 0.3, blink))
+	ci.draw_circle(Vector2(r * 0.16, r * 0.08), r * 0.09, Color(0.99, 0.85, 0.3, blink))
+	# rocks
+	for p in [Vector2(-r * 0.85, r * 0.42), Vector2(r * 0.8, r * 0.38)]:
+		ci.draw_circle(p, r * 0.13, Color(0.5, 0.48, 0.45))
+		ci.draw_arc(p, r * 0.13, 0.0, TAU, 12, OUTLINE, 1.4, true)
+
+
+## Hot Chicken: a round orange bird with a flame crest. Airborne it spreads its
+## wings and shows its claws.
+static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: bool) -> void:
+	var bob := sin(t * 9.0) * r * 0.08
+	var body := Color(1.0, 0.56, 0.22)
+	var dark := Color(0.72, 0.3, 0.1)
+	if flying:
+		# wings out
+		var flap := sin(t * 16.0) * 0.35
+		for s in [-1.0, 1.0]:
+			var wp: PackedVector2Array = PackedVector2Array([
+				Vector2(s * r * 0.2, -r * 0.1 + bob),
+				Vector2(s * r * 1.35, (-r * 0.55 - flap * r) + bob),
+				Vector2(s * r * 1.1, r * 0.35 + bob),
+			])
+			ci.draw_colored_polygon(wp, Color(1.0, 0.72, 0.35))
+			var outline: PackedVector2Array = wp.duplicate()
+			outline.append(wp[0])
+			ci.draw_polyline(outline, OUTLINE, 2.0, true)
+	ci.draw_circle(Vector2(0, bob), r * 0.82, body)
+	ci.draw_arc(Vector2(0, bob), r * 0.82, 0.0, TAU, 22, OUTLINE, 2.0, true)
+	# flame crest
+	var flame: PackedVector2Array = PackedVector2Array([
+		Vector2(-r * 0.3, -r * 0.7 + bob),
+		Vector2(0.0, -r * 1.5 + bob + sin(t * 14.0) * r * 0.16),
+		Vector2(r * 0.3, -r * 0.7 + bob),
+	])
+	ci.draw_colored_polygon(flame, Color(1.0, 0.85, 0.25))
+	ci.draw_polyline(PackedVector2Array([flame[0], flame[1], flame[2], flame[0]]), OUTLINE, 1.6, true)
+	# beak + eye
+	var dir: float = 1.0 if facing >= 0.0 else -1.0
+	var beak: PackedVector2Array = PackedVector2Array([
+		Vector2(dir * r * 0.75, -r * 0.05 + bob),
+		Vector2(dir * r * 1.25, r * 0.1 + bob),
+		Vector2(dir * r * 0.72, r * 0.3 + bob),
+	])
+	ci.draw_colored_polygon(beak, Color(1.0, 0.8, 0.3))
+	ci.draw_polyline(PackedVector2Array([beak[0], beak[1], beak[2], beak[0]]), OUTLINE, 1.6, true)
+	ci.draw_circle(Vector2(dir * r * 0.32, -r * 0.28 + bob), r * 0.13, Color(0.1, 0.08, 0.1))
+	if flying:
+		for s in [-1.0, 1.0]:
+			ci.draw_line(Vector2(s * r * 0.35, r * 0.72 + bob), Vector2(s * r * 0.6, r * 1.05 + bob), dark, 2.0, true)
+
+
 static func hedgehog(ci: CanvasItem, r: float, facing: float, t: float, curled: bool) -> void:
 	var body := Color(0.66, 0.52, 0.38)
 	var spike := Color(0.32, 0.26, 0.2)
@@ -401,6 +535,12 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			creature(ci, "zombie", r, 1.0, t)
 		"hedgehog":
 			creature(ci, "hedgehog", r, 1.0, t)
+		"chicken":
+			creature(ci, "chicken", r, 1.0, t)
+		"lizard":
+			creature(ci, "lizard", r, 1.0, t)
+		"warren":
+			creature(ci, "warren", r * 1.2, 1.0, t)
 		"dragon":
 			dragon(ci, r * 0.8, 1.0, t, false)
 		_:

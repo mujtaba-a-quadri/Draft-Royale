@@ -100,6 +100,30 @@ func _ready() -> void:
 	elif scenario == "hog":
 		shot_times = [2.3]
 		run_time = 4.0
+	elif scenario == "snowblast":
+		shot_times = []
+		run_time = 6.0
+	elif scenario == "shiesty":
+		shot_times = []
+		run_time = 6.0
+	elif scenario == "boulder2":
+		shot_times = []
+		run_time = 4.0
+	elif scenario == "fuair":
+		shot_times = []
+		run_time = 4.0
+	elif scenario == "boomerang3":
+		shot_times = []
+		run_time = 7.0
+	elif scenario == "burn":
+		shot_times = []
+		run_time = 9.5
+	elif scenario == "chicken":
+		shot_times = []
+		run_time = 6.0
+	elif scenario == "lizard":
+		shot_times = []
+		run_time = 7.5
 	else:
 		shot_times = [2.0, 5.0, 8.0, 11.0]
 		run_time = 13.5
@@ -143,6 +167,22 @@ func _process(delta: float) -> void:
 		_zombify_steps()
 	elif scenario == "hog":
 		_hog_steps()
+	elif scenario == "snowblast":
+		_snowblast_steps()
+	elif scenario == "shiesty":
+		_shiesty_steps()
+	elif scenario == "boulder2":
+		_boulder2_steps()
+	elif scenario == "fuair":
+		_fuair_steps()
+	elif scenario == "boomerang3":
+		_boomerang3_steps()
+	elif scenario == "burn":
+		_burn_steps()
+	elif scenario == "chicken":
+		_chicken_steps()
+	elif scenario == "lizard":
+		_lizard_steps()
 	elif scenario == "flash":
 		if _at(1.0):
 			var kinds := ["snowman", "slate", "alchemist", "hero"]
@@ -338,33 +378,42 @@ func _slate_steps() -> void:
 
 
 func _control_steps() -> void:
-	var band_tile := Vector2i(6, 16)
-	var pt: Vector2 = arena.tile_center(6.5, 16.5)
 	if _at(0.3):
-		alch = arena.spawn_troop("snowman", 0, pt)
-		print("[control] band tile valid=%s outer col0 row9 valid=%s" % [
-			str(arena.valid_tile(band_tile)), str(arena.valid_tile(Vector2i(0, 9)))])
-		print("[control] before presence: p0=%s p1=%s" % [
-			str(arena.can_deploy(0, "slate", pt)), str(arena.can_deploy(1, "slate", pt))])
+		print("[control] no units — p1 rows 18/17/16/13: %s %s %s %s" % [
+			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 18.5))),
+			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 17.5))),
+			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 16.5))),
+			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 13.5)))])
+		print("[control] no units — p2 rows 11/12/13/18: %s %s %s %s" % [
+			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 11.5))),
+			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 12.5))),
+			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 13.5))),
+			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 18.5)))])
+	if _at(0.6):
+		alch = arena.spawn_troop("slate", 0, arena.tile_center(9.5, 16.5))
+		if is_instance_valid(alch):
+			alch.deploy_timer = 0.0
+	if _at(0.9):
+		print("[control] p1 unit at row 16 → p1 row16 col9=%s col2=%s row13=%s | p2 row16 col9=%s" % [
+			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 16.5))),
+			str(arena.can_deploy(0, "slate", arena.tile_center(2.5, 16.5))),
+			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 13.5))),
+			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 16.5)))])
 	if _at(1.2):
-		print("[control] claimed tile p0=%s p1=%s nearby_p0=%s far_band_p0=%s" % [
-			str(arena.can_deploy(0, "slate", pt)), str(arena.can_deploy(1, "slate", pt)),
-			str(arena.can_deploy(0, "slate", arena.tile_center(7.5, 16.5))),
-			str(arena.can_deploy(0, "slate", arena.tile_center(13.5, 12.5)))])
-		var counts = arena.control_counts()
-		print("[control] counts p0=%d p1=%d contested=%d" % [counts[0], counts[1], counts[2]])
-	if _at(2.0):
-		alch.take_damage(9999.0, alch.position)
-		print("[control] keeper killed")
-	if _at(3.0):
-		print("[control] 1s after death still claimed=%s" % str(arena.can_deploy(0, "slate", pt)))
-	if _at(6.8):
-		print("[control] after decay claimed=%s counts=%s" % [
-			str(arena.can_deploy(0, "slate", pt)), str(arena.control_counts())])
-	if _at(7.4):
-		print("[control] own half still free=%s enemy half denied=%s" % [
-			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 24.5))),
-			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 8.5)))])
+		var h = arena.spawn_troop("hero", 1, arena.tile_center(9.5, 20.5))
+		if is_instance_valid(h):
+			h.deploy_timer = 0.0
+	if _at(1.5):
+		print("[control] p2 unit at row 20 → p2 row18 col9=%s col2=%s" % [
+			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 18.5))),
+			str(arena.can_deploy(1, "slate", arena.tile_center(2.5, 18.5)))])
+	if _at(1.9):
+		var t := Vector2i(9, 18)
+		print("[control] shared tile row18 col9: p1=%s p2=%s | counts=%s" % [
+			str(arena.controlled(0, t)), str(arena.controlled(1, t)), str(arena.control_counts())])
+	if _at(2.6):
+		arena.set_view_mode(1)
+		print("[control] dual view for the screenshot")
 
 
 func _target_kind(u: Node) -> String:
@@ -593,6 +642,274 @@ func _juice_steps() -> void:
 		print("[juice] hurt_frames half a second later=%d" % alch.hurt_frames)
 
 
+func _lizard_steps() -> void:
+	if _at(0.3):
+		alch = arena.spawn_troop("snowman", 0, arena.tile_center(9.5, 18.5))
+		alch.deploy_timer = 0.0
+	if _at(0.7):
+		print("[lizard] plain cone rows 18-21 widths: %s" % _cone_widths(0, 18, 4))
+	if _at(1.1):
+		alch.take_damage(99999.0, alch.position)
+		probe = arena.spawn_troop("lizard", 0, arena.tile_center(9.5, 18.5), true)
+		probe.speed = 0.0
+		probe.deploy_timer = 0.0
+	if _at(1.5):
+		print("[lizard] soldier cone rows 17-20 widths: %s (shifted one forward)" % _cone_widths(0, 17, 4))
+	if _at(2.0):
+		for u in arena.units.duplicate():
+			if is_instance_valid(u):
+				u.take_damage(99999.0, u.position)
+		var tank = arena.spawn_troop("slate", 1, arena.tile_center(9.5, 15.5))
+		var weak = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 14.5))
+		tank.deploy_timer = 0.0
+		weak.deploy_timer = 0.0
+		weak.take_damage(60.0, weak.position)
+		probe = arena.spawn_troop("lizard", 0, arena.tile_center(9.5, 18.5), true)
+		probe.deploy_timer = 0.0
+		alch = tank
+		print("[lizard] slate 200hp at 3.0 tiles, snowman 30hp at 4.0 tiles")
+	if _at(2.8):
+		var tg = probe.target
+		print("[lizard] soldier targets %s (nearest is the slate, weakest is the snowman)" % [
+			String(tg.kind) if tg != null and is_instance_valid(tg) else "none"])
+	if _at(3.4):
+		for u in arena.units.duplicate():
+			if is_instance_valid(u):
+				u.take_damage(99999.0, u.position)
+		var w = arena.spawn_troop("warren", 0, arena.tile_center(9.5, 18.5))
+		w.deploy_timer = 0.0
+		var h = arena.spawn_troop("hero", 1, arena.tile_center(9.5, 14.0))
+		h.deploy_timer = 0.0
+		print("[lizard] warren placed, enemy 4.5 tiles away (range 6)")
+	if _at(5.2):
+		var n := 0
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "lizard":
+				n += 1
+		print("[lizard] warren has summoned %d lizards" % n)
+
+
+func _cone_widths(team: int, from_row: int, rows: int) -> String:
+	var out := ""
+	for row in range(from_row, from_row + rows):
+		var n := 0
+		for col in range(0, arena.GRID_W):
+			if arena.controlled(team, Vector2i(col, row)):
+				n += 1
+		out += "r%d=%d " % [row, n]
+	return out
+
+
+func _chicken_steps() -> void:
+	if _at(0.3):
+		probe = arena.spawn_troop("chicken", 0, arena.tile_center(3.5, 20.5))
+		probe.deploy_timer = 0.0
+		alch = arena.spawn_troop("hero", 1, arena.tile_center(3.5, 17.8))
+		alch.deploy_timer = 0.0
+		print("[chicken] chicken vs hero, 2.7 tiles apart (hero hp %d)" % int(alch.hp))
+	if _at(1.6) or _at(2.8) or _at(4.2) or _at(5.6):
+		print("[chicken] t%.1f hero_hp=%d hero_burn=%.1f hero_status=%d | chicken air=%s flying=%s hits=%d" % [
+			elapsed, int(alch.hp), alch.burn_stack, int(alch.status),
+			str(probe.airborne), str(probe.flying), probe.chicken_hits])
+
+
+func _burn_steps() -> void:
+	if _at(0.3):
+		alch = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 18.5))
+		alch.deploy_timer = 0.0
+		alch.apply_burn(40.0)
+		print("[burn] 40 burn applied to a 90 hp dummy")
+	if _at(1.2) or _at(2.2) or _at(3.2) or _at(4.2) or _at(5.4):
+		print("[burn] t%.1f hp=%d stack=%.1f ticks=%d status=%d" % [
+			elapsed, int(alch.hp), alch.burn_stack, alch.burn_ticks, int(alch.status)])
+	if _at(5.8):
+		alch.slow(0.3, 3.0)
+		print("[burn] after slow: status=%d (1=SLOW)" % int(alch.status))
+		alch.apply_burn(20.0)
+		print("[burn] burn applied on top: status=%d stack=%.0f (2=BURN)" % [int(alch.status), alch.burn_stack])
+	if _at(6.2):
+		alch.apply_burn(20.0)
+		alch.slow(0.3, 3.0)
+		print("[burn] slow applied on top of burn: status=%d stack=%.0f (1=SLOW, stack cleared)" % [
+			int(alch.status), alch.burn_stack])
+	if _at(6.6):
+		var tgt = arena.spawn_troop("hero", 1, arena.tile_center(9.5, 15.5))
+		tgt.deploy_timer = 0.0
+		var ch = arena.spawn_troop("chicken", 0, arena.tile_center(9.5, 17.5))
+		ch.deploy_timer = 0.0
+		probe = ch
+		alch = tgt
+		print("[burn] chicken vs hero placed 2 tiles apart")
+	if _at(8.6):
+		print("[burn] chicken airborne=%s flying=%s reach=%.1f hits=%d | hero hp=%d burn=%.1f" % [
+			str(probe.airborne), str(probe.flying), probe.reach, probe.chicken_hits,
+			int(alch.hp), alch.burn_stack if alch.has_method("apply_burn") else -1.0])
+
+
+func _boomerang3_steps() -> void:
+	if _at(0.2):
+		alch = arena.spawn_troop("fu", 0, arena.tile_center(9.5, 20.0))
+		alch.deploy_timer = 0.0
+		probe = arena.spawn_troop("hero", 1, arena.tile_center(9.5, 17.0))
+		probe.deploy_timer = 0.0
+		print("[rang] fu + aimed target 3 tiles away (target hp %d)" % int(probe.hp))
+	if _at(0.5) or _at(1.0) or _at(1.5) or _at(1.8) or _at(2.1) or _at(2.5) or _at(2.9) or _at(3.3):
+		var bp: Node = null
+		for c in arena.get_children():
+			if c is DDProjectile:
+				bp = c
+		var bstate := "none"
+		if bp != null:
+			bstate = "%s d=%.2f" % ["BACK" if bp.phase == 1 else "OUT", arena.tiles_between(bp.position, probe.position)]
+		print("[rang] t%.1f target_hp=%d has_proj=%s boom=%s" % [
+			elapsed, int(probe.hp) if is_instance_valid(probe) else -1, str(alch.has_projectile), bstate])
+	if _at(0.7):
+		var blocker = arena.spawn_troop("slate", 1, arena.tile_center(9.5, 18.5))
+		blocker.deploy_timer = 0.0
+		alch.set_meta("blocker", blocker)
+		print("[rang] blocker dropped in between while the boomerang is out")
+	if _at(2.4):
+		var b: Node = alch.get_meta("blocker")
+		print("[rang] aimed target hp=%d (one 30 hit = 120) | blocker hp=%d" % [
+			int(probe.hp) if is_instance_valid(probe) else -1,
+			int(b.hp) if is_instance_valid(b) else -1])
+	if _at(3.0):
+		for u in arena.units.duplicate():
+			if is_instance_valid(u):
+				u.take_damage(99999.0, u.position)
+		alch = arena.spawn_troop("fu", 0, arena.tile_center(4.5, 10.5))
+		alch.deploy_timer = 0.0
+		print("[rang] fu parked next to a tower, tower hp=%d" % int(arena.towers[1].hp))
+	if _at(5.0):
+		print("[rang] tower hp now=%d (30 boomerang = 220)" % int(arena.towers[1].hp))
+
+
+func _fuair_steps() -> void:
+	if _at(0.2):
+		alch = arena.spawn_troop("fu", 0, arena.tile_center(6.5, 18.5))
+		var flyer = arena.spawn_troop("hawk", 1, arena.tile_center(6.5, 18.0), true)
+		probe = flyer
+		alch.deploy_timer = 0.0
+		flyer.deploy_timer = 0.0
+		print("[fuair] fu + flyer spawned 0.5 tiles apart")
+	if _at(0.7):
+		print("[fuair] t0.7 has_projectile=%s combo_hits=%d flyer_hp=%d" % [
+			str(alch.has_projectile), int(alch.combo_hits), int(probe.hp) if is_instance_valid(probe) else -1])
+	if _at(1.6):
+		print("[fuair] t1.6 has_projectile=%s combo_hits=%d flyer_hp=%d throw_cd=%.2f" % [
+			str(alch.has_projectile), int(alch.combo_hits), int(probe.hp) if is_instance_valid(probe) else -1, alch.throw_cd])
+	if _at(2.2):
+		for u in arena.units.duplicate():
+			if is_instance_valid(u):
+				u.take_damage(99999.0, u.position)
+		alch = arena.spawn_troop("fu", 0, arena.tile_center(6.5, 18.5))
+		var ground = arena.spawn_troop("snowman", 1, arena.tile_center(6.5, 17.8))
+		alch.deploy_timer = 0.0
+		ground.deploy_timer = 0.0
+		print("[fuair] reset: fu + ground dummy adjacent")
+	if _at(3.6):
+		print("[fuair] vs ground: combo_hits=%d has_projectile=%s (brawls, does not throw)" % [
+			int(alch.combo_hits), str(alch.has_projectile)])
+
+
+func _boulder2_steps() -> void:
+	if _at(0.2):
+		var idol = arena.spawn_troop("idol", 0, arena.tile_center(9.5, 18.5))
+		var killer = arena.spawn_troop("hero", 1, arena.tile_center(11.0, 16.5))
+		alch = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 16.5))
+		probe = killer
+		idol.take_damage(999.0, killer.position, killer)
+		print("[boulder2] idol destroyed; a snowman sits 2 tiles away")
+	if _at(0.3):
+		print("[boulder2] t0.30 snowman y=%.2f (start)" % ((alch.position.y - arena.ORIGIN.y) / arena.TILE))
+	if _at(0.9):
+		print("[boulder2] t0.90 snowman y=%.2f (pulled toward the idol at 1 tile/s)" % ((alch.position.y - arena.ORIGIN.y) / arena.TILE))
+	if _at(0.45):
+		var b: Node = null
+		for c in arena.get_children():
+			if c is DDBoulder:
+				b = c
+		if b == null:
+			print("[boulder2] no boulder yet?!")
+		else:
+			var back: Vector2 = (arena.tile_center(9.5, 18.5) - b.position)
+			print("[boulder2] t0.45 armed=%s delay=%.1f origin=%.2f tiles behind, dir=(%.2f,%.2f)" % [
+				str(b.armed), b.delay, back.length() / arena.TILE, b.dir.x, b.dir.y])
+	if _at(1.6):
+		var b2: Node = null
+		for c in arena.get_children():
+			if c is DDBoulder:
+				b2 = c
+		if b2 == null:
+			print("[boulder2] boulder already gone")
+		else:
+			var step := TAU / 16.0
+			print("[boulder2] t1.6 armed=%s dir=(%.2f,%.2f) angle=%.1f° steps=%.2f (integer = snapped)" % [
+				str(b2.armed), b2.dir.x, b2.dir.y, rad_to_deg(b2.dir.angle()), b2.dir.angle() / step])
+			var ep: Vector2 = b2.epicenter
+			var spawn_off: float = ep.distance_to(b2.position) / arena.TILE
+			print("[boulder2] boulder origin %.2f tiles from the idol, aimed at the killer" % spawn_off)
+	if _at(2.4):
+		print("[boulder2] check-hit: killer hp=%d stunned=%.1f" % [
+			int(probe.hp) if is_instance_valid(probe) else -1,
+			probe.stunned if is_instance_valid(probe) else -1.0])
+
+
+func _shiesty_steps() -> void:
+	if _at(0.2):
+		arena.gold = [8.0, 8.0]
+		arena.spawn_troop("snowman", 0, arena.tile_center(9.5, 17.5))
+		print("[shiesty] p2 ability=%s" % arena.ability[1])
+	if _at(1.0):
+		max_gap = float(arena.control_rebuilds)
+		print("[shiesty] rebuilds after settle=%d counts=%s" % [int(max_gap), str(arena.control_counts())])
+	if _at(1.8):
+		print("[shiesty] rebuilds 0.8s later=%d (unchanged = cache holds) counts=%s" % [
+			int(arena.control_rebuilds), str(arena.control_counts())])
+	if _at(2.0):
+		var used: bool = arena.use_ability(1)
+		print("[shiesty] ability used=%s p2_gold=%.0f" % [str(used), arena.gold[1]])
+	if _at(3.2):
+		var g: Node = null
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
+				g = u
+		print("[shiesty] present=%s hp=%s phase=%s | counts now=%s (must not grow)" % [
+			str(g != null),
+			str(int(g.hp)) if g != null else "-",
+			str(int(g.phase)) if g != null else "-",
+			str(arena.control_counts())])
+	if _at(3.4):
+		max_gap = float(arena.control_rebuilds)
+		arena.spawn_troop("hero", 0, arena.tile_center(3.5, 20.5))
+		print("[shiesty] spawned a walking unit, rebuilds before=%d" % int(max_gap))
+	if _at(4.8):
+		print("[shiesty] rebuilds after it walks=%d (rises only as it changes tile)" % arena.control_rebuilds)
+	if _at(5.2):
+		var g2: Node = null
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
+				g2 = u
+		print("[shiesty] t5.2 alive=%s hp=%s (towers ignore it) stats escaped=%d caught=%d" % [
+			str(g2 != null), str(int(g2.hp)) if g2 != null else "-",
+			arena.stat_shiesty_escaped, arena.stat_shiesty_caught])
+
+
+func _snowblast_steps() -> void:
+	if _at(0.2):
+		var snow = arena.spawn_troop("snowman", 0, arena.tile_center(9.5, 18.5))
+		probe = arena.spawn_troop("hero", 1, arena.tile_center(9.0, 16.8))
+		alch = arena.spawn_troop("hero", 1, arena.tile_center(9.5, 12.5))
+		snow.take_damage(999.0, snow.position)
+		print("[snow] detonated; near_hp=%d far_hp=%d near_slow=%.2f near_time=%.1f" % [
+			int(probe.hp), int(alch.hp), probe.slow_amount, probe.slow_time])
+	if _at(1.0):
+		print("[snow] t1 near_slow=%.2f time=%.1f far_slow=%.2f far_hp=%d" % [
+			probe.slow_amount, probe.slow_time, alch.slow_amount, int(alch.hp)])
+	if _at(3.9):
+		print("[snow] t3.9 near_slow=%.2f time=%.1f (should be expired)" % [probe.slow_amount, probe.slow_time])
+
+
 func _hog_steps() -> void:
 	if _at(0.2):
 		# hedgehogs vs a stationary dummy so they actually arrive
@@ -702,14 +1019,14 @@ func _ability_steps() -> void:
 	if _at(4.4):
 		var g: Node = null
 		for u in arena.units:
-			if is_instance_valid(u) and String(u.kind) == "goblin":
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
 				g = u
 		print("[ability] t4.4 goblin=%s phase=%s stolen=%.0f p1_gold=%.0f p2_gold=%.0f" % [
 			str(g != null), str(int(g.phase)) if g != null else "-",
 			float(g.stolen) if g != null else -1.0, arena.gold[0], arena.gold[1]])
 	if _at(5.0) and OS.get_cmdline_user_args().has("--kill-goblin"):
 		for u in arena.units.duplicate():
-			if is_instance_valid(u) and String(u.kind) == "goblin":
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
 				var before: float = arena.gold[0]
 				u.take_damage(999.0, u.position)
 				print("[ability] goblin killed -> p1_gold %.0f -> %.0f (refund), goblins=%d" % [
@@ -731,7 +1048,7 @@ func _tentacle_count() -> int:
 func _goblin_count() -> int:
 	var n := 0
 	for u in arena.units:
-		if is_instance_valid(u) and String(u.kind) == "goblin":
+		if is_instance_valid(u) and String(u.kind) == "shiesty":
 			n += 1
 	return n
 
