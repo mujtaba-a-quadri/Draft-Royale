@@ -77,6 +77,20 @@ var shoots := ""
 var shoot_payload: Dictionary = {}
 ## Some units only ever pick fights with troops (Penny ignores buildings/towers).
 var troops_only := false
+<<<<<<< Updated upstream
+=======
+## The airborne dragon's fire: a patch under and just ahead of it, 25 damage a
+## second, ticked four times a second so it reads as burn.
+## What counts as a "melee" air attacker for the hedgehog's reaction: a flyer with
+## a short reach, i.e. one that has to come to it.
+const MELEE_AIR_REACH := 1.2
+const DRAGON_FIRE_DPS := 25.0
+const DRAGON_FIRE_RADIUS := 2.0
+const DRAGON_FIRE_TICK := 0.25
+const DRAGON_FIRE_AHEAD := 0.7
+const DRAGON_FIRE_BELOW := 1.1
+var fire_tick := 0.0
+>>>>>>> Stashed changes
 ## Penny: three swipes, then an invincible fading step-back and a quarter circle.
 var dodge_cfg: Dictionary = {}
 var swipes := 0
@@ -88,6 +102,15 @@ var dodge_center := Vector2.ZERO
 var dodge_radius := 0.0
 var dodge_start_r := 0.0
 var dodge_angle0 := 0.0
+<<<<<<< Updated upstream
+=======
+## the leap that ends the dodge: air first, then whatever is closest
+var jumping := false
+var jump_t := 0.0
+var jump_from := Vector2.ZERO
+var jump_to := Vector2.ZERO
+var jump_victim: Node = null
+>>>>>>> Stashed changes
 var invincible := false
 ## Untargetable: the arena's enemy queries skip these (Penny mid-dodge).
 var untargetable := false
@@ -153,6 +176,9 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	targets_weakest = bool(d.get("targets_weakest", false))
 	presence_shift = int(d.get("presence_shift", 0))
 	summon_cfg = d.get("summon", {})
+	if not summon_cfg.is_empty() and summon_cfg.has("spot"):
+		# a hatchery is on the clock, not on alert: first unit one interval in
+		summon_cd = float(summon_cfg.get("interval", 12.0))
 	shoots = String(d.get("shoots", ""))
 	shoot_payload = d.get("payload", {})
 	troops_only = bool(d.get("troops_only", false))
@@ -260,8 +286,16 @@ func _physics_process(delta: float) -> void:
 	if attack_stretch > 0.0:
 		attack_stretch = maxf(0.0, attack_stretch - delta)
 	flash = maxf(0.0, flash - delta * 5.0)
+<<<<<<< Updated upstream
 	if dodging:
 		_tick_dodge(delta)
+=======
+	if dodging or jumping:
+		if jumping:
+			_tick_jump(delta)
+		else:
+			_tick_dodge(delta)
+>>>>>>> Stashed changes
 		queue_redraw()
 		return
 	if lifetime > 0.0:
@@ -355,6 +389,22 @@ func _physics_process(delta: float) -> void:
 		target = _acquire()
 	elif atk_cd <= 0.0 and targets_weakest:
 		target = _acquire()
+
+	if kind == "dragon" and flying:
+		# airborne it never claws or bites: fire pours straight down while it flies
+		# at the tower, then it hovers over it and keeps pouring
+		_tick_fire_breath(delta)
+		if target != null and is_instance_valid(target) and not target.dead:
+			# it flies until its fire is landing on the target, not just until it
+			# is close: that is how it burns a tower it is attacking
+			var fire_gap: float = arena.tiles_between(dragon_fire_point(), target.position)
+			state = S.APPROACH if fire_gap > 1.5 else S.IDLE
+			if state == S.APPROACH:
+				# fly to the spot where the fire, not the body, lands on the target
+				var want: Vector2 = target.position - Vector2(facing * DRAGON_FIRE_AHEAD, DRAGON_FIRE_BELOW) * arena.TILE
+				_move(delta, want)
+		queue_redraw()
+		return
 	elif atk_cd <= 0.0:
 		var cand: Node = _acquire()
 		if cand != null and cand.get_instance_id() != target.get_instance_id():
@@ -410,8 +460,8 @@ func _physics_process(delta: float) -> void:
 	queue_redraw()
 
 
-func _move(delta: float) -> void:
-	var goal: Vector2 = target.position
+func _move(delta: float, at: Vector2 = Vector2.INF) -> void:
+	var goal: Vector2 = target.position if at == Vector2.INF else at
 	var wp := goal
 	if not flying:
 		wp = arena.route_point(position, goal)
@@ -475,9 +525,6 @@ func _attack() -> void:
 		roll_level = 0
 		roll_timer = 0.0
 		speed = ground_speed
-	if kind == "dragon" and flying:
-		arena.dragon_breath(target.position, 1.8, hit_dmg, team)
-		return
 	_mark_attack()
 	if splash > 0.0:
 		arena.reserve_damage(get_instance_id(), target, hit_dmg)
@@ -551,10 +598,85 @@ func _tick_dodge(delta: float) -> void:
 		if absf(dir.x) > 1.0:
 			facing = signf(dir.x)
 	if dodge_t >= total:
+<<<<<<< Updated upstream
 		dodging = false
 		untargetable = false
 		invincible = false
 		atk_cd = 0.0
+=======
+		_begin_jump()
+
+
+## End of the leap: back to ordinary swipes.
+func _end_dash() -> void:
+	dodging = false
+	jumping = false
+	jump_victim = null
+	untargetable = false
+	invincible = false
+	atk_cd = 0.0
+
+
+## After the spin she leaves the ground entirely and comes down on something:
+## air first, because her swipes cannot reach it, otherwise the closest body.
+func _begin_jump() -> void:
+	var victim: Node = _jump_target()
+	if victim == null:
+		_end_dash()
+		return
+	jumping = true
+	jump_t = 0.0
+	jump_from = position
+	jump_to = victim.position
+	jump_victim = victim
+	target = null
+	state = S.IDLE
+
+
+## Air first, then the nearest ground body. Both inside jump_reach tiles.
+func _jump_target() -> Node:
+	var reach: float = float(dodge_cfg.get("jump_reach", 2.5))
+	var best_air: Node = null
+	var best_air_d := INF
+	var best_ground: Node = null
+	var best_ground_d := INF
+	for e in arena.enemy_units(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d: float = arena.tiles_between(position, e.position)
+		if d > reach:
+			continue
+		if e.get("flying") == true:
+			if d < best_air_d:
+				best_air_d = d
+				best_air = e
+		elif d < best_ground_d:
+			best_ground_d = d
+			best_ground = e
+	return best_air if best_air != null else best_ground
+
+
+## The leap itself: still untargetable, one doubled hit on landing.
+func _tick_jump(delta: float) -> void:
+	var total: float = maxf(0.1, float(dodge_cfg.get("jump_time", 0.35)))
+	jump_t += delta
+	var f: float = clampf(jump_t / total, 0.0, 1.0)
+	if jump_victim != null and is_instance_valid(jump_victim) and not jump_victim.dead:
+		jump_to = jump_victim.position
+	position = jump_from.lerp(jump_to, ease(f, 0.35))
+	if absf(jump_to.x - jump_from.x) > 1.0:
+		facing = signf(jump_to.x - jump_from.x)
+	if f >= 1.0:
+		if jump_victim != null and is_instance_valid(jump_victim) and not jump_victim.dead:
+			var power: float = dmg * float(dodge_cfg.get("jump_mult", 2.0))
+			jump_victim.take_damage(power, position, self)
+			var burst := DDBurst.new()
+			burst.setup(arena, 0.7, arena.team_color(int(team)))
+			burst.position = position
+			arena.add_child(burst)
+			arena.shake(1.6)
+		_end_dash()
+>>>>>>> Stashed changes
 
 
 ## Primal Aphid: a shotgun cone, five pellets spread across cone_deg, each flying
@@ -674,6 +796,12 @@ func _curl() -> void:
 	for e in arena.enemy_entities(team).duplicate():
 		if not is_instance_valid(e) or e.dead:
 			continue
+<<<<<<< Updated upstream
+=======
+		# the hedgehog never picks a fight in the air: the burst is a ground shove
+		if e.get("flying") == true:
+			continue
+>>>>>>> Stashed changes
 		var gap: float = arena.gap_between(position, e.position, radius_t, float(e.get_radius_t()))
 		if gap > tr:
 			continue
@@ -687,6 +815,18 @@ func _curl() -> void:
 				if d.length() < 0.01:
 					d = Vector2(facing, 1.0)
 				e.apply_impulse(d.normalized(), shove, float(curl_cfg["push_time"]))
+<<<<<<< Updated upstream
+=======
+
+
+## Balled up without attacking: a flyer that dives on it cannot be chased, so the
+## hedgehog simply closes up and lets the quills answer the next hit.
+func _curl_up() -> void:
+	curled = true
+	state = S.IDLE
+	target = null
+	atk_cd = 0.0
+>>>>>>> Stashed changes
 
 
 func _mark_attack() -> void:
@@ -714,6 +854,81 @@ func _kick() -> void:
 	apply_impulse(-dir, float(boom_cfg["self_push"]), 0.28)
 
 
+## Where the dragon's fire lands in world space: under it, a little ahead.
+func dragon_fire_point() -> Vector2:
+	return position + Vector2(facing * DRAGON_FIRE_AHEAD, DRAGON_FIRE_BELOW) * arena.TILE
+
+
+## Fire rains from the airborne dragon onto the ground below: 25 damage a second
+## to whatever is standing in the one tile patch. Flying units are above it.
+func _tick_fire_breath(delta: float) -> void:
+	fire_tick -= delta
+	if fire_tick > 0.0:
+		return
+	fire_tick = DRAGON_FIRE_TICK
+	var at := dragon_fire_point()
+	var hit: float = DRAGON_FIRE_DPS * DRAGON_FIRE_TICK
+	# the fire does not care whose colours you wear: every ground body under it burns
+	for e in arena.units.duplicate():
+		if not is_instance_valid(e) or e.dead or e == self or e.get("flying") == true:
+			continue
+		if arena.tiles_between(at, e.position) <= DRAGON_FIRE_RADIUS + float(e.get_radius_t()):
+			e.take_damage(hit, at, self)
+	for tw in arena.towers:
+		if not is_instance_valid(tw) or tw.dead or int(tw.team) == team:
+			continue
+		if arena.tiles_between(at, tw.position) <= DRAGON_FIRE_RADIUS + 0.7:
+			tw.take_damage(hit, at, self)
+
+
+## The airborne dragon's fire: a burning patch on the ground with a column of
+## green flame pouring into it from the maw.
+func _draw_fire_breath(px: float) -> void:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var patch: Vector2 = Vector2(f * DRAGON_FIRE_AHEAD, DRAGON_FIRE_BELOW) * arena.TILE
+	var rad: float = DRAGON_FIRE_RADIUS * arena.TILE
+	var team_col: Color = arena.team_color(int(team))
+	var deep: Color = team_col.darkened(0.45)
+	var hot: Color = team_col.lerp(Color(1.0, 0.98, 0.95), 0.6)
+	var flick := 0.5 + 0.5 * sin(clock * 17.0)
+	var flick2 := 0.5 + 0.5 * sin(clock * 23.0 + 1.7)
+	draw_set_transform(patch, 0.0, Vector2(1.0, 0.45))
+	draw_circle(Vector2.ZERO, rad * (0.98 + 0.03 * flick), Color(deep.r, deep.g, deep.b, 0.62))
+	draw_circle(Vector2.ZERO, rad * (0.72 + 0.07 * flick2), Color(team_col.r, team_col.g, team_col.b, 0.62))
+	draw_circle(Vector2.ZERO, rad * 0.44, Color(hot.r, hot.g, hot.b, 0.75))
+	draw_arc(Vector2.ZERO, rad * (0.98 + 0.03 * flick), 0.0, TAU, 40, Color(hot.r, hot.g, hot.b, 0.55), 3.0, true)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# a few tongues licking up out of the patch
+	for i in 4:
+		var ang := float(i) * 1.7 + flick * 0.6
+		var base_at: Vector2 = patch + Vector2(cos(ang), sin(ang) * 0.42) * rad * 0.62
+		var tall: float = rad * (0.28 + 0.18 * (0.5 + 0.5 * sin(clock * 21.0 + float(i) * 2.1)))
+		draw_line(base_at, base_at + Vector2(0.0, -tall), Color(team_col.r, team_col.g, team_col.b, 0.5), rad * 0.14, true)
+		draw_line(base_at, base_at + Vector2(0.0, -tall * 0.7), Color(hot.r, hot.g, hot.b, 0.5), rad * 0.06, true)
+	var maw := Vector2(f * px * 0.5, -px * 0.5)
+	for i in 3:
+		var q := float(i) - 1.0
+		var wob := sin(clock * 13.0 + float(i) * 1.3) * rad * 0.1
+		draw_line(maw + Vector2(wob, 0.0), patch + Vector2(q * rad * 0.3, -rad * 0.1),
+			Color(team_col.r, team_col.g, team_col.b, 0.28), rad * 0.34, true)
+		draw_line(maw + Vector2(wob, 0.0), patch + Vector2(q * rad * 0.3, -rad * 0.1),
+			Color(hot.r, hot.g, hot.b, 0.34), rad * 0.14, true)
+
+
+## The flame leaving the dragon's mouth: short, flickering, aimed straight down.
+func _draw_maw_flame(px: float) -> void:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var maw := Vector2(f * px * 0.52, -px * 0.5)
+	for i in 3:
+		var q := float(i) - 1.0
+		var len_px: float = px * (0.32 + 0.14 * (0.5 + 0.5 * sin(clock * 19.0 + float(i))))
+		var tip := maw + Vector2(q * px * 0.14 + sin(clock * 15.0 + float(i)) * px * 0.06, len_px)
+		var team_col: Color = arena.team_color(int(team))
+		var hot: Color = team_col.lerp(Color(1.0, 0.98, 0.95), 0.6)
+		draw_line(maw, tip, Color(team_col.r, team_col.g, team_col.b, 0.5), px * 0.16, true)
+		draw_line(maw, tip, Color(hot.r, hot.g, hot.b, 0.6), px * 0.07, true)
+
+
 func _take_off() -> void:
 	flying = true
 	speed = ground_speed * 1.9
@@ -738,6 +953,17 @@ func _target_valid(t: Node) -> bool:
 func _tick_summon(delta: float) -> void:
 	summon_cd = maxf(0.0, summon_cd - delta)
 	if summon_cd > 0.0:
+		return
+	if summon_cfg.has("spot"):
+		# the hatchery: one body out of the front hatch, centred on the building,
+		# on a fixed cadence rather than waiting for company
+		summon_cd = float(summon_cfg.get("interval", 12.0))
+		var fwd := 1.0 if team == 0 else -1.0
+		var fp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
+		var depth: float = float(fp[1]) * 0.5 + 0.45
+		var hatch: Vector2 = position + Vector2(fwd * depth * float(arena.TILE), 0.0)
+		arena.spawn_troop(String(summon_cfg["unit"]), team, hatch, true)
+		arena.shake(1.2)
 		return
 	var rng_t := float(summon_cfg["range"])
 	var near := false
@@ -860,6 +1086,13 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 				arena.damage_guard += 1
 				src_node.take_damage(float(curl_cfg["thorn_dmg"]), position, self)
 				arena.damage_guard = maxi(0, arena.damage_guard - 1)
+	# it will not chase a flyer, but a melee one that dives on it gets the ball: the
+	# hit that started it is not repaid, the next one is
+	if not curled and not curl_cfg.is_empty() and hp > 0.0:
+		if attacker != null and is_instance_valid(attacker) and attacker.get("flying") == true:
+			var air_reach = attacker.get("reach")
+			if air_reach != null and float(air_reach) <= MELEE_AIR_REACH:
+				_curl_up()
 	if kind == "alchemist" and not phase2 and hp > 0.0 and hp <= max_hp * 0.5:
 		_enter_phase2()
 	if hp <= 0.0:
@@ -911,7 +1144,13 @@ func _die() -> void:
 	# zombies raise whatever they kill, on their own side — buildings are not
 	# people, they do not get back up
 	if kind != "zombie" and not is_building() and last_attacker != null and is_instance_valid(last_attacker):
+<<<<<<< Updated upstream
 		if String(last_attacker.get("kind")) == "zombie":
+=======
+		var killer_kind = last_attacker.get("kind")
+		# attackers that carry no kind at all (a rolling snowball) raise nothing
+		if killer_kind != null and String(killer_kind) == "zombie":
+>>>>>>> Stashed changes
 			var risen = arena.spawn_troop("zombie", int(last_attacker.team), position, true)
 			if risen != null and is_instance_valid(risen):
 				risen.deploy_timer = 0.0
@@ -935,11 +1174,19 @@ func _die() -> void:
 
 func _draw() -> void:
 	var px: float = radius_t * arena.TILE
+	if kind == "dragon" and flying:
+		_draw_fire_breath(px)
 	var lift := 0.0
 	if flying:
 		lift = 18.0 + sin(clock * 2.2) * 3.0
 		draw_set_transform(Vector2(0, px * 0.55), 0.0, Vector2(1.0, 0.42))
 		draw_circle(Vector2.ZERO, px * 0.95, Color(0.05, 0.06, 0.1, 0.32))
+	elif jumping:
+		# the leap that ends Penny's spin: a hop and a drop, shadow left on the ground
+		var jf: float = clampf(jump_t / maxf(0.1, float(dodge_cfg.get("jump_time", 0.35))), 0.0, 1.0)
+		lift = sin(jf * PI) * float(arena.TILE) * 1.1
+		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
+		draw_circle(Vector2.ZERO, px * (0.9 - 0.4 * sin(jf * PI)), Color(0.05, 0.06, 0.1, 0.3))
 	# squash & stretch: drop-in, landing squash, attack lunge
 	var sx := 1.0
 	var sy := 1.0
@@ -973,6 +1220,11 @@ func _draw() -> void:
 		DDArt.bird(self, px, facing, clock, bird_lead, ink)
 	elif kind == "dragon":
 		DDArt.dragon(self, px, facing, clock, flying, 0.0, ink)
+<<<<<<< Updated upstream
+=======
+		if flying:
+			_draw_maw_flame(px)
+>>>>>>> Stashed changes
 	else:
 		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2, ink, flying)
 	if status == Status.SLOW:

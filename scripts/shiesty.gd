@@ -33,6 +33,8 @@ var home_tower: Node = null
 var stolen := 0.0
 var speed_px := 25.0
 var radius_t := 0.4
+## Pen's darts work on him too: a stunned Shiesty stands still.
+var stunned := 0.0
 var run_clock := 0.0
 
 
@@ -63,6 +65,10 @@ func _physics_process(delta: float) -> void:
 	if dead:
 		return
 	clock += delta
+	if stunned > 0.0:
+		stunned = maxf(0.0, stunned - delta)
+		queue_redraw()
+		return
 	if phase == P.LAND:
 		var to: Vector2 = from
 		if is_instance_valid(target_tower):
@@ -109,9 +115,14 @@ func _escape() -> void:
 	arena.stat_shiesty_escaped += 1
 	arena.gold[team] = minf(float(arena.gold_max), float(arena.gold[team]) + stolen)
 	arena.banner_flash("Shiesty gets away with %d gold" % int(stolen))
+<<<<<<< Updated upstream
 	# no gold delivered, no card: the draw is the reward for getting home
 	if stolen > 0.0:
 		arena.draw_card(team)
+=======
+	# the card is the reward for the trip itself; the coin is the bonus
+	arena.draw_card(team)
+>>>>>>> Stashed changes
 	_finish()
 
 
@@ -125,6 +136,8 @@ func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 		if stolen > 0.0:
 			arena.gold[enemy_team] = minf(float(arena.gold_max), float(arena.gold[enemy_team]) + stolen)
 			arena.banner_flash("Shiesty is caught — %d gold recovered" % int(stolen))
+		# caught or not, the trip pays a card; only the coin has to get home
+		arena.draw_card(team)
 		_finish()
 	queue_redraw()
 

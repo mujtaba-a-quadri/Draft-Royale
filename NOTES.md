@@ -159,9 +159,40 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 * **Penny ignores buildings and towers entirely** (`troops_only`) — that is the card.
 * **Pen does not turn back into Penny** — no second Pen ever enters the deck.
 * **Hot Chicken pecks first**: three fireballs on one target, *then* the kamikaze ram.
+<<<<<<< Updated upstream
 * **The ability card draws are payload-gated**: tentacle on death, Shiesty on delivery.
 * **Towers are only decorative HP sinks** — the commander tower is the only win
   condition besides the clock.
+=======
+* **The ability card draws are payload-gated**: tentacle on death, and Shiesty on
+  *either* outcome — he pays a card when he gets home **and** when he is caught. Only
+  the coin depends on delivery (death hands it back to the enemy).
+* **Towers are only decorative HP sinks** — the commander tower is the only win
+  condition besides the clock.
+* **The hedgehog never targets air** (`hits_air` stays off) and its curl burst skips
+  flyers; it only balls up when a *melee* flyer hits it, and that first hit is not
+  reflected. Air is answered with thorns, not with chasing.
+* **The dragon is chained by the wings only** and, airborne, does not attack at all:
+  it pours a **2 tile, team-coloured** patch of 25-damage-per-second fire on the
+  ground beneath it (`_tick_fire_breath` + `_draw_fire_breath` in `unit.gd`). It
+  **burns friendly troops too** — that is deliberate — and it flies until the fire
+  lands on its target so the tower it is attacking burns. Do not give it back a
+  breath burst.
+* **Card face**: `DDCardFace.rate_text()` and the HP ribbon are type-aware
+  (troop / building / spell). New cards only need an `ATTACK_NAMES` entry and
+  data; put per-type stats in `rate_text`, never in the ribbon.
+* **Animation stills/GIFs**: `--scenario=pennygif` (dev_capture) renders a pair into a
+  transparent SubViewport at 20 fps and dumps raw RGBA frames to
+  `.godot/penny_frames`; `node docs/make_gif.mjs <frames> docs/penny.gif` encodes them.
+  The scenario is `--scenario=pairgif --gif-a=<kind> --gif-b=<kind>` — the frame
+  dump and the encoder are generic, only the staging code is specific.
+  The encoder is hand-written because there is no ffmpeg/ImageMagick/Pillow on this
+  machine — do not assume those exist.
+* **Penny's dash ends in a leap**: after the spin she jumps at the nearest *air*
+  unit within 2.5 tiles (else the closest body), lands 2× damage and stays
+  untargetable through the whole thing. Both the swipes and the leaping blow do not
+  touch buildings.
+>>>>>>> Stashed changes
 
 ---
 

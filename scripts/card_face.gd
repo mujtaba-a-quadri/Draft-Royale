@@ -10,7 +10,8 @@ const ATTACK_NAMES := {
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
-	"fireball": "Fireball", "firebolt": "Firebolt",
+	"ovomachine": "Hatch",
+	"fireball": "Fireball", "firebolt": "Firebolt", "snowball": "Snowball",
 }
 
 
@@ -26,8 +27,18 @@ static func hp_text(d: Dictionary) -> String:
 	return str(hp)
 
 
+## The effect line under the attack name. Troops show their cadence and reach;
+## buildings show what they do on their clock; spells show what they leave behind.
 static func rate_text(d: Dictionary) -> String:
 	var parts: Array = []
+	var sum_cfg: Dictionary = d.get("summon", {})
+	if not sum_cfg.is_empty():
+		var spawn_iv := float(sum_cfg.get("interval", sum_cfg.get("cooldown", 0.0)))
+		parts.append("spawn %.0fs" % spawn_iv if spawn_iv > 0.0 else "spawn")
+	if d.has("lifetime") and float(d["lifetime"]) > 0.0:
+		parts.append("%.0fs life" % float(d["lifetime"]))
+	if d.has("roll"):
+		parts.append("grows 1 tile / 2")
 	var iv := float(d.get("interval", 0.0))
 	if iv > 0.0:
 		parts.append("%.2fs" % iv)
@@ -43,6 +54,10 @@ static func rate_text(d: Dictionary) -> String:
 	var reach := float(d.get("reach", 0.0))
 	if reach > 0.0:
 		parts.append("r%.1f" % reach)
+	if d.has("slow_time"):
+		parts.append("slow %.1fs" % float(d["slow_time"]))
+	if int(d.get("uses", 0)) > 1:
+		parts.append("×%d casts" % int(d["uses"]))
 	return " · ".join(parts)
 
 
@@ -53,7 +68,11 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 	if offsets.is_empty():
 		ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
 		if kind == "dragon":
+<<<<<<< Updated upstream
 			DDArt.dragon(ci, art.size.y * 0.40, 1.0, 0.0, false)
+=======
+			DDArt.dragon(ci, art.size.y * 0.30, 1.0, 0.0, false)
+>>>>>>> Stashed changes
 		elif kind == "hawk":
 			DDArt.bird(ci, art.size.y * 0.34, 1.0, 0.0, true)
 		else:
@@ -68,11 +87,21 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 	# each body is one tile wide with a 0.44 tile radius, in the preview's units
 	var unit_scale: float = minf(art.size.x / (half_x * 2.0 + 0.9), art.size.y / (half_y * 2.0 + 0.9))
 	var centre := art.get_center()
+<<<<<<< Updated upstream
 	for off in offsets:
 		# the preview mirrors a formation's y offsets for team 0 (ydir = -1); the
 		# card art uses the same orientation so the two line up
 		var at: Vector2 = centre + Vector2(float((off as Array)[0]), -float((off as Array)[1])) * unit_scale
 		DDArt.icon(ci, kind, at, unit_scale * 0.44)
+=======
+	for i in offsets.size():
+		var off: Array = offsets[i]
+		# the preview mirrors a formation's y offsets for team 0 (ydir = -1); the
+		# card art uses the same orientation so the two line up
+		var at: Vector2 = centre + Vector2(float(off[0]), -float(off[1])) * unit_scale
+		# the lead bird is the red i'iwi: the card shows it too
+		DDArt.icon(ci, kind, at, unit_scale * 0.44, 0.0, i == 0)
+>>>>>>> Stashed changes
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -134,13 +163,24 @@ static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0,
 	var br := Rect2(rect.position.x + (w - bw) * 0.5, art.end.y - bh * 0.55, bw, bh)
 	ci.draw_rect(br, Color(accent.darkened(0.25), a))
 	ci.draw_rect(br, Color(0.13, 0.12, 0.16, a), false, 1.4)
-	var hp_txt := "%d HP" % int(d["hp"])
-	var n := int(d.get("count", 0))
-	if d.has("swarm_offsets") and n <= 1:
-		n = (d["swarm_offsets"] as Array).size()
-	if n > 1:
-		hp_txt += " ×%d" % n
-	hp_txt += " · %s" % String(d["type"]).capitalize()
+	var hp_txt := ""
+	match String(d.get("type", "troop")):
+		"spell":
+			# no body to show: name the cast instead of an HP line
+			hp_txt = "Spell · %s" % ("from your tower" if String(d.get("launch", "")) == "closest" else "cast")
+		"building":
+			hp_txt = "%d HP · %.0fs" % [int(d["hp"]), float(d.get("lifetime", 0.0))]
+			var bfp: Array = d.get("footprint", [1, 1])
+			if int(bfp[0]) > 1 or int(bfp[1]) > 1:
+				hp_txt += " · %d×%d" % [int(bfp[0]), int(bfp[1])]
+		_:
+			hp_txt = "%d HP" % int(d["hp"])
+			var n := int(d.get("count", 0))
+			if d.has("swarm_offsets") and n <= 1:
+				n = (d["swarm_offsets"] as Array).size()
+			if n > 1:
+				hp_txt += " ×%d" % n
+			hp_txt += " · %s" % String(d["type"]).capitalize()
 	ci.draw_string(font, Vector2(br.position.x, br.position.y + bh * 0.74), hp_txt, HORIZONTAL_ALIGNMENT_CENTER,
 		bw - 4.0, fitted(font, hp_txt, bw - 8.0, clampf(bh * 0.72, 7.0, 14.0), 6.0), Color(1.0, 0.97, 0.86, a))
 	# attack box

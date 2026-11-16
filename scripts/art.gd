@@ -55,6 +55,10 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 	match kind:
 		"snowman":
 			_snowman(ci, r, t)
+		"ovomachine":
+			_ovomachine(ci, r, t)
+		"snowball":
+			_snowball(ci, r, t)
 		"slate":
 			_slate(ci, r, t, facing)
 		"alchemist":
@@ -92,6 +96,67 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 	if hurt > 0.0:
 		ci.draw_circle(Vector2.ZERO, r * 1.15, Color(1, 1, 1, clampf(hurt, 0.0, 0.55)))
 	ink = OUTLINE
+<<<<<<< Updated upstream
+=======
+
+
+## In-Ovo Machine: a squat industrial hatchery. Steel body, riveted plates, a
+## chimney leaking smoke and an egg glowing in the inspection window.
+## Snowball: a packed ball of snow for the card and the deploy ghost.
+static func _snowball(ci: CanvasItem, r: float, t: float) -> void:
+	var spin := t * 1.6
+	ci.draw_circle(Vector2.ZERO, r, Color(0.9, 0.95, 1.0))
+	ci.draw_circle(Vector2(-r * 0.26, -r * 0.28), r * 0.5, Color(1.0, 1.0, 1.0, 0.9))
+	ci.draw_arc(Vector2.ZERO, r, 0.0, TAU, 32, ink, r * 0.09, true)
+	for i in 5:
+		var a := spin + float(i) * TAU / 5.0
+		ci.draw_circle(Vector2(cos(a), sin(a)) * r * 0.58, r * 0.12, Color(0.66, 0.82, 1.0, 0.9))
+	for i in 3:
+		var b := -spin + float(i) * 2.1
+		ci.draw_line(Vector2(cos(b) * r * 0.72, sin(b) * r * 0.72),
+			Vector2(cos(b + 0.5) * r * 0.94, sin(b + 0.5) * r * 0.94), Color(0.55, 0.72, 0.95, 0.6), r * 0.07, true)
+
+
+static func _ovomachine(ci: CanvasItem, r: float, t: float) -> void:
+	var steel := Color(0.53, 0.57, 0.62)
+	var steel_dark := Color(0.33, 0.36, 0.42)
+	var rust := Color(0.64, 0.44, 0.3)
+	var glow := Color(0.99, 0.74, 0.28)
+	var pulse := 0.5 + 0.5 * sin(t * 2.4)
+	for i in 4:
+		var f := fmod(t * 0.32 + float(i) * 0.25, 1.0)
+		var sx := -r * 0.6 - f * r * 0.55 + sin(t * 1.7 + float(i) * 1.1) * r * 0.12
+		var sy := -r * 1.25 - f * r * 1.15
+		ci.draw_circle(Vector2(sx, sy), r * (0.16 + f * 0.36), Color(0.84, 0.86, 0.9, 0.48 * (1.0 - f)))
+	ci.draw_rect(Rect2(-r * 1.0, r * 0.62, r * 2.0, r * 0.24), steel_dark)
+	ci.draw_rect(Rect2(-r * 1.0, r * 0.62, r * 2.0, r * 0.24), ink, false, 1.8)
+	ci.draw_rect(Rect2(-r * 0.94, -r * 0.82, r * 1.88, r * 1.46), steel)
+	ci.draw_rect(Rect2(-r * 0.94, -r * 0.82, r * 1.88, r * 1.46), ink, false, 2.4)
+	ci.draw_rect(Rect2(-r * 1.04, -r * 1.02, r * 2.08, r * 0.26), steel_dark)
+	ci.draw_rect(Rect2(-r * 1.04, -r * 1.02, r * 2.08, r * 0.26), ink, false, 2.0)
+	ci.draw_rect(Rect2(-r * 0.82, -r * 1.36, r * 0.36, r * 0.4), rust)
+	ci.draw_rect(Rect2(-r * 0.82, -r * 1.36, r * 0.36, r * 0.4), ink, false, 2.0)
+	ci.draw_rect(Rect2(-r * 0.88, -r * 1.42, r * 0.48, r * 0.12), steel_dark)
+	ci.draw_circle(Vector2(r * 0.16, -r * 0.16), r * 0.44, Color(0.13, 0.14, 0.17))
+	ellipse(ci, Vector2(r * 0.16, -r * 0.12), r * 0.21, r * 0.27,
+		Color(0.99, 0.87, 0.55).lerp(glow, pulse), 0.0)
+	ci.draw_arc(Vector2(r * 0.16, -r * 0.16), r * 0.44, 0.0, TAU, 24, ink, 2.2, true)
+	ci.draw_arc(Vector2(r * 0.16, -r * 0.16), r * 0.44, -0.7, 0.9, 12,
+		Color(glow.r, glow.g, glow.b, 0.35), 2.0, true)
+	ci.draw_rect(Rect2(r * 0.5, r * 0.12, r * 0.42, r * 0.48), Color(0.16, 0.15, 0.19))
+	ci.draw_rect(Rect2(-r * 0.92, r * 0.12, r * 0.42, r * 0.48), Color(0.16, 0.15, 0.19))
+	for i in 4:
+		var y := r * 0.16 + float(i) * r * 0.11
+		ci.draw_line(Vector2(-r * 0.9, y), Vector2(-r * 0.52, y), Color(0.4, 0.42, 0.46), 1.4, true)
+		ci.draw_line(Vector2(r * 0.52, y), Vector2(r * 0.9, y), Color(0.4, 0.42, 0.46), 1.4, true)
+	for i in 6:
+		var x := -r * 0.95 + float(i) * r * 0.32
+		ci.draw_line(Vector2(x, r * 0.64), Vector2(x + r * 0.15, r * 0.86), Color(0.96, 0.79, 0.26), r * 0.11, true)
+	for i in 4:
+		var rx := -r * 0.8 + float(i) * r * 0.52
+		ci.draw_circle(Vector2(rx, -r * 0.68), r * 0.06, steel_dark)
+		ci.draw_circle(Vector2(rx, r * 0.5), r * 0.06, steel_dark)
+>>>>>>> Stashed changes
 
 
 static func _snowman(ci: CanvasItem, r: float, t: float) -> void:
@@ -225,53 +290,122 @@ static func _hero(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 
 static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bool, hurt: float = 0.0, ink_col: Color = OUTLINE) -> void:
 	ink = ink_col
+<<<<<<< Updated upstream
 	var skin := Color(0.72, 0.2, 0.22)
 	var dark := Color(0.48, 0.12, 0.16)
 	var belly := Color(0.93, 0.6, 0.35)
 	var flap := sin(t * 7.0) * 0.14
 	poly(ci, PackedVector2Array([
 		Vector2(-r * 0.9, r * 0.25), Vector2(-r * 1.95, r * 0.02), Vector2(-r * 1.15, r * 0.6)]), dark, 2.0)
+=======
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var skin := Color(0.3, 0.66, 0.38)
+	var skin_dark := Color(0.16, 0.42, 0.24)
+	var belly := Color(0.74, 0.54, 0.4)
+	var horn := Color(0.88, 0.8, 0.56)
+	var wing := Color(0.64, 0.17, 0.28)
+	var wing_dark := Color(0.4, 0.09, 0.18)
+	var glow := Color(0.66, 1.0, 0.3)
+	var flap := sin(t * 5.0) * 0.18
+	# --- wings: strapped down when chained, thrown wide in the air -----------
+>>>>>>> Stashed changes
 	if flying:
-		poly(ci, PackedVector2Array([
-			Vector2(-r * 0.35, -r * 0.5), Vector2(-r * 1.95, -r * 1.25 - flap * r),
-			Vector2(-r * 1.1, -r * 0.1)]), dark, 2.2)
-		poly(ci, PackedVector2Array([
-			Vector2(r * 0.35, -r * 0.5), Vector2(r * 1.95, -r * 1.25 - flap * r),
-			Vector2(r * 1.1, -r * 0.1)]), dark, 2.2)
+		for s in [-1.0, 1.0]:
+			var root := Vector2(s * r * 0.35, -r * 0.5)
+			var tip := Vector2(s * r * (1.8 + 0.25 * flap), -r * (1.15 + flap))
+			poly(ci, PackedVector2Array([root, tip, Vector2(s * r * 1.25, -r * 0.1), Vector2(s * r * 0.6, -r * 0.2)]),
+				wing, 2.0)
+			ci.draw_line(root, tip, wing_dark, 2.5, true)
+			ci.draw_line(tip, Vector2(s * r * 1.25, -r * 0.1), wing_dark, 2.0, true)
 	else:
-		poly(ci, PackedVector2Array([
-			Vector2(-r * 0.45, -r * 0.35), Vector2(-r * 1.35, -r * 0.8),
-			Vector2(-r * 0.95, r * 0.15)]), dark, 2.0)
-		poly(ci, PackedVector2Array([
-			Vector2(r * 0.45, -r * 0.35), Vector2(r * 1.35, -r * 0.8),
-			Vector2(r * 0.95, r * 0.15)]), dark, 2.0)
-	ellipse(ci, Vector2(0, 0), r * 1.0, r * 0.72, skin)
-	ellipse(ci, Vector2(r * 0.05 * facing, r * 0.24), r * 0.62, r * 0.36, belly, 0.0)
-	# legs
-	ci.draw_line(Vector2(-r * 0.45, r * 0.55), Vector2(-r * 0.55, r * 0.95), dark, 4.0, true)
-	ci.draw_line(Vector2(r * 0.4, r * 0.55), Vector2(r * 0.5, r * 0.95), dark, 4.0, true)
-	# neck + head
-	var hx := r * 0.95 * facing
-	poly(ci, PackedVector2Array([
-		Vector2(r * 0.3 * facing, -r * 0.2), Vector2(hx, -r * 0.85),
-		Vector2(hx * 0.45, r * 0.05)]), skin, 0.0)
-	circle(ci, Vector2(hx, -r * 0.85), r * 0.44, skin)
-	poly(ci, PackedVector2Array([
-		Vector2(hx + r * 0.28 * facing, -r * 0.95), Vector2(hx + r * 0.8 * facing, -r * 0.78),
-		Vector2(hx + r * 0.28 * facing, -r * 0.62)]), skin, 1.8)
-	poly(ci, PackedVector2Array([
-		Vector2(hx - r * 0.1, -r * 1.18), Vector2(hx - r * 0.32, -r * 1.6),
-		Vector2(hx + r * 0.22, -r * 1.16)]), Color(0.93, 0.89, 0.8), 1.6)
-	ci.draw_circle(Vector2(hx + r * 0.1 * facing, -r * 0.92), r * 0.1, Color(1.0, 0.85, 0.2))
-	if not flying:
-		for i in 3:
-			var cy := -r * 0.4 + float(i) * r * 0.34
-			ci.draw_line(Vector2(-r * 1.05, cy), Vector2(r * 0.75, cy + r * 0.14), Color(0.6, 0.61, 0.68), 3.0, true)
-			for k in 3:
-				var cx := -r * 0.95 + float(k) * r * 0.62
-				ci.draw_arc(Vector2(cx, cy + r * 0.1), r * 0.11, 0.0, TAU, 12, Color(0.78, 0.79, 0.86), 2.0, true)
+		for s in [-1.0, 1.0]:
+			# a folded wing standing off the shoulder: tall, narrow, scalloped edge
+			poly(ci, PackedVector2Array([
+				Vector2(s * r * 0.28, -r * 0.78), Vector2(s * r * 1.05, -r * 0.62),
+				Vector2(s * r * 1.32, -r * 0.05), Vector2(s * r * 1.02, r * 0.28),
+				Vector2(s * r * 0.62, r * 0.05), Vector2(s * r * 0.42, -r * 0.3)]), wing, 2.0)
+			ci.draw_line(Vector2(s * r * 0.28, -r * 0.78), Vector2(s * r * 1.32, -r * 0.05), wing_dark, 2.2)
+	# --- tail and legs ------------------------------------------------------
+	var tail := PackedVector2Array()
+	for i in 6:
+		var q := float(i) / 5.0
+		tail.append(Vector2(-r * (0.55 + q * 1.35) * f,
+			r * (0.55 - 0.28 * sin(q * PI)) + r * 0.12 * sin(t * 3.0 + q * 2.2)))
+	ci.draw_polyline(tail, skin_dark, r * 0.42, true)
+	ci.draw_circle(tail[tail.size() - 1], r * 0.2, skin_dark)
+	ci.draw_line(Vector2(-r * 0.34, r * 0.65), Vector2(-r * 0.46, r * 1.2), skin_dark, r * 0.36, true)
+	ci.draw_line(Vector2(r * 0.3, r * 0.65), Vector2(r * 0.42, r * 1.2), skin_dark, r * 0.36, true)
+	# --- torso, belly plates, back ridge ------------------------------------
+	ellipse(ci, Vector2(0, r * 0.05), r * 1.02, r * 0.86, skin)
+	ellipse(ci, Vector2(r * 0.14 * f, r * 0.34), r * 0.6, r * 0.48, belly, 0.0)
+	for i in 3:
+		ci.draw_line(Vector2(r * (-0.32 + 0.04 * float(i)) * f, r * (0.16 + float(i) * 0.2)),
+			Vector2(r * (0.42 - 0.02 * float(i)) * f, r * (0.2 + float(i) * 0.2)),
+			Color(0.5, 0.34, 0.24, 0.75), 1.6, true)
+	for i in 4:
+		var sx := -r * (0.12 + float(i) * 0.22) * f
+		var sy := -r * (0.72 - float(i) * 0.13)
+		poly(ci, PackedVector2Array([Vector2(sx, sy), Vector2(sx - r * 0.08 * f, sy - r * 0.32),
+			Vector2(sx + r * 0.17 * f, sy - r * 0.02)]), horn, 1.3)
+	# --- arms: shoulders and fists. never chained ---------------------------
+	for s in [1.0, -1.0]:
+		var shoulder := Vector2(s * r * 0.74 * f, -r * 0.28)
+		ci.draw_line(shoulder, shoulder + Vector2(s * r * 0.26 * f, r * 0.6), skin, r * 0.46, true)
+		var fist := shoulder + Vector2(s * r * 0.3 * f, r * 0.74)
+		ci.draw_circle(fist, r * 0.36, skin)
+		ci.draw_arc(fist, r * 0.36, 0.0, TAU, 18, ink, 2.0, true)
+		for k in 3:
+			ci.draw_line(fist + Vector2(s * r * 0.12 * f, r * 0.16), fist + Vector2(s * r * (0.26 + 0.09 * float(k)) * f, r * 0.46),
+				horn, 2.2, true)
+	# --- head: horns, glowing eyes, burning maw -----------------------------
+	var head := Vector2(r * 0.34 * f, -r * 0.82)
+	ellipse(ci, head, r * 0.62, r * 0.54, skin)
+	ci.draw_line(head + Vector2(-r * 0.4 * f, -r * 0.18), head + Vector2(r * 0.44 * f, -r * 0.24), skin_dark, r * 0.15, true)
+	ci.draw_circle(head + Vector2(r * 0.02 * f, -r * 0.02), r * 0.11, Color(0.1, 0.26, 0.08))
+	ci.draw_circle(head + Vector2(r * 0.02 * f, -r * 0.02), r * 0.075, glow)
+	ci.draw_circle(head + Vector2(r * 0.32 * f, -r * 0.02), r * 0.085, glow)
+	for s in [-1.0, 1.0]:
+		var base_pt := head + Vector2(s * r * 0.32, -r * 0.28)
+		var curve := PackedVector2Array()
+		for i in 5:
+			var q := float(i) / 4.0
+			curve.append(base_pt + Vector2(s * r * (0.06 + 0.72 * q * q), -r * (0.5 * q + 0.55 * q * q)))
+		ci.draw_polyline(curve, horn, r * 0.24, true)
+		ci.draw_polyline(curve, Color(1, 1, 1, 0.3), r * 0.09, true)
+	var maw := head + Vector2(r * 0.44 * f, r * 0.28)
+	ellipse(ci, maw, r * 0.26, r * 0.16, Color(0.09, 0.2, 0.07), 0.0)
+	ci.draw_circle(maw + Vector2(r * 0.05 * f, 0.0), r * 0.11, glow)
+	for k in 3:
+		ci.draw_line(maw + Vector2(r * (-0.15 + 0.13 * float(k)) * f, -r * 0.1),
+			maw + Vector2(r * (-0.15 + 0.13 * float(k)) * f, r * 0.05), Color(0.95, 0.95, 0.85), 1.8, true)
+	# --- chains: the wings only --------------------------------------------
+	var steel := Color(0.66, 0.68, 0.74)
+	var steel_hi := Color(0.86, 0.88, 0.93)
+	if flying:
+		# broken stubs swinging from each wing joint
+		for s in [-1.0, 1.0]:
+			var joint := Vector2(s * r * 0.45, -r * 0.5)
+			var sway := sin(t * 4.0 + s) * r * 0.08
+			ci.draw_line(joint, joint + Vector2(s * r * 0.22 + sway, r * 0.52), steel, 3.0, true)
+			for k in 2:
+				ci.draw_arc(joint + Vector2(s * r * (0.14 + 0.09 * float(k)) + sway, r * (0.3 + 0.12 * float(k))),
+					r * 0.1, 0.0, TAU, 10, steel_hi, 1.8, true)
+	else:
+		# chains strapped across both folded wings
+		for s in [-1.0, 1.0]:
+			for k in 2:
+				var y := -r * 0.5 + float(k) * r * 0.34
+				ci.draw_line(Vector2(s * r * 0.3, y), Vector2(s * r * 1.24, y + r * 0.28), steel, 3.0, true)
+				for j in 3:
+					var q := float(j) / 2.0
+					ci.draw_arc(Vector2(s * r * (0.45 + 0.5 * q), y + r * (0.06 + 0.14 * q)), r * 0.11,
+						0.0, TAU, 12, steel_hi, 1.8, true)
 	if hurt > 0.0:
+<<<<<<< Updated upstream
 		ci.draw_circle(Vector2.ZERO, r * 1.1, Color(1, 1, 1, clampf(hurt, 0.0, 0.5)))
+=======
+		ci.draw_circle(Vector2.ZERO, r * 1.15, Color(1, 1, 1, clampf(hurt, 0.0, 0.5)))
+>>>>>>> Stashed changes
 	ink = OUTLINE
 
 
@@ -306,14 +440,14 @@ static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 ## Commander towers: the furthest-back tower wears a face of its own.
 ## Blue side reads as a celestial jelly, red side as a spear goblin. Both light
 ## up when that player's ability is ready.
-static func commander(ci: CanvasItem, kind: String, r: float, t: float, ready: bool, team_col: Color) -> void:
+static func commander(ci: CanvasItem, kind: String, r: float, t: float, ready: bool, team_col: Color, flip: bool = false) -> void:
 	if kind == "tentacle":
-		_jelly(ci, r, t, ready, team_col)
+		_jelly(ci, r, t, ready, team_col, flip)
 	else:
 		_goblin_commander(ci, r, t, ready, team_col)
 
 
-static func _jelly(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color) -> void:
+static func _jelly(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color, flip: bool = false) -> void:
 	var core := Color(0.55, 0.35, 0.95).lerp(team_col, 0.45 if not ready else 0.75)
 	var rim := Color(0.8, 0.55, 1.0) if not ready else Color(0.7, 0.9, 1.0)
 	for i in 4:
@@ -331,7 +465,7 @@ static func _jelly(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Co
 	var prev := Vector2(0, r * 0.05)
 	for k in 9:
 		var f := float(k) / 8.0
-		var px := r * 2.6 * f
+		var px := r * 2.6 * f * (-1.0 if flip else 1.0)
 		var py := r * 0.35 + sin(t * speed - f * 2.2) * r * 0.55 * f
 		var p2 := Vector2(px, py)
 		ci.draw_line(prev, p2, Color(chain.r, chain.g, chain.b, 0.55), 3.0, true)
@@ -694,11 +828,15 @@ static func tower(ci: CanvasItem, w: float, h: float, team_color: Color, hurt: f
 
 
 ## Small card-sheet icon, drawn inside a rounded card.
-static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 0.0) -> void:
+static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 0.0, lead: bool = false) -> void:
 	ci.draw_set_transform(c, 0.0, Vector2.ONE)
 	match kind:
 		"snowman":
 			creature(ci, "snowman", r, 1.0, t)
+		"ovomachine":
+			creature(ci, "ovomachine", r, 1.0, t)
+		"snowball":
+			creature(ci, "snowball", r * 0.92, 1.0, t)
 		"slate":
 			creature(ci, "slate", r, 1.0, t)
 		"alchemist":
@@ -714,7 +852,7 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 		"fu":
 			creature(ci, "fu", r, 1.0, t)
 		"hawk":
-			bird(ci, r, 1.0, t, false)
+			bird(ci, r, 1.0, t, lead)
 		"zombie":
 			creature(ci, "zombie", r, 1.0, t)
 		"hedgehog":

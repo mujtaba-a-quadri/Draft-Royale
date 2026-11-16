@@ -56,8 +56,22 @@ const BAND_B := Color(0.33, 0.46, 0.24)
 const WATER := Color(0.678, 0.332, 0.139, 1.0)
 const WATER_HI := Color(0.176, 0.007, 0.001, 1.0)
 const WOOD := Color(0.62, 0.45, 0.3)
-const BLUE := Color(0.36, 0.62, 0.95)
-const RED := Color(0.92, 0.4, 0.42)
+const Left_Color := Color(0.306, 0.517, 0.151, 1.0)
+const Right_Color := Color(0.575, 0.153, 0.345, 1.0)
+
+## Team colours are data, not literals: these two entries are the only reason
+## you are blue and your opponent is red. Override them from a menu, a relic, a
+## match type â€” or --colors=#ff8800,#22ccaa on the command line.
+var team_colors: Array = [Left_Color, Right_Color]:
+	set(value):
+		team_colors = value
+		# the control tint is a cached layer: repaint it for a colour change too
+		if control_layer != null:
+			control_layer.queue_redraw()
+
+## Every unit, tower and tile tint is drawn in its team colour; unit outlines are
+## a darker shade of it instead of black.
+const TEAM_INK_DARKEN := 0.45
 
 ## Team colours are data, not literals: these two entries are the only reason
 ## you are blue and your opponent is red. Override them from a menu, a relic, a
@@ -147,8 +161,13 @@ func _ready() -> void:
 			var parts := String(a.substr(9)).split(",")
 			if parts.size() == 2:
 				team_colors = [
+<<<<<<< Updated upstream
 					Color.from_string(String(parts[0]).strip_edges(), BLUE),
 					Color.from_string(String(parts[1]).strip_edges(), RED),
+=======
+					Color.from_string(String(parts[0]).strip_edges(), Left_Color),
+					Color.from_string(String(parts[1]).strip_edges(), Right_Color),
+>>>>>>> Stashed changes
 				]
 	if forced == "tentacle":
 		ability = ["tentacle", "shiesty"]
@@ -1110,28 +1129,6 @@ func death_aoe(center: Vector2, radius_t: float, dmg: float, slow_amount: float,
 	shake(4.0)
 
 
-func dragon_breath(center: Vector2, radius_t: float, dmg: float, owner_team: int) -> void:
-	for u in units.duplicate():
-		if not is_instance_valid(u) or u.dead:
-			continue
-		if u.get("flying") == true:
-			continue
-		if tiles_between(center, u.position) <= radius_t + float(u.get_radius_t()) * 0.5:
-			u.take_damage(dmg, center)
-	for t in towers.duplicate():
-		if not is_instance_valid(t) or t.dead:
-			continue
-		if int(t.team) == owner_team:
-			continue
-		if tiles_between(center, t.position) <= radius_t + 0.7:
-			t.take_damage(dmg, center)
-	var fire := DDBurst.new()
-	fire.setup(self, radius_t, Color(1.0, 0.45, 0.12))
-	fire.position = center
-	add_child(fire)
-	shake(3.0)
-
-
 const BOULDER_DIRECTIONS := 16
 
 
@@ -1462,6 +1459,12 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 
 func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) -> Node:
 	if DDCard.is_spell(kind):
+		if kind == "snowball":
+			# a rolling lane cleaner, not a bolt from a tower
+			var sb := DDSnowball.new()
+			sb.setup(self, team, world)
+			add_child(sb)
+			return sb
 		var s := DDSpell.new()
 		s.setup(self, kind, team)
 		s.position = world
@@ -1491,7 +1494,10 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 		return u
 	# swarm: spawn every bird of the formation, lead bird at the front
 	var first: Node = null
+	# mirror the formation on both axes: the lead bird stays at the FRONT of
+	# the push, whichever side of the board the flock is deployed on
 	var ydir := -1.0 if team == 0 else 1.0
+	var xdir := 1.0 if team == 0 else -1.0
 	for i in offsets.size():
 		var off: Array = offsets[i]
 		var b := DDUnit.new()
@@ -1502,7 +1508,7 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 			b.hp = lead_hp
 			b.bird_lead = true
 			b.radius_t = float(data["radius"]) * 1.3
-		b.position = snapped + Vector2(float(off[0]), float(off[1]) * ydir) * TILE
+		b.position = snapped + Vector2(float(off[0]) * xdir, float(off[1]) * ydir) * TILE
 		units.append(b)
 		add_child(b)
 		if first == null:
@@ -1649,4 +1655,8 @@ func _draw() -> void:
 
 
 func _hovered_entity(at: Vector2) -> Node:
+<<<<<<< Updated upstream
 	return DDArenaDraw.hovered(self, at)
+=======
+	return DDArenaDraw.hovered(self, at)
+>>>>>>> Stashed changes

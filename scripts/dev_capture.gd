@@ -18,6 +18,22 @@ var lane_flip := 0
 var done_steps: Dictionary = {}
 var alch: Node = null
 var log_mode := false
+# --- pennygif: transparent-background frames of Penny vs a passive knight -----
+const GIF_W := 480
+const GIF_H := 360
+const GIF_FPS := 20.0
+const GIF_FRAMES := 72
+var gif_a := "penny"
+var gif_b := "hero"
+var gif_started := false
+var gif_done := false
+var gif_taken := 0
+var gif_t := 0.0
+var gif_dir := ""
+var gif_view: SubViewport = null
+var gif_penny: Node = null
+var gif_knight: Node = null
+var gif_cam: Camera2D = null
 var next_log := 0.5
 var run_time := 12.0
 var max_gap := 0.0
@@ -33,6 +49,10 @@ func _ready() -> void:
 			demo = true
 		elif a.begins_with("--scenario="):
 			scenario = a.substr(11)
+		elif a.begins_with("--gif-a="):
+			gif_a = a.substr(8)
+		elif a.begins_with("--gif-b="):
+			gif_b = a.substr(8)
 		elif a == "--log":
 			log_mode = true
 	if shot_dir != "":
@@ -130,9 +150,98 @@ func _ready() -> void:
 	elif scenario == "bld":
 		shot_times = []
 		run_time = 5.0
+	elif scenario == "pennygif" or scenario == "pairgif":
+		shot_times = []
+		run_time = 6.0
 	else:
 		shot_times = [2.0, 5.0, 8.0, 11.0]
 		run_time = 13.5
+
+
+## Penny, alone on a transparency-rendered stage with a knight that never swings
+## back. Frames are dumped as raw RGBA (what the GIF encoder eats) plus PNG.
+func _pennygif_steps() -> void:
+	if not gif_started:
+		_gif_setup()
+		return
+	if gif_done:
+		return
+	if gif_taken >= GIF_FRAMES:
+		if not gif_done:
+			gif_done = true
+			var meta := FileAccess.open(gif_dir + "/meta.txt", FileAccess.WRITE)
+			if meta != null:
+				meta.store_line("%d %d %d %d" % [GIF_W, GIF_H, int(GIF_FPS), gif_taken])
+				meta.close()
+			print("PENNYGIF done frames=", gif_taken, " dir=", ProjectSettings.globalize_path(gif_dir))
+		return
+	gif_t += get_process_delta_time()
+	if gif_t < 1.0 / GIF_FPS:
+		return
+	gif_t = 0.0
+	# keep both dancers in frame while she spins and leaps around him
+	if gif_cam != null and gif_penny != null and is_instance_valid(gif_penny) and gif_knight != null and is_instance_valid(gif_knight):
+		gif_cam.position = (gif_penny.position + gif_knight.position) * 0.5
+		# no health bar in the shot: the knight is a partner, not a target
+		gif_knight.hp = gif_knight.max_hp
+	var img: Image = gif_view.get_texture().get_image()
+	if img == null:
+		return
+	img.convert(Image.FORMAT_RGBA8)
+	var bytes := img.get_data()
+	var fh := FileAccess.open(gif_dir + "/frame_%04d.bin" % gif_taken, FileAccess.WRITE)
+	if fh == null:
+		return
+	fh.store_buffer(bytes)
+	fh.close()
+	img.save_png(gif_dir + "/frame_%04d.png" % gif_taken)
+	gif_taken += 1
+
+
+func _gif_setup() -> void:
+	gif_started = true
+	# inside the project (hidden from the importer) so the frame dump is writable
+	gif_dir = "res://.godot/penny_frames"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(gif_dir))
+	for u in arena.units.duplicate():
+		if is_instance_valid(u):
+			u.take_damage(999999.0, u.position)
+	arena.bot_players = [false, false]
+	gif_view = SubViewport.new()
+	gif_view.size = Vector2i(GIF_W, GIF_H)
+	gif_view.transparent_bg = true
+	gif_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(gif_view)
+	var cam := Camera2D.new()
+	cam.zoom = Vector2(2.4, 2.4)
+	gif_view.add_child(cam)
+	gif_penny = arena.spawn_troop(gif_a, 0, Vector2(760.0, 506.0), true)
+	gif_knight = arena.spawn_troop(gif_b, 1, Vector2(760.0, 466.0), true)
+	if gif_penny != null and gif_penny.get("deploy_timer") != null:
+		gif_penny.deploy_timer = 0.0
+		gif_penny.hp = 99999.0
+		gif_penny.max_hp = 99999.0
+	if gif_knight != null:
+		# a passive partner: never swings, never dies, never moves
+		if gif_knight.get("deploy_timer") != null:
+			gif_knight.deploy_timer = 0.0
+		if gif_knight.get("hp") != null:
+			gif_knight.hp = 999999.0
+			gif_knight.max_hp = 999999.0
+		if gif_knight.get("speed") != null:
+			gif_knight.speed = 0.0
+		if gif_knight.get("dmg") != null:
+			gif_knight.dmg = 0.0
+	for n in [gif_penny, gif_knight]:
+		if n == null or not is_instance_valid(n):
+			continue
+		arena.remove_child(n)
+		gif_view.add_child(n)
+		n.queue_redraw()
+	cam.position = Vector2(760.0, 486.0)
+	cam.make_current()
+	gif_cam = cam
+	print("PENNYGIF setup at ", ProjectSettings.globalize_path(gif_dir))
 
 
 func _process(delta: float) -> void:
@@ -193,6 +302,8 @@ func _process(delta: float) -> void:
 		_cross_steps()
 	elif scenario == "bld":
 		_bld_steps()
+	elif scenario == "pennygif" or scenario == "pairgif":
+		_pennygif_steps()
 	elif scenario == "flash":
 		if _at(1.0):
 			var kinds := ["snowman", "slate", "alchemist", "hero"]

@@ -109,7 +109,12 @@ const CARDS := {
 		"radius": 0.34, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"troops_only": true,
+<<<<<<< Updated upstream
 		"dodge": {"after_hits": 3, "time": 0.9, "back": 0.5, "sweep_deg": 90.0},
+=======
+		"dodge": {"after_hits": 3, "time": 0.9, "back": 0.5, "sweep_deg": 90.0,
+			"jump_time": 0.35, "jump_reach": 2.5, "jump_mult": 2.0},
+>>>>>>> Stashed changes
 		"accent": Color(0.95, 0.62, 0.28),
 	},
 	"aphid": {
@@ -133,6 +138,10 @@ const CARDS := {
 		"hp": 100.0, "dmg": 10.0, "speed": 0.7, "reach": 5.0, "interval": 1.8,
 		"radius": 0.42, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
+<<<<<<< Updated upstream
+=======
+		"hits_air": true,
+>>>>>>> Stashed changes
 		"shoots": "dart",
 		"payload": {"stun": 0.5},
 		"accent": Color(0.86, 0.72, 0.24),
@@ -164,6 +173,31 @@ const CARDS := {
 		"summon": {"unit": "lizard", "count": 3, "range": 6.0, "cooldown": 6.0},
 		"accent": Color(0.62, 0.8, 0.44),
 	},
+	"snowball": {
+		"name": "Snowball",
+		"cost": 4,
+		"type": "spell",
+		"blurb": "Thrown in an arc out of your nearest tower onto the tile you pick, then rolls forward from there: one tile of snow, a tile taller for every two it covers, 10 damage per tile of height with a shove to match, then a 30 damage burst and a 3.5 second slow when it reaches the river.",
+		"hp": 0.0, "dmg": 30.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.6, "splash": 1.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"slow": 0.32, "slow_time": 3.5,
+		"launch": "closest",
+		"roll": {"speed": 4.2, "dmg": 10.0, "push": 1.0},
+		"accent": Color(0.72, 0.86, 1.0),
+	},
+	"ovomachine": {
+		"name": "In-Ovo Machine",
+		"cost": 6,
+		"type": "building",
+		"blurb": "An industrial hatchery: a two by two block of steel that cranks out a hot chicken through the front hatch every twelve seconds.",
+		"hp": 240.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.95, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 60.0,
+		"buildings_only": false,
+		"footprint": [2, 2],
+		"summon": {"unit": "chicken", "interval": 12.0, "spot": "front"},
+		"accent": Color(0.74, 0.66, 0.58),
+	},
 	"fu": {
 		"name": "Boomerang-Fu",
 		"cost": 5,
@@ -190,7 +224,11 @@ const CARDS := {
 		"name": "Hedgehog",
 		"cost": 3,
 		"type": "troop",
+<<<<<<< Updated upstream
 		"blurb": "Walks up slowly and curls into a ball: 45 % damage taken, a quill burst, and a shove that never quite gets you out of reach.",
+=======
+		"blurb": "Walks up slowly and curls into a ball: 45 % damage taken, a quill burst, and a shove that never quite gets you out of reach. Ignores anything in the air — until one dives on it.",
+>>>>>>> Stashed changes
 		"hp": 60.0, "dmg": 12.0, "speed": 1.0, "reach": 0.6, "interval": 1.2,
 		"radius": 0.4, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -223,14 +261,14 @@ const CARDS := {
 		"hits_air": true,
 		"flying_unit": true,
 		"lead_hp": 20.0,
-		"swarm_offsets": [[0.0, 1.0], [-0.75, -0.15], [0.75, -0.15], [0, -0.8], [0.4, 0.8]],
+		"swarm_offsets": [[0.8, 0.0], [-0.8, -0], [0, -0.8], [0, 0.8]],
 		"accent": Color(0.99, 0.8, 0.22),
 	},
 	"dragon": {
 		"name": "The Chained Dragon",
 		"cost": 9,
 		"type": "troop",
-		"blurb": "Chained, it can only claw. At half HP the chains break: it flies, burns structures and scorches friends underneath.",
+		"blurb": "Chained by the wings, so it can only claw. At half HP the chains burst and it takes the sky, pouring fire straight down onto the ground it crosses.",
 		"hp": 420.0, "dmg": 45.0, "speed": 0.55, "reach": 1.6, "interval": 1.4,
 		"radius": 1.15, "splash": 0.0, "aggro": 7.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -272,7 +310,11 @@ const CARDS := {
 	},
 }
 
+<<<<<<< Updated upstream
 const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid"]
+=======
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball"]
+>>>>>>> Stashed changes
 
 
 ## Every card in the game. Pen is not in the deck — he only arrives when Penny is
