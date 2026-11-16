@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bnihb5urju5do"
+path="res://.godot/imported/freesound_community opening hand.mp3-f6724887ac7561aef3ed24364f63f8f8.mp3str"
+
+[deps]
+
+source_file="res://SFX/freesound_community opening hand.mp3"
+dest_files=["res://.godot/imported/freesound_community opening hand.mp3-f6724887ac7561aef3ed24364f63f8f8.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

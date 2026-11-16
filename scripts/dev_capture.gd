@@ -150,6 +150,9 @@ func _ready() -> void:
 	elif scenario == "bld":
 		shot_times = []
 		run_time = 5.0
+	elif scenario == "firebolt":
+		shot_times = []
+		run_time = 3.0
 	elif scenario == "pennygif" or scenario == "pairgif":
 		shot_times = []
 		run_time = 6.0
@@ -302,6 +305,8 @@ func _process(delta: float) -> void:
 		_cross_steps()
 	elif scenario == "bld":
 		_bld_steps()
+	elif scenario == "firebolt":
+		_firebolt_steps()
 	elif scenario == "pennygif" or scenario == "pairgif":
 		_pennygif_steps()
 	elif scenario == "flash":
@@ -419,6 +424,54 @@ func _click(pos: Vector2) -> void:
 	up.position = pos
 	up.global_position = pos
 	get_viewport().push_input(up)
+
+
+## Regression: a two-use card must fire once per click. The press that starts a
+## gesture belongs to the hand panel, which drops the card on release; casting on
+## the press as well spends both charges for a single click.
+func _firebolt_steps() -> void:
+	if _at(0.8):
+		arena.bot_players = [false, false]
+		arena.hands[0] = ["firebolt", "hero", "warren"]
+		arena.charges = [{}, {}]
+		arena.gold[0] = 20.0
+		arena.panels[0].select_index(0)
+		print("[firebolt] armed lifted=%s charges=%d" % [
+			str(arena.panels[0].drag_card != null), arena.charges_of(0, "firebolt")])
+	if _at(1.0):
+		# pin the drag: with no real cursor the panel lets go of it between frames
+		arena.panels[0].select_index(0)
+		arena.panels[0]._begin_drag(0)
+		print("[firebolt] state before press: lifted=%s sel=%d/%d" % [
+			str(arena.panels[0].drag_card != null), arena.selected_player, arena.selected_index])
+		var point: Vector2 = arena.tile_center(4.0, 24.0)
+		var press := InputEventMouseButton.new()
+		press.button_index = MOUSE_BUTTON_LEFT
+		press.pressed = true
+		press.position = point
+		arena._unhandled_input(press)
+		print("[firebolt] casts after press=%d (expect 0)" % _bolts())
+		arena.try_deploy_at(point)
+		print("[firebolt] casts after click 1=%d (expect 1) charges=%d in_hand=%s" % [
+			_bolts(), arena.charges_of(0, "firebolt"), str(arena.hands[0].has("firebolt"))])
+	if _at(1.6):
+		arena.try_deploy_at(arena.tile_center(4.0, 24.0))
+		# the counter sees bolts still in flight, not a total: the charge bookkeeping
+		# is the proof here — 1 charge left after click 1, none after click 2
+		print("[firebolt] after click 2: bolts_in_flight=%d in_hand=%s lifted=%s" % [
+			_bolts(), str(arena.hands[0].has("firebolt")), str(arena.panels[0].drag_card != null)])
+
+
+## Live projectiles of the firebolt kind: one per cast.
+func _bolts() -> int:
+	var n := 0
+	for c in arena.get_children():
+		if not is_instance_valid(c):
+			continue
+		var k = c.get("kind")
+		if k != null and String(k) == "firebolt":
+			n += 1
+	return n
 
 
 func _click_steps() -> void:

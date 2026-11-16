@@ -105,6 +105,13 @@ var jump_t := 0.0
 var jump_from := Vector2.ZERO
 var jump_to := Vector2.ZERO
 var jump_victim: Node = null
+var jump_dir := Vector2.RIGHT
+## after the landing hit she rides the shove for a moment, so the push reads as
+## coming from her jump rather than from the target sliding away on its own
+## the grab: while carrying, the victim rides in front of her for the whole leap
+var carrying := false
+var carry_dir := Vector2.RIGHT
+var carry_contact := 0.0
 var invincible := false
 ## Untargetable: the arena's enemy queries skip these (Penny mid-dodge).
 var untargetable := false
@@ -594,24 +601,44 @@ func _tick_dodge(delta: float) -> void:
 func _end_dash() -> void:
 	dodging = false
 	jumping = false
+	carrying = false
 	jump_victim = null
 	untargetable = false
 	invincible = false
 	atk_cd = 0.0
 
 
-## After the spin she leaves the ground entirely and comes down on something:
-## air first, because her swipes cannot reach it, otherwise the closest body.
+## After the spin she grabs whatever she can reach and carries it with her: a full
+## 2.5 tile hop for both of them, damage on arrival. A giant or a building cannot
+## be carried, so against those she just closes to the hitbox and hits it.
 func _begin_jump() -> void:
 	var victim: Node = _jump_target()
 	if victim == null:
+		# nothing left to grab (it died during the strafe): no leap at all
 		_end_dash()
 		return
 	jumping = true
 	jump_t = 0.0
 	jump_from = position
-	jump_to = victim.position
 	jump_victim = victim
+	var to: Vector2 = victim.position - position
+	var dist: float = to.length()
+	var dir: Vector2 = to / dist if dist > 0.01 else Vector2(facing, 0.0)
+	jump_dir = dir
+	var contact: float = (float(victim.get_radius_t()) + radius_t) * float(arena.TILE)
+	var leap: float = float(dodge_cfg.get("jump_reach", 2.5)) * float(arena.TILE)
+	var grabbable: bool = not _is_giant(victim) and not victim.is_building()
+	if grabbable:
+		# the grab: she always covers the full leap and drags the target along,
+		# so both of them end up 2.5 tiles from where the jump started
+		carrying = true
+		carry_dir = dir
+		carry_contact = contact
+		jump_to = position + dir * leap
+	else:
+		# a giant or a building will not budge: stop on its hitbox, hit it there
+		carrying = false
+		jump_to = position + dir * clampf(dist - contact, 0.0, leap)
 	target = null
 	state = S.IDLE
 
@@ -639,18 +666,20 @@ func _jump_target() -> Node:
 	return best_air if best_air != null else best_ground
 
 
-## The leap itself: still untargetable, one doubled hit on landing.
+## The leap itself: still untargetable. A carried target rides in front of her the
+## whole way; the doubled hit lands when she arrives.
 func _tick_jump(delta: float) -> void:
 	var total: float = maxf(0.1, float(dodge_cfg.get("jump_time", 0.35)))
 	jump_t += delta
 	var f: float = clampf(jump_t / total, 0.0, 1.0)
-	if jump_victim != null and is_instance_valid(jump_victim) and not jump_victim.dead:
-		jump_to = jump_victim.position
 	position = jump_from.lerp(jump_to, ease(f, 0.35))
 	if absf(jump_to.x - jump_from.x) > 1.0:
 		facing = signf(jump_to.x - jump_from.x)
+	var held: bool = jump_victim != null and is_instance_valid(jump_victim) and not jump_victim.dead
+	if carrying and held:
+		jump_victim.position = position + carry_dir * carry_contact
 	if f >= 1.0:
-		if jump_victim != null and is_instance_valid(jump_victim) and not jump_victim.dead:
+		if held:
 			var power: float = dmg * float(dodge_cfg.get("jump_mult", 2.0))
 			jump_victim.take_damage(power, position, self)
 			var burst := DDBurst.new()
@@ -659,6 +688,16 @@ func _tick_jump(delta: float) -> void:
 			arena.add_child(burst)
 			arena.shake(1.6)
 		_end_dash()
+
+
+## Giants (the dragon) shrug off the shove: they take the hit and stay planted.
+func _is_giant(node: Node) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var k = node.get("kind")
+	if k == null:
+		return false
+	return bool(DDCard.get_card(String(k)).get("giant", false))
 
 
 ## Primal Aphid: a shotgun cone, five pellets spread across cone_deg, each flying

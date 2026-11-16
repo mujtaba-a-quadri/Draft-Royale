@@ -96,6 +96,8 @@ var selected_index := -1
 ## A placement the player clicked on but cannot pay for yet (they were less than
 ## one coin short). Nothing is spent until it actually plays itself.
 var staged := {"player": -1, "index": -1, "kind": "", "at": Vector2.ZERO}
+## Card sounds (DDSfx): the deal and every placement.
+var sfx: Node = null
 
 ## Re-entrancy guard for reflective damage (hedgehog quills poking back).
 var damage_guard := 0
@@ -162,6 +164,7 @@ func _ready() -> void:
 	_build_control_layer()
 	_build_preview()
 	_build_decks()
+	_build_sfx()
 	_build_hud()
 	_build_shelf()
 	_setup_bots()
@@ -289,6 +292,14 @@ func _build_decks(seed_value: int = -1) -> void:
 		hands[p] = deck.slice(0, 4)
 		queues[p] = deck.slice(4)
 		gold[p] = 5.0
+
+
+## One sound node for the whole match; it also owns the deal sound so the four
+## cards that start the hand are audible.
+func _build_sfx() -> void:
+	sfx = DDSfx.new()
+	add_child(sfx)
+	sfx.draw_hand(4)
 
 
 func _build_hud() -> void:
@@ -1412,6 +1423,8 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 		banner_flash("Claim the middle to deploy there")
 		return
 	gold[team] -= DDCard.cost(kind)
+	if sfx != null:
+		sfx.place_card()
 	spawn_troop(kind, team, world)
 	# a card with uses left (Firebolt) stays in the hand AND stays lifted, so the
 	# next click casts it again; right click puts it back with the charge intact
@@ -1621,7 +1634,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				launch_hero(p)
 				return
 		if board_rect().has_point(world):
-			try_deploy_at(world)
+			# a card that is already lifted owns this click: the hand panel drops it on
+			# release. Casting here too would fire a two-use card twice per click.
+			var lifted := false
+			for pn in panels:
+				if is_instance_valid(pn) and pn.drag_card != null:
+					lifted = true
+					break
+			if not lifted:
+				try_deploy_at(world)
 		else:
 			clear_selection()
 

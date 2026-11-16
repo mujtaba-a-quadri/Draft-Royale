@@ -173,6 +173,20 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   **burns friendly troops too** — that is deliberate — and it flies until the fire
   lands on its target so the tower it is attacking burns. Do not give it back a
   breath burst.
+* **Sound**: `SFX/` holds the Pixabay card sounds (credit in the filename). `DDSfx`
+  (`scripts/sfx.gd`) is a child of the arena created in `_build_sfx()`; the opening
+  deal slices the eight draws in `opening hand` down to a random four, placement
+  plays `oxidvideos-place cardmp3.mp3` from `deploy()`. Audio is silent under
+  `--headless` but the nodes still exist, so bot sims are unaffected.
+* **Penny's leap is a grab, not a shove.** She always travels the full
+  `jump_reach` (2.5 tiles) and carries the target in front of her the whole way
+  (`carrying` / `carry_dir` / `carry_contact` in `_tick_jump`), landing the doubled
+  hit when she arrives. The victim is moved to `position + carry_dir * contact`
+  each frame, so the pair move as one — do not put the leap back on a live chase of
+  the victim's position, which is what once walked a dragon off the board.
+* **Two cases get no grab**: a `giant` card (the dragon) or a building — she cannot
+  carry those, so she stops on their hitbox and hits there (`_is_giant()`). With no
+  target left after the strafe she does not jump at all.
 * **Card face**: `DDCardFace.rate_text()` and the HP ribbon are type-aware
   (troop / building / spell). New cards only need an `ATTACK_NAMES` entry and
   data; put per-type stats in `rate_text`, never in the ribbon.

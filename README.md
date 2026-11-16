@@ -110,7 +110,7 @@ footprint) rather than squeezing it into the HP ribbon.
 | Lizard Warren | 4 | 130 | – | Stationary burrow with a **60 s lifetime**. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
 | In-Ovo Machine | 6 | 240 | – | A **2 × 2** industrial hatchery with a **60 s lifetime** that pushes a **Hot Chicken** out of its front hatch **every 12 seconds** — front and centre, facing whichever way your push is going. It runs on its own clock: unlike the Warren it does not need company |
 | Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn; **then 30 splash** on contact | Two phases. It **pecks fireballs from range**, and after **three hits on one target** it takes to the air: a **fire spirit that flies at that target and rams it for 30 in a 1.4 tile radius, dying in its own blast**. It becomes a flyer for the ram, so ground troops without anti-air cannot stop it — but it is **killable in flight** by anything that hits air, and shooting it down means no burst at all |
-| Penny | 3 | 90 | 18 / 0.7 s, melee | Calico blur, and the only card that **only ever picks fights with troops** — buildings and towers are ignored. After **3 swipes** she goes **invincible and untargetable**: she steps **half a tile back** and **strafes a quarter circle** around her target (first strafe turns toward the outside of the board, later ones keep turning the same way), then carries on. **Playing Penny replaces her card with Pen on the spot** — his card flies from where she landed into the hand slot she left  **Then she leaves the ground**: after the spin she leaps at the nearest **air** unit within **2.5 tiles** — air she cannot normally touch — otherwise the closest body at all, and lands one **double damage** hit (36) while still untargetable, then goes back to ordinary swipes |
+| Penny | 3 | 90 | 18 / 0.7 s, melee | Calico blur, and the only card that **only ever picks fights with troops** — buildings and towers are ignored. After **3 swipes** she goes **invincible and untargetable**: she steps **half a tile back** and **strafes a quarter circle** around her target (first strafe turns toward the outside of the board, later ones keep turning the same way), then carries on. **Playing Penny replaces her card with Pen on the spot** — his card flies from where she landed into the hand slot she left  **Then she leaves the ground**: after the spin she leaps at the nearest **air** unit within **2.5 tiles** — air she cannot normally touch — otherwise the closest body at all, and lands one **double damage** hit (36) while still untargetable, then goes back to ordinary swipes Her landing is a **grab**: she always leaps **2.5 tiles** and **carries the target with her**, dealing the doubled hit on arrival. **Giants and buildings cannot be carried** — she stops on their hitbox instead — and with nothing left to grab she simply does not jump |
 | Pen | 2 | 100 | 10 / 1.8 s, **5 tile blowgun** | Penny's other half: slow, calm, wrapped in a yellow toga. Every **dart paralyses** whatever it hits for **0.5 s** (units only — towers have nothing to paralyse). A perfectly ordinary card otherwise: he can be played or discarded like any other, and he does **not** turn back into Penny (so the deck never grows a second one)  **Hits air** — a dart to a honeycreeper paralyses it mid-dive |
 | Primal Aphid | 3 | 110 | **5 × 8** in a 45° cone, every 2 s | A flyer that **hovers in to 2 tiles and stops** — it never closes. From there it spits a **five pellet shotgun** across a 45° cone aimed at its target. Each pellet flies **3.5 tiles**, so it reaches a full tile and a half past the aphid's own stance, and it can hit **ground or air**. Pellets **do not pierce**: the first body a pellet crosses eats it and the pellet is spent |
 | Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick (never on air — he throws at flyers even point blank) | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
@@ -426,6 +426,21 @@ to 2W-2L / **−26 HP** average, so it was reverted. The remaining known gaps ar
 in priority order: the hero ability still fires whenever gold ≥ 5 instead of when it will connect,
 no tracking of the opponent's gold, spells valued only for damage, no retreating, and lane control
 is still a flat bonus rather than a plan.
+
+## Sound
+
+`scripts/sfx.gd` (`DDSfx`) owns the card audio. The files live in `SFX/` and are
+Pixabay recordings, credited in their own filenames.
+
+* **Dealing the opening hand** — `freesound_community opening hand.mp3` is one take
+  containing **eight** card draws. A four card deal plays a **random window of four
+  draws** out of those eight (`slice = length / 8`, start picked per deal), so the
+  opening never sounds the same twice.
+* **Placing a card** — `oxidvideos-place cardmp3.mp3`, fired from `deploy()` for
+  every successful placement (troops, buildings and spells alike).
+
+Both run through six pooled `AudioStreamPlayer` voices at −6 dB, so quick plays
+overlap instead of cutting each other off.
 
 ## Verification hooks
 
