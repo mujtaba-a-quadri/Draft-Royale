@@ -109,12 +109,8 @@ const CARDS := {
 		"radius": 0.34, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"troops_only": true,
-<<<<<<< Updated upstream
-		"dodge": {"after_hits": 3, "time": 0.9, "back": 0.5, "sweep_deg": 90.0},
-=======
 		"dodge": {"after_hits": 3, "time": 0.9, "back": 0.5, "sweep_deg": 90.0,
 			"jump_time": 0.35, "jump_reach": 2.5, "jump_mult": 2.0},
->>>>>>> Stashed changes
 		"accent": Color(0.95, 0.62, 0.28),
 	},
 	"aphid": {
@@ -138,10 +134,7 @@ const CARDS := {
 		"hp": 100.0, "dmg": 10.0, "speed": 0.7, "reach": 5.0, "interval": 1.8,
 		"radius": 0.42, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
-<<<<<<< Updated upstream
-=======
 		"hits_air": true,
->>>>>>> Stashed changes
 		"shoots": "dart",
 		"payload": {"stun": 0.5},
 		"accent": Color(0.86, 0.72, 0.24),
@@ -224,11 +217,7 @@ const CARDS := {
 		"name": "Hedgehog",
 		"cost": 3,
 		"type": "troop",
-<<<<<<< Updated upstream
-		"blurb": "Walks up slowly and curls into a ball: 45 % damage taken, a quill burst, and a shove that never quite gets you out of reach.",
-=======
 		"blurb": "Walks up slowly and curls into a ball: 45 % damage taken, a quill burst, and a shove that never quite gets you out of reach. Ignores anything in the air — until one dives on it.",
->>>>>>> Stashed changes
 		"hp": 60.0, "dmg": 12.0, "speed": 1.0, "reach": 0.6, "interval": 1.2,
 		"radius": 0.4, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -310,11 +299,7 @@ const CARDS := {
 	},
 }
 
-<<<<<<< Updated upstream
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid"]
-=======
 const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball"]
->>>>>>> Stashed changes
 
 
 ## Every card in the game. Pen is not in the deck — he only arrives when Penny is

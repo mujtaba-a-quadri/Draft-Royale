@@ -96,8 +96,6 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 	if hurt > 0.0:
 		ci.draw_circle(Vector2.ZERO, r * 1.15, Color(1, 1, 1, clampf(hurt, 0.0, 0.55)))
 	ink = OUTLINE
-<<<<<<< Updated upstream
-=======
 
 
 ## In-Ovo Machine: a squat industrial hatchery. Steel body, riveted plates, a
@@ -156,7 +154,6 @@ static func _ovomachine(ci: CanvasItem, r: float, t: float) -> void:
 		var rx := -r * 0.8 + float(i) * r * 0.52
 		ci.draw_circle(Vector2(rx, -r * 0.68), r * 0.06, steel_dark)
 		ci.draw_circle(Vector2(rx, r * 0.5), r * 0.06, steel_dark)
->>>>>>> Stashed changes
 
 
 static func _snowman(ci: CanvasItem, r: float, t: float) -> void:
@@ -290,14 +287,6 @@ static func _hero(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 
 static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bool, hurt: float = 0.0, ink_col: Color = OUTLINE) -> void:
 	ink = ink_col
-<<<<<<< Updated upstream
-	var skin := Color(0.72, 0.2, 0.22)
-	var dark := Color(0.48, 0.12, 0.16)
-	var belly := Color(0.93, 0.6, 0.35)
-	var flap := sin(t * 7.0) * 0.14
-	poly(ci, PackedVector2Array([
-		Vector2(-r * 0.9, r * 0.25), Vector2(-r * 1.95, r * 0.02), Vector2(-r * 1.15, r * 0.6)]), dark, 2.0)
-=======
 	var f := facing if absf(facing) > 0.01 else 1.0
 	var skin := Color(0.3, 0.66, 0.38)
 	var skin_dark := Color(0.16, 0.42, 0.24)
@@ -308,7 +297,6 @@ static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bo
 	var glow := Color(0.66, 1.0, 0.3)
 	var flap := sin(t * 5.0) * 0.18
 	# --- wings: strapped down when chained, thrown wide in the air -----------
->>>>>>> Stashed changes
 	if flying:
 		for s in [-1.0, 1.0]:
 			var root := Vector2(s * r * 0.35, -r * 0.5)
@@ -401,11 +389,7 @@ static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bo
 					ci.draw_arc(Vector2(s * r * (0.45 + 0.5 * q), y + r * (0.06 + 0.14 * q)), r * 0.11,
 						0.0, TAU, 12, steel_hi, 1.8, true)
 	if hurt > 0.0:
-<<<<<<< Updated upstream
-		ci.draw_circle(Vector2.ZERO, r * 1.1, Color(1, 1, 1, clampf(hurt, 0.0, 0.5)))
-=======
 		ci.draw_circle(Vector2.ZERO, r * 1.15, Color(1, 1, 1, clampf(hurt, 0.0, 0.5)))
->>>>>>> Stashed changes
 	ink = OUTLINE
 
 

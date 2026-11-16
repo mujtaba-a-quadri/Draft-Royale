@@ -159,11 +159,6 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 * **Penny ignores buildings and towers entirely** (`troops_only`) — that is the card.
 * **Pen does not turn back into Penny** — no second Pen ever enters the deck.
 * **Hot Chicken pecks first**: three fireballs on one target, *then* the kamikaze ram.
-<<<<<<< Updated upstream
-* **The ability card draws are payload-gated**: tentacle on death, Shiesty on delivery.
-* **Towers are only decorative HP sinks** — the commander tower is the only win
-  condition besides the clock.
-=======
 * **The ability card draws are payload-gated**: tentacle on death, and Shiesty on
   *either* outcome — he pays a card when he gets home **and** when he is caught. Only
   the coin depends on delivery (death hands it back to the enemy).
@@ -192,7 +187,6 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   unit within 2.5 tiles (else the closest body), lands 2× damage and stays
   untargetable through the whole thing. Both the swipes and the leaping blow do not
   touch buildings.
->>>>>>> Stashed changes
 
 ---
 

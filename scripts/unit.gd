@@ -77,8 +77,6 @@ var shoots := ""
 var shoot_payload: Dictionary = {}
 ## Some units only ever pick fights with troops (Penny ignores buildings/towers).
 var troops_only := false
-<<<<<<< Updated upstream
-=======
 ## The airborne dragon's fire: a patch under and just ahead of it, 25 damage a
 ## second, ticked four times a second so it reads as burn.
 ## What counts as a "melee" air attacker for the hedgehog's reaction: a flyer with
@@ -90,7 +88,6 @@ const DRAGON_FIRE_TICK := 0.25
 const DRAGON_FIRE_AHEAD := 0.7
 const DRAGON_FIRE_BELOW := 1.1
 var fire_tick := 0.0
->>>>>>> Stashed changes
 ## Penny: three swipes, then an invincible fading step-back and a quarter circle.
 var dodge_cfg: Dictionary = {}
 var swipes := 0
@@ -102,15 +99,12 @@ var dodge_center := Vector2.ZERO
 var dodge_radius := 0.0
 var dodge_start_r := 0.0
 var dodge_angle0 := 0.0
-<<<<<<< Updated upstream
-=======
 ## the leap that ends the dodge: air first, then whatever is closest
 var jumping := false
 var jump_t := 0.0
 var jump_from := Vector2.ZERO
 var jump_to := Vector2.ZERO
 var jump_victim: Node = null
->>>>>>> Stashed changes
 var invincible := false
 ## Untargetable: the arena's enemy queries skip these (Penny mid-dodge).
 var untargetable := false
@@ -286,16 +280,11 @@ func _physics_process(delta: float) -> void:
 	if attack_stretch > 0.0:
 		attack_stretch = maxf(0.0, attack_stretch - delta)
 	flash = maxf(0.0, flash - delta * 5.0)
-<<<<<<< Updated upstream
-	if dodging:
-		_tick_dodge(delta)
-=======
 	if dodging or jumping:
 		if jumping:
 			_tick_jump(delta)
 		else:
 			_tick_dodge(delta)
->>>>>>> Stashed changes
 		queue_redraw()
 		return
 	if lifetime > 0.0:
@@ -598,12 +587,6 @@ func _tick_dodge(delta: float) -> void:
 		if absf(dir.x) > 1.0:
 			facing = signf(dir.x)
 	if dodge_t >= total:
-<<<<<<< Updated upstream
-		dodging = false
-		untargetable = false
-		invincible = false
-		atk_cd = 0.0
-=======
 		_begin_jump()
 
 
@@ -676,7 +659,6 @@ func _tick_jump(delta: float) -> void:
 			arena.add_child(burst)
 			arena.shake(1.6)
 		_end_dash()
->>>>>>> Stashed changes
 
 
 ## Primal Aphid: a shotgun cone, five pellets spread across cone_deg, each flying
@@ -796,12 +778,9 @@ func _curl() -> void:
 	for e in arena.enemy_entities(team).duplicate():
 		if not is_instance_valid(e) or e.dead:
 			continue
-<<<<<<< Updated upstream
-=======
 		# the hedgehog never picks a fight in the air: the burst is a ground shove
 		if e.get("flying") == true:
 			continue
->>>>>>> Stashed changes
 		var gap: float = arena.gap_between(position, e.position, radius_t, float(e.get_radius_t()))
 		if gap > tr:
 			continue
@@ -815,8 +794,6 @@ func _curl() -> void:
 				if d.length() < 0.01:
 					d = Vector2(facing, 1.0)
 				e.apply_impulse(d.normalized(), shove, float(curl_cfg["push_time"]))
-<<<<<<< Updated upstream
-=======
 
 
 ## Balled up without attacking: a flyer that dives on it cannot be chased, so the
@@ -826,7 +803,6 @@ func _curl_up() -> void:
 	state = S.IDLE
 	target = null
 	atk_cd = 0.0
->>>>>>> Stashed changes
 
 
 func _mark_attack() -> void:
@@ -1144,13 +1120,9 @@ func _die() -> void:
 	# zombies raise whatever they kill, on their own side — buildings are not
 	# people, they do not get back up
 	if kind != "zombie" and not is_building() and last_attacker != null and is_instance_valid(last_attacker):
-<<<<<<< Updated upstream
-		if String(last_attacker.get("kind")) == "zombie":
-=======
 		var killer_kind = last_attacker.get("kind")
 		# attackers that carry no kind at all (a rolling snowball) raise nothing
 		if killer_kind != null and String(killer_kind) == "zombie":
->>>>>>> Stashed changes
 			var risen = arena.spawn_troop("zombie", int(last_attacker.team), position, true)
 			if risen != null and is_instance_valid(risen):
 				risen.deploy_timer = 0.0
@@ -1220,11 +1192,8 @@ func _draw() -> void:
 		DDArt.bird(self, px, facing, clock, bird_lead, ink)
 	elif kind == "dragon":
 		DDArt.dragon(self, px, facing, clock, flying, 0.0, ink)
-<<<<<<< Updated upstream
-=======
 		if flying:
 			_draw_maw_flame(px)
->>>>>>> Stashed changes
 	else:
 		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2, ink, flying)
 	if status == Status.SLOW:

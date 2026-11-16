@@ -156,12 +156,8 @@ func _draw() -> void:
 			ready = bool(area.ability_ready(int(team)))
 		draw_circle(Vector2(0, h * 0.28), w * 0.62, Color(0, 0, 0, 0.18))
 		var team_col: Color = col.lightened(0.18)
-<<<<<<< Updated upstream
-		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col)
-=======
 		# the tail sweeps away from the board: left side mirrors it outward
 		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col, int(team) == 0)
->>>>>>> Stashed changes
 	else:
 		DDArt.tower(self, w, h, col, flash, crown, area.team_ink(int(team)))
 	if hp <= 0.0:

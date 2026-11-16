@@ -68,11 +68,7 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 	if offsets.is_empty():
 		ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
 		if kind == "dragon":
-<<<<<<< Updated upstream
-			DDArt.dragon(ci, art.size.y * 0.40, 1.0, 0.0, false)
-=======
 			DDArt.dragon(ci, art.size.y * 0.30, 1.0, 0.0, false)
->>>>>>> Stashed changes
 		elif kind == "hawk":
 			DDArt.bird(ci, art.size.y * 0.34, 1.0, 0.0, true)
 		else:
@@ -87,13 +83,6 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 	# each body is one tile wide with a 0.44 tile radius, in the preview's units
 	var unit_scale: float = minf(art.size.x / (half_x * 2.0 + 0.9), art.size.y / (half_y * 2.0 + 0.9))
 	var centre := art.get_center()
-<<<<<<< Updated upstream
-	for off in offsets:
-		# the preview mirrors a formation's y offsets for team 0 (ydir = -1); the
-		# card art uses the same orientation so the two line up
-		var at: Vector2 = centre + Vector2(float((off as Array)[0]), -float((off as Array)[1])) * unit_scale
-		DDArt.icon(ci, kind, at, unit_scale * 0.44)
-=======
 	for i in offsets.size():
 		var off: Array = offsets[i]
 		# the preview mirrors a formation's y offsets for team 0 (ydir = -1); the
@@ -101,7 +90,6 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 		var at: Vector2 = centre + Vector2(float(off[0]), -float(off[1])) * unit_scale
 		# the lead bird is the red i'iwi: the card shows it too
 		DDArt.icon(ci, kind, at, unit_scale * 0.44, 0.0, i == 0)
->>>>>>> Stashed changes
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

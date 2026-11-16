@@ -97,14 +97,6 @@ footprint) rather than squeezing it into the HP ribbon.
 | Hero | 3 | 150 | 25 / 1.0 s | Very high HP for the cost. Also rides down an airborne dragon |
 | Snowman | 2 | 90 | – | Stationary decoy, **60 s lifetime**, draws attention (7.5 tile lure). **On death: 3-tile blast for 30 damage and a 3 s / 30 % slow** (troops only, dark blue tint) |
 | Slate | 3 | **200** | 12 / 1.6 s | Slow tank that ignores every moving troop — only structures and towers |
-<<<<<<< Updated upstream
-| The Chained Dragon | 9 | **400** | claw 45 / 1.4 s → breath 45 | Chained on the ground; at half HP it flies and burns the ground |
-| Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges the nearest **tower or building** at high speed and detonates for 100. After turning it ignores troops entirely |
-| Fireball | 5 | – | 40 splash + **60 burn**, shoves loose units 1.2 tiles out | Fired from your **king tower**; `tower_mult` cuts tower damage |
-| Firebolt | 2 | – | **No damage — 40 burn** | An arrow of fire from your **nearest tower**. The only card that **locks onto a troop**: while you hold it, hovering an enemy troop pins the preview to that troop and follows it smoothly instead of snapping to a tile  **Two casts**: after the first throw the card stays in your hand and stays armed, so clicking again throws again — right click (or picking another card) puts it back with one charge left, shaded over the spent half (the triangle below the bottom-left → top-right diagonal). Only the **second** cast consumes it |
-| Golden Idol | 4 | 35 | – | Stationary, taunts, **10 s lifetime**. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
-| Hedgehog | 3 | 60 each | 12 curl / 8 thorns | Two burrowers with **no jab at all**. They walk to their melee reach and **ball up**: 12 damage plus a shove of about half a tile, always short enough that nothing leaves quill reach. Balled up they take **45 % damage**, and anything striking the ball from within **1.5 tiles gets 8 back — melee or ranged**, since projectiles are credited to their shooter. They hold while the quills can reach something and **walk again once nothing is in reach** |
-=======
 | The Chained Dragon | 9 | **420** | claw 45 / 1.4 s → **25 fire per second** | A green brute with his **wings** chained (the hands are free — it can still claw). At half HP the chains burst, he takes the sky and **breathes straight down** in **your team's colour**: a **2 tile burning patch** under and just ahead of him doing **25 damage a second**. It **burns friend and foe alike** — anything on the ground under him, your own troops included — but flyers are above it. He flies until the fire is landing on his target, so **the tower he is attacking burns too**, and he hovers there pouring it on |
 | Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges the nearest **tower or building** at high speed and detonates for 100. After turning it ignores troops entirely |
 | Fireball | 5 | – | 40 splash + **60 burn**, shoves loose units 1.2 tiles out | Fired from your **king tower**; `tower_mult` cuts tower damage |
@@ -112,21 +104,14 @@ footprint) rather than squeezing it into the HP ribbon.
 | Snowball | 4 | – | **10 × height** while rolling, **30** on the burst | You pick a tile; it is **thrown in an arc** from your **nearest tower** onto it, lands as **one tile of snow**, then rolls forward in a straight line along that row, gaining **a tile of height for every two tiles it covers**. That means it can be cast **on their side** — it simply starts rolling where it lands. Rolling strikes deal **10 per tile of current height** and shove things back that many tiles; at the **river** (or the back of the board) it bursts for **30** and a **3.5 s slow**. Troops only |
 | Golden Idol | 4 | 35 | – | Stationary, taunts, **10 s lifetime**. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
 | Hedgehog | 3 | 60 each | 12 curl / 8 thorns | Two burrowers with **no jab at all**. They walk to their melee reach and **ball up**: 12 damage plus a shove of about half a tile, always short enough that nothing leaves quill reach. Balled up they take **45 % damage**, and anything striking the ball from within **1.5 tiles gets 8 back — melee or ranged**, since projectiles are credited to their shooter. They hold while the quills can reach something and **walk again once nothing is in reach**  **Air is invisible to them**: they never pick a flying target and their burst skips flyers. But a **melee flyer that dives on one** makes it ball up on the spot — the dive itself is not repaid, and **every hit after it takes 8 thorns**. They stay rolled up until nothing is in quill reach, then walk again |
->>>>>>> Stashed changes
 | Zombie Horde | 6 | 111 each | 15 / 1.0 s each | Six melee bruisers in a 2x3 block. **Anything a zombie kills rises as a full-HP zombie on the killer's side — troops only, buildings stay dead** |
 | Honeycreeper Flock | 4 | 10 each (lead 20) | 6 / 1.0 s each | Flying swarm of 5 in a diamond, lead i'iwi in front. Ground troops can't touch them; they can hit the flying dragon. Alchemist and Boomerang-Fu can hit air too |
 | Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s **rifle at 3.5 tiles** | Wedge of three. **Always retargets the weakest thing in range — troops, buildings and towers alike** — not the nearest, and its presence cone sits **one row further forward**. With nothing in range it **advances on the nearest enemy tower** instead of standing still |
 | Lizard Warren | 4 | 130 | – | Stationary burrow with a **60 s lifetime**. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
-<<<<<<< Updated upstream
-| Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn; **then 30 splash** on contact | Two phases. It **pecks fireballs from range**, and after **three hits on one target** it takes to the air: a **fire spirit that flies at that target and rams it for 30 in a 1.4 tile radius, dying in its own blast**. It becomes a flyer for the ram, so ground troops without anti-air cannot stop it — but it is **killable in flight** by anything that hits air, and shooting it down means no burst at all |
-| Penny | 3 | 90 | 18 / 0.7 s, melee | Calico blur, and the only card that **only ever picks fights with troops** — buildings and towers are ignored. After **3 swipes** she goes **invincible and untargetable**: she steps **half a tile back** and **strafes a quarter circle** around her target (first strafe turns toward the outside of the board, later ones keep turning the same way), then carries on. **Playing Penny replaces her card with Pen on the spot** — his card flies from where she landed into the hand slot she left |
-| Pen | 2 | 100 | 10 / 1.8 s, **5 tile blowgun** | Penny's other half: slow, calm, wrapped in a yellow toga. Every **dart paralyses** whatever it hits for **0.5 s** (units only — towers have nothing to paralyse). A perfectly ordinary card otherwise: he can be played or discarded like any other, and he does **not** turn back into Penny (so the deck never grows a second one) |
-=======
 | In-Ovo Machine | 6 | 240 | – | A **2 × 2** industrial hatchery with a **60 s lifetime** that pushes a **Hot Chicken** out of its front hatch **every 12 seconds** — front and centre, facing whichever way your push is going. It runs on its own clock: unlike the Warren it does not need company |
 | Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn; **then 30 splash** on contact | Two phases. It **pecks fireballs from range**, and after **three hits on one target** it takes to the air: a **fire spirit that flies at that target and rams it for 30 in a 1.4 tile radius, dying in its own blast**. It becomes a flyer for the ram, so ground troops without anti-air cannot stop it — but it is **killable in flight** by anything that hits air, and shooting it down means no burst at all |
 | Penny | 3 | 90 | 18 / 0.7 s, melee | Calico blur, and the only card that **only ever picks fights with troops** — buildings and towers are ignored. After **3 swipes** she goes **invincible and untargetable**: she steps **half a tile back** and **strafes a quarter circle** around her target (first strafe turns toward the outside of the board, later ones keep turning the same way), then carries on. **Playing Penny replaces her card with Pen on the spot** — his card flies from where she landed into the hand slot she left  **Then she leaves the ground**: after the spin she leaps at the nearest **air** unit within **2.5 tiles** — air she cannot normally touch — otherwise the closest body at all, and lands one **double damage** hit (36) while still untargetable, then goes back to ordinary swipes |
 | Pen | 2 | 100 | 10 / 1.8 s, **5 tile blowgun** | Penny's other half: slow, calm, wrapped in a yellow toga. Every **dart paralyses** whatever it hits for **0.5 s** (units only — towers have nothing to paralyse). A perfectly ordinary card otherwise: he can be played or discarded like any other, and he does **not** turn back into Penny (so the deck never grows a second one)  **Hits air** — a dart to a honeycreeper paralyses it mid-dive |
->>>>>>> Stashed changes
 | Primal Aphid | 3 | 110 | **5 × 8** in a 45° cone, every 2 s | A flyer that **hovers in to 2 tiles and stops** — it never closes. From there it spits a **five pellet shotgun** across a 45° cone aimed at its target. Each pellet flies **3.5 tiles**, so it reaches a full tile and a half past the aphid's own stance, and it can hit **ground or air**. Pellets **do not pierce**: the first body a pellet crosses eats it and the pellet is spent |
 | Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick (never on air — he throws at flyers even point blank) | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
 
@@ -246,20 +231,12 @@ Each player is assigned **one** of two abilities at random per match. Both cost
 **2 gold** and share a **15 s cooldown** (**7.5 s in the final minute**). The button sits in the
 top-right of your panel and shows the cooldown, or the reason it cannot fire (`2g`, `no target`,
 `no tower`). Both also pay out **one card draw**, but only when the payload actually lands —
-<<<<<<< Updated upstream
-the tentacle's draw arrives when it dies, Shiesty's when he gets the gold home.
-=======
 the tentacle's draw arrives when it dies, Shiesty's **either way** — caught or home.
->>>>>>> Stashed changes
 
 | Ability | Effect |
 | --- | --- |
 | **Tentacle** | Bursts from the ground under the enemy troop with the most HP. Deals **20 on reveal** (no more after that) and holds it for **4 s**. The tentacle has **20 HP**; the ensnared side's own units or towers can kill it to free their troop early. **Its card draw comes when it dies** |
-<<<<<<< Updated upstream
-| **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). The flight out is **invincible and untargetable** — nothing can see or touch him until he lands. He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot (**and pays the card draw**), being killed on the way hands it back and pays nothing. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him, and only on the way home |
-=======
 | **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). The flight out is **invincible and untargetable** — nothing can see or touch him until he lands. He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot (**and pays the card draw**), being killed on the way hands it back and pays nothing. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him, and only on the way home  **Either outcome pays one card draw** — getting home or being cut down on the way; only the **coin** has to reach your tower, so a dead Shiesty hands the gold back and still brings a card |
->>>>>>> Stashed changes
 
 The bot holds the ability until it will pay off (it still needs gold ≥ 5 first):
 
@@ -470,14 +447,11 @@ godot --headless --path . --fixed-fps 60 -- --botsim=<seed>      # v2 vs v1, sid
 godot --headless --path . --fixed-fps 60 -- --botsim=<100+seed>  # control: v1 vs v1
 ```
 
-<<<<<<< Updated upstream
-=======
 Animation captures: `--scenario=pennygif` renders Penny and a passive knight into a
 transparent SubViewport and dumps 72 raw RGBA frames; `node docs/make_gif.mjs
 <frames> docs/penny.gif` turns them into the transparent GIF in `docs/` (hand-rolled
 encoder — this machine has no ffmpeg, ImageMagick or Pillow).
 
->>>>>>> Stashed changes
 **What counts as verification here**, cheapest first: an eval assertion for
 behaviour (rects, ranges, cooldowns, states); the seeded sim line for a refactor
 (run before and after and compare bytes); a *single full-resolution* screenshot for

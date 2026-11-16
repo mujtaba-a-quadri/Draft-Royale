@@ -1,4 +1,4 @@
-﻿class_name Arena
+class_name Arena
 extends Node2D
 
 ## Board shape: 30 rows tall. Rows 1..10 (top) and 19..28 (bottom) are 16 tiles
@@ -63,20 +63,6 @@ const Right_Color := Color(0.575, 0.153, 0.345, 1.0)
 ## you are blue and your opponent is red. Override them from a menu, a relic, a
 ## match type â€” or --colors=#ff8800,#22ccaa on the command line.
 var team_colors: Array = [Left_Color, Right_Color]:
-	set(value):
-		team_colors = value
-		# the control tint is a cached layer: repaint it for a colour change too
-		if control_layer != null:
-			control_layer.queue_redraw()
-
-## Every unit, tower and tile tint is drawn in its team colour; unit outlines are
-## a darker shade of it instead of black.
-const TEAM_INK_DARKEN := 0.45
-
-## Team colours are data, not literals: these two entries are the only reason
-## you are blue and your opponent is red. Override them from a menu, a relic, a
-## match type â€” or --colors=#ff8800,#22ccaa on the command line.
-var team_colors: Array = [BLUE, RED]:
 	set(value):
 		team_colors = value
 		# the control tint is a cached layer: repaint it for a colour change too
@@ -161,13 +147,8 @@ func _ready() -> void:
 			var parts := String(a.substr(9)).split(",")
 			if parts.size() == 2:
 				team_colors = [
-<<<<<<< Updated upstream
-					Color.from_string(String(parts[0]).strip_edges(), BLUE),
-					Color.from_string(String(parts[1]).strip_edges(), RED),
-=======
 					Color.from_string(String(parts[0]).strip_edges(), Left_Color),
 					Color.from_string(String(parts[1]).strip_edges(), Right_Color),
->>>>>>> Stashed changes
 				]
 	if forced == "tentacle":
 		ability = ["tentacle", "shiesty"]
@@ -1655,8 +1636,4 @@ func _draw() -> void:
 
 
 func _hovered_entity(at: Vector2) -> Node:
-<<<<<<< Updated upstream
 	return DDArenaDraw.hovered(self, at)
-=======
-	return DDArenaDraw.hovered(self, at)
->>>>>>> Stashed changes

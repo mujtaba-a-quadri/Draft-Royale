@@ -115,14 +115,8 @@ func _escape() -> void:
 	arena.stat_shiesty_escaped += 1
 	arena.gold[team] = minf(float(arena.gold_max), float(arena.gold[team]) + stolen)
 	arena.banner_flash("Shiesty gets away with %d gold" % int(stolen))
-<<<<<<< Updated upstream
-	# no gold delivered, no card: the draw is the reward for getting home
-	if stolen > 0.0:
-		arena.draw_card(team)
-=======
 	# the card is the reward for the trip itself; the coin is the bonus
 	arena.draw_card(team)
->>>>>>> Stashed changes
 	_finish()
 
 
