@@ -36,6 +36,8 @@ var radius_t := 0.4
 ## Pen's darts work on him too: a stunned Shiesty stands still.
 var stunned := 0.0
 var run_clock := 0.0
+## cosmetic: which way he is drawn facing
+var facing := 1.0
 
 
 func setup(a: Node2D, tm: int, tower: Node, home: Node) -> void:
@@ -92,6 +94,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if dir.length() > 0.001:
 		position += dir.normalized() * speed_px * delta
+		if absf(dir.x) > 0.5:
+			facing = signf(dir.x)
 	queue_redraw()
 
 
@@ -144,18 +148,44 @@ func _finish() -> void:
 	queue_free()
 
 
+## Where he is *drawn* on the way out, as an offset from his real position. The
+## simulation keeps the plain tower-to-tower arc (nothing can touch him in the
+## air, so only the picture changes): for the first TOSS_SCOOP seconds he sits in
+## the goblin commander's hand as it scoops him off the ground and swings him
+## overhead, and the rest of the flight starts from that hand.
+func _launch_offset() -> Vector2:
+	if phase != P.LAND or not is_instance_valid(home_tower) or not home_tower.has_method("face_dir"):
+		return Vector2.ZERO
+	var to: Vector2 = from
+	if is_instance_valid(target_tower):
+		to = target_tower.position
+	var r_c: float = float(home_tower.w) * 0.62
+	var face: float = home_tower.face_dir()
+	var at: Vector2
+	if clock < DDArt.TOSS_SCOOP:
+		# in the fist; before the grab he is crouched where the hand comes down
+		var p: float = maxf(clock / DDArt.TOSS_SCOOP, 0.4)
+		at = home_tower.position + DDArt.commander_toss_hand(r_c, face, p)
+	else:
+		var start: Vector2 = home_tower.position + DDArt.commander_toss_hand(r_c, face, 1.0)
+		var g: float = clampf((clock - DDArt.TOSS_SCOOP) / maxf(0.05, land_time - DDArt.TOSS_SCOOP), 0.0, 1.0)
+		at = start.lerp(to, g) - Vector2(0, sin(g * PI) * 80.0)
+	return at - position
+
+
 func _draw() -> void:
 	var r: float = radius_t * float(arena.TILE)
-	var bob := sin(run_clock * 12.0) * r * 0.18
+	var spin := 0.0
 	if phase == P.LAND:
+		if is_instance_valid(target_tower) and absf(target_tower.position.x - from.x) > 1.0:
+			facing = signf(target_tower.position.x - from.x)
+		if clock >= DDArt.TOSS_SCOOP:
+			# thrown, not jumping: he tumbles once on the way over
+			spin = facing * TAU * clampf((clock - DDArt.TOSS_SCOOP) / maxf(0.05, land_time - DDArt.TOSS_SCOOP), 0.0, 1.0)
+		draw_set_transform(_launch_offset(), spin, Vector2.ONE)
 		draw_arc(Vector2.ZERO, r * 1.2, 0.0, TAU, 20, Color(1.0, 0.9, 0.4, 0.35), 2.0, true)
-	var skin := Color(0.45, 0.78, 0.36)
-	draw_circle(Vector2(0, bob), r * 0.75, skin)
-	draw_arc(Vector2(0, bob), r * 0.75, 0.0, TAU, 20, DDArt.OUTLINE, 2.0, true)
-	draw_circle(Vector2(-r * 0.25, -r * 0.2 + bob), r * 0.12, Color(0.1, 0.09, 0.12))
-	draw_circle(Vector2(r * 0.25, -r * 0.2 + bob), r * 0.12, Color(0.1, 0.09, 0.12))
-	draw_circle(Vector2(r * 0.9, r * 0.3 + bob), r * 0.45, Color(0.82, 0.7, 0.4))
-	draw_arc(Vector2(r * 0.9, r * 0.3 + bob), r * 0.45, 0.0, TAU, 16, DDArt.OUTLINE, 1.6, true)
+	DDArt.shiesty(self, r, facing, run_clock, arena.team_ink(int(team)))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if hp < max_hp:
 		var w := r * 2.0
 		draw_rect(Rect2(-w * 0.5, -r * 1.6, w, 3.0), Color(0.1, 0.08, 0.12, 0.8), true)

@@ -1187,12 +1187,14 @@ func ability_valid(player: int) -> bool:
 	return _highest_hp_enemy_tower(player) != null
 
 
-## Circular ability button that floats over the player's king tower.
+## Circular ability button under the feet of the player's commander (goblin or
+## jelly alike), clear of his head and HP bar. Clicking the commander himself
+## works too: see the mouse handler.
 func ability_button_rect(player: int) -> Rect2:
 	var k: Node = _king_of(player)
 	var at: Vector2 = k.position if is_instance_valid(k) else tile_center(9.5, 27.5)
 	var sz := 46.0
-	return Rect2(at + Vector2(-sz * 0.5, -float(TILE) * 1.75), Vector2(sz, sz))
+	return Rect2(at + Vector2(-sz * 0.5, float(TILE) * 1.2), Vector2(sz, sz))
 
 
 func _draw_ability_button(player: int) -> void:
@@ -1248,6 +1250,9 @@ func use_ability(player: int) -> bool:
 	g.setup(self, player, tower, king)
 	units.append(g)
 	add_child(g)
+	# cosmetic: the goblin commander scoops him up and throws him
+	if is_instance_valid(king) and king.has_method("play_toss"):
+		king.play_toss()
 	banner_flash("Shiesty is on the job!")
 	return true
 

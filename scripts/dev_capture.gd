@@ -159,6 +159,15 @@ func _ready() -> void:
 	elif scenario == "femme":
 		shot_times = []
 		run_time = 9.5
+	elif scenario == "toss":
+		shot_times = [0.95, 1.2, 1.45]
+		run_time = 3.0
+	elif scenario == "ovo":
+		shot_times = []
+		run_time = 64.0
+	elif scenario == "deal":
+		shot_times = [0.12, 0.7, 2.6]
+		run_time = 3.2
 	elif scenario == "pennygif" or scenario == "pairgif":
 		shot_times = []
 		run_time = 6.0
@@ -317,6 +326,12 @@ func _process(delta: float) -> void:
 		_laniakea_steps()
 	elif scenario == "femme":
 		_femme_steps()
+	elif scenario == "toss":
+		_toss_steps()
+	elif scenario == "ovo":
+		_ovo_steps()
+	elif scenario == "deal":
+		_deal_steps()
 	elif scenario == "pennygif" or scenario == "pairgif":
 		_pennygif_steps()
 	elif scenario == "flash":
@@ -1062,6 +1077,72 @@ func _femme_steps() -> void:
 	if _at(4.6) or _at(5.8) or _at(6.6) or _at(7.4) or _at(9.0):
 		print("[femme] t%.1f hero hp=%d step=%d dist=%.2f" % [elapsed, int(lani_marks[0].hp),
 			probe.needle_step, arena.tiles_between(probe.position, lani_marks[0].position)])
+
+
+## The goblin commander: spear throws at a dummy, then the Shiesty scoop and
+## throw. Shots (with --shots=<dir>) catch the ready wave, the scoop and the flight;
+## the log proves the toss is picture only (his real position stays on the old arc).
+func _toss_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.2):
+		arena.ability[0] = "shiesty"
+		arena.ability[1] = "shiesty"
+		arena.gold[0] = 10.0
+		arena.ability_cd[0] = 0.0
+		var king: Node = arena._king_of(0)
+		var fwd := Vector2(king.face_dir(), 0.0)
+		lani_marks = [_lani_dummy("hero", king.position + fwd * 4.0 * t)]
+		for k in ["laniakea", "femme"]:
+			var u = arena.spawn_troop(k, 0, king.position + fwd * 2.0 * t + Vector2(0, (1.5 if k == "femme" else -1.5) * t), true)
+			u.deploy_timer = 0.0
+			u.speed = 0.0
+		print("[toss] goblin=%s face=%.0f" % [str(king.is_goblin()), king.face_dir()])
+	if _at(0.9):
+		var king2: Node = arena._king_of(0)
+		print("[toss] t0.9 hero hp=%d (spears land for 12) throw_t=%.2f ready=%s" % [
+			int(lani_marks[0].hp), king2.throw_t, str(arena.ability_ready(0))])
+	if _at(1.0):
+		print("[toss] ability used=%s" % str(arena.use_ability(0)))
+	if _at(1.1) or _at(1.25) or _at(1.5):
+		var king3: Node = arena._king_of(0)
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
+				print("[toss] t%.2f toss_t=%.2f shiesty clock=%.2f real=%s drawn offset=%s" % [
+					elapsed, king3.toss_t, u.clock, str((u.position - king3.position).round()), str(u._launch_offset().round())])
+
+
+## In-Ovo Machine timing: every hatch and the machine's own death, in seconds
+## since it was deployed (expect 1, 13, 25, 37, 49, then death and a sixth at 60).
+## Run with --bots=off or the bots kill the machine early.
+var ovo_seen: Dictionary = {}
+var ovo_t0 := 0.0
+var ovo_dead := false
+func _ovo_steps() -> void:
+	if _at(0.3):
+		probe = arena.spawn_troop("ovomachine", 0, arena.tile_center(9.5, 22.5))
+		ovo_t0 = elapsed
+		print("[ovo] deployed, lifetime=%.0f" % probe.lifetime)
+	if ovo_t0 <= 0.0:
+		return
+	for u in arena.units:
+		if is_instance_valid(u) and String(u.kind) == "chicken" and not ovo_seen.has(u.get_instance_id()):
+			ovo_seen[u.get_instance_id()] = true
+			print("[ovo] chicken %d at %.2f s" % [ovo_seen.size(), elapsed - ovo_t0])
+	if not ovo_dead and (not is_instance_valid(probe) or probe.dead):
+		ovo_dead = true
+		print("[ovo] machine gone at %.2f s, %d chickens in all" % [elapsed - ovo_t0, ovo_seen.size()])
+
+
+## The opening deal: how long one beat is, and how many cards each panel is still
+## holding back as the deal runs (both should count down together to 0).
+func _deal_steps() -> void:
+	if _at(0.05):
+		print("[deal] beat=%.3f s (sound slice %.3f)" % [arena.panels[0].deal_beat, arena.sfx.slice_seconds])
+	for t in [0.1, 0.4, 0.7, 1.0, 1.3, 1.6, 2.0, 2.6]:
+		if _at(t):
+			print("[deal] t%.1f held back: own=%d opponent=%d | own next=%s" % [t,
+				arena.panels[0].deal_hidden.size(), arena.panels[1].deal_hidden.size(),
+				str(arena.panels[0].deal_hidden)])
 
 
 func _burn_steps() -> void:

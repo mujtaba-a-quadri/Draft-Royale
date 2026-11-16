@@ -23,6 +23,28 @@ var burn_ticks := 0
 var burn_max_ticks := 4
 var burn_timer := 0.0
 var burn_pulse := 0.0
+## Cosmetic clocks for the goblin commander: seconds since his spear left his
+## hand and since he scooped Shiesty up. Nothing in the simulation reads them.
+var throw_t := 9.0
+var toss_t := 9.0
+
+
+## The goblin commander is the crown tower of whoever holds the Shiesty ability.
+func is_goblin() -> bool:
+	if not crown or area == null or area.ability.size() <= int(team):
+		return false
+	return String(area.ability[int(team)]) != "tentacle"
+
+
+## +1 when the enemy is to the right of this tower, -1 when to the left.
+func face_dir() -> float:
+	var dx: float = area.board_rect().get_center().x - position.x
+	return 1.0 if dx >= 0.0 else -1.0
+
+
+## Called by the arena when Shiesty is sent: the commander scoops and throws him.
+func play_toss() -> void:
+	toss_t = 0.0
 
 
 func setup(tm: int, ar: Node2D, is_crown: bool) -> void:
@@ -54,6 +76,8 @@ func _physics_process(delta: float) -> void:
 	if dead:
 		return
 	clock += delta
+	throw_t += delta
+	toss_t += delta
 	flash = maxf(0.0, flash - delta * 5.0)
 	if area.match_over:
 		queue_redraw()
@@ -84,7 +108,12 @@ func _physics_process(delta: float) -> void:
 	if atk_cd <= 0.0 and area.tiles_between(position, target.position) <= reach:
 		atk_cd = interval
 		# aimed shot: the bolt hits only the unit it was fired at, never splash
-		area.spawn_projectile(position, target.position, team, dmg, 0.0, "tower",
+		# the goblin commander throws his standard; same shot, different picture
+		var shot := "tower"
+		if is_goblin():
+			shot = "spear"
+			throw_t = 0.0
+		area.spawn_projectile(position, target.position, team, dmg, 0.0, shot,
 			0, "bolt", false, null, 0.0, target)
 	queue_redraw()
 
@@ -157,7 +186,8 @@ func _draw() -> void:
 		draw_circle(Vector2(0, h * 0.28), w * 0.62, Color(0, 0, 0, 0.18))
 		var team_col: Color = col.lightened(0.18)
 		# the tail sweeps away from the board: left side mirrors it outward
-		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col, int(team) == 0)
+		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col, int(team) == 0,
+			{"face": face_dir(), "throw": throw_t, "toss": toss_t})
 	else:
 		DDArt.tower(self, w, h, col, flash, crown, area.team_ink(int(team)))
 	if hp <= 0.0:

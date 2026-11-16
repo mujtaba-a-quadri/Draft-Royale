@@ -206,6 +206,20 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   live in the `greatsword` block and are centre distances, not the edge-to-edge
   `reach` the other units use (`reach` 1.5 is only there for the card face and
   the bot's melee role). Scenario: `--scenario=laniakea --log`.
+* **The goblin commander's animations are picture only.** His tower shot is the
+  same aimed bolt as every tower's, drawn as his standard (projectile kind
+  `spear`); `throw_t` / `toss_t` on `DDTower` are cosmetic clocks. When Shiesty is
+  sent, the commander scoops and throws him, but Shiesty's real position stays on
+  the old tower-to-tower arc and only his *drawn* position rides the hand
+  (`DDShiesty._launch_offset`), so timings and bot sims are unchanged. Eyes stay
+  dark until the ability is ready, then light in the team colour, and the
+  standard is waved. Scenario: `--scenario=toss --log --shots=<abs dir>`.
+* **The opening deal is picture only.** Both hands are dealt instantly; each
+  `HandPanel` just holds its cards back (`deal_hidden`) and releases one per beat,
+  where a beat is one draw in the deal sound (`DDSfx.slice_seconds`, 0.576 s).
+  Own hand right to left out of the NEXT box, opponent top to bottom from above
+  the column, both on the same clock. The match clock, gold and bots do not wait
+  for it. Scenario: `--scenario=deal --log --shots=<abs dir>`.
 * **Femme Fatale never dashes across the river.** The dash only starts when
   `route_point` says the walk to the target is a straight line, so she cannot
   stop in the water. The dash ignores her attack cooldown (the wind-up is the
@@ -226,3 +240,109 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 3. Extract `unit.gd` (`unit_art`? `abilities`?) the way `board.gd`/`arena_draw.gd` were done.
 4. Consider a pixel-probe scenario (`--scenario=pixels`) so rendering checks become
    booleans instead of images in the conversation.
+5. Run layer: §8 is the design. Nothing of it is built except the sample map
+   printer.
+
+---
+
+## 8. Run layer design (agreed on paper, not built)
+
+Discussed 2026-11-16. This is design, not code: only `scripts/map_sample.gd`
+exists. Numbers are starting points.
+
+### The constraint that shapes it
+
+The game is real time, so decisions outside a match must stay short. A full
+Slay the Spire act (7 × 15, every node typed and visible) invites minutes of
+route planning at the start; that is the thing to avoid, without falling back to
+"only the next few tiles are visible".
+
+### Lobby
+
+* A run is a **lobby**, not floor-by-floor matchmaking. A lobby needs enough
+  humans once and bots fill the rest; floor matchmaking needs another human on
+  your floor every time you queue, which a small playerbase cannot supply.
+* **8 players** (bot fill), so there are seven possible opponents rather than
+  three.
+* The lobby runs on a **shared clock**: fight, then a 20 – 30 s map phase.
+  Players may **plot a route** ahead of time (queue, result screen); when the
+  map timer runs out the plotted node is taken.
+* **Pairing by map choice**: players who pick the same kind of node fight each
+  other, so pathing decides who you meet. Bot fights and fights against a saved
+  deck piloted by the bot are mixed in between live ones.
+* Fight formats: 1v1, 2v2, fights with a modifier (double gold, extra card
+  draw). **Bosses are 1v4 or 1v8** against other players, bot-filled. A player
+  joins the many-side through a map tile; the idea is a live tile with a
+  countdown that appears when someone is approaching their boss.
+
+### Relics are lives
+
+* Everyone starts with **3 relics**: one unique to their hero, one for passive
+  card draw, one for passive gold.
+* **Lose a fight** and the winner picks one of your relics. They get a copy
+  (if they already hold it, theirs gets stronger). You keep yours and it becomes
+  **activated**: stronger, and it can no longer be taken.
+* **All of your relics activated = you are out.** So losing makes you stronger,
+  three times, and then it kills you.
+* Relic state only goes one way: dormant → activated. Nothing ever makes a
+  relic weaker.
+* **Relics picked up during the run are extra lives**, since each new dormant
+  relic is one more that can be taken.
+* **The winner chooses one**: steal a relic, or take a **ward**. A ward is a
+  token, not tied to a relic, at most one held. When a warded player loses, the
+  ward breaks, no relic activates and nothing is stolen. It is the only "heal",
+  and it has to be won.
+* Card rewards: the winner picks 1 of 3, the loser 1 of 2 (rather than none, so
+  the loser's deck still grows).
+* **Bonuses add, they do not multiply.** The first sketch was ×1.5 on activation
+  and ×1.2 per stolen copy; gold rate is the strongest stat in the arena, so
+  stacked multipliers on the gold relic would decide matches before cards do.
+  Keep the base draw/gold bonuses small and step them additively.
+
+### Open questions
+
+* **Last one standing, or reach the boss?** PvP is zero-sum: every match
+  produces one loss, so an 8-player lobby with 3 lives each loses 4 lives a
+  round. If the goal is to reach the boss, lives must come in faster (relic
+  pickups, bot-fight nodes) than that drains; if elimination is the point, 3 is
+  fine. Not decided.
+* How the boss's many-side is rewarded, and what the boss player gets.
+* Whether bot-piloted saved decks are good enough to stand in for live
+  opponents (the bot's weak spots are in §3).
+
+### The map
+
+* **5 lanes × 9 columns, left to right like the arena, boss after the last
+  column.** Small enough to read in seconds: a handful of routes, not dozens.
+* Generation is Slay the Spire's, shrunk: **4 path passes**; each pass starts in
+  a random lane of column 1 (the first two in different lanes) and steps to the
+  same lane or a neighbour in the next column; paths merge but **never cross**;
+  unused slots are empty.
+* Tile types are rolled from weights and re-rolled until the rules hold:
+  column 1 is all 1v1; the last column is all shops; no elite before column 4;
+  no elite or shop straight after an elite or shop; no shop in the column before
+  the last; **two exits from one node lead to different types**.
+* Reveal: the whole shape plus the landmarks (boss, elites, shops) from the
+  start; an ordinary fight's format and modifier only one column ahead.
+* Sample printer (dev-only, deterministic per seed, tile types shown as die
+  faces):
+
+  ```
+  godot --headless --path . -s res://scripts/map_sample.gd -- --seeds=1,2,3 --out=<abs file>
+  ```
+
+  It writes a file because the console mangles the die glyphs. Types and
+  weights (`WEIGHTS` in the script) are placeholders: ⚀ 1v1 35, ⚁ 2v2 20,
+  ⚂ modifier fight 15, ⚃ elite 10, ⚄ shop 8, ⚅ event 12. Seed 4:
+
+  ```
+          ⚅───⚀───⚂       ⚀───⚃───⚄ ┤
+        ╱           ╲   ╱   ╱   ╲   │
+      ⚁       ⚄       ⚃───⚁       ⚄ ┤
+    ╱       ╱   ╲   ╱           ╱   │─ BOSS
+  ⚀       ⚀───⚁───⚁───⚄───⚅───⚁     │
+        ╱   ╱   ╲       ╱   ╲       │
+  ⚀───⚂───⚂       ⚂───⚁       ⚀───⚄ ┤
+    ╱
+  ⚀
+  ```

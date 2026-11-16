@@ -83,6 +83,8 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			laniakea(ci, r, facing, t, 0, ink_col)
 		"femme":
 			femme(ci, r, facing, t, 0, ink_col)
+		"shiesty":
+			shiesty(ci, r, facing, t, ink_col)
 		"aphid":
 			_aphid(ci, r, t, facing)
 		"lizard":
@@ -428,11 +430,14 @@ static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 ## Commander towers: the furthest-back tower wears a face of its own.
 ## Blue side reads as a celestial jelly, red side as a spear goblin. Both light
 ## up when that player's ability is ready.
-static func commander(ci: CanvasItem, kind: String, r: float, t: float, ready: bool, team_col: Color, flip: bool = false) -> void:
+## pose is cosmetic state from the tower, goblin only: "face" (+1 / -1, the side
+## the enemy is on), "throw" (seconds since his spear left his hand) and "toss"
+## (seconds since he scooped Shiesty up).
+static func commander(ci: CanvasItem, kind: String, r: float, t: float, ready: bool, team_col: Color, flip: bool = false, pose: Dictionary = {}) -> void:
 	if kind == "tentacle":
 		_jelly(ci, r, t, ready, team_col, flip)
 	else:
-		_goblin_commander(ci, r, t, ready, team_col)
+		_goblin_commander(ci, r, t, ready, team_col, pose)
 
 
 static func _jelly(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color, flip: bool = false) -> void:
@@ -462,40 +467,211 @@ static func _jelly(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Co
 		prev = p2
 
 
-static func _goblin_commander(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color) -> void:
-	var skin := Color(0.52, 0.82, 0.34)
-	var dark := Color(0.33, 0.58, 0.2)
-	# ears
+## How long the goblin commander holds Shiesty before letting go, and how long
+## the throwing arm takes to follow through. Shiesty's own draw uses the first.
+const TOSS_SCOOP := 0.28
+const TOSS_FOLLOW := 0.25
+## After a spear leaves his hand: the follow-through, then the wait for the next.
+const THROW_FOLLOW := 0.16
+const THROW_REARM := 0.42
+
+
+## Where the goblin commander's free hand is while he scoops Shiesty up, relative
+## to the tower centre. p runs 0..1 over TOSS_SCOOP: down to the ground in front
+## of him, then up and back over his head. Shiesty rides this point.
+static func commander_toss_hand(r: float, face: float, p: float) -> Vector2:
+	var rest := Vector2(r * 0.8 * face, r * 0.35)
+	var ground := Vector2(r * 1.05 * face, r * 0.8)
+	var over := Vector2(-r * 0.1 * face, -r * 1.25)
+	if p < 0.4:
+		return rest.lerp(ground, p / 0.4)
+	var q := clampf((p - 0.4) / 0.6, 0.0, 1.0)
+	return ground.lerp(over, q) + Vector2(face * r * 0.5 * sin(q * PI), 0.0)
+
+
+## The banner's cloth: the team colour pushed to full brightness and kept
+## saturated, so it reads as a brighter flag rather than a paler one.
+static func banner_color(team_col: Color) -> Color:
+	return Color.from_hsv(team_col.h, clampf(team_col.s + 0.15, 0.6, 1.0), 1.0)
+
+
+## A halberd with a war banner tied under the head: shaft, spear point, axe blade
+## and a rippling cloth. side picks which way the cloth hangs off the shaft and
+## flutter (0..1+) how hard it is moving. Used in the commander's hand and for
+## the spear in flight.
+static func standard(ci: CanvasItem, butt: Vector2, tip: Vector2, cloth: Color, t: float, side: float = 1.0, flutter: float = 0.4) -> void:
+	var d := tip - butt
+	var length := d.length()
+	if length < 1.0:
+		return
+	var n := d / length
+	var o := n.orthogonal() * side
+	var gold := Color(0.8, 0.68, 0.36)
+	var wide := maxf(2.0, length * 0.035)
+	# banner first, so the shaft sits on top of its hem
+	var top := PackedVector2Array()
+	var hem := PackedVector2Array()
+	for i in 6:
+		var u := 0.44 + 0.3 * float(i) / 5.0
+		var on_shaft := butt + d * u
+		var ripple := sin(t * 6.0 + u * 22.0) * flutter
+		# the far corner is torn short
+		var drop := length * (0.3 + 0.05 * ripple) * (0.7 if i == 5 else 1.0)
+		top.append(on_shaft)
+		hem.append(on_shaft + o * drop + n * length * 0.05 * ripple)
+	var flag := top.duplicate()
+	for i in range(hem.size() - 1, -1, -1):
+		flag.append(hem[i])
+	poly(ci, flag, cloth, 1.4)
+	ci.draw_polyline(hem, Color(0.96, 0.84, 0.42), maxf(1.4, length * 0.02), true)
+	# shaft and butt spike
+	ci.draw_line(butt, butt + d * 0.86, gold.darkened(0.25), wide, true)
+	ci.draw_line(butt, butt + d * 0.07, Color(0.82, 0.84, 0.88), wide * 0.8, true)
+	# axe blade on the cloth side, hook on the other
+	var neck := butt + d * 0.8
+	poly(ci, PackedVector2Array([neck - n * length * 0.07, neck + o * length * 0.13 - n * length * 0.1,
+		neck + o * length * 0.15 + n * length * 0.05, neck + n * length * 0.04]), gold, 1.4)
+	poly(ci, PackedVector2Array([neck - n * length * 0.02, neck - o * length * 0.08 + n * length * 0.03,
+		neck + n * length * 0.04]), gold, 1.2)
+	# spear point
+	poly(ci, PackedVector2Array([neck + n * length * 0.02 + o * wide * 1.1, tip, neck + n * length * 0.02 - o * wide * 1.1]),
+		Color(0.88, 0.9, 0.94), 1.4)
+
+
+## The goblin commander: a hunched slab of muscle with tusks and a mohawk, a
+## halberd carrying his side's banner in one fist. Eyes light up in the team
+## colour and the standard is waved when the ability is ready.
+static func _goblin_commander(ci: CanvasItem, r: float, t: float, ready: bool, team_col: Color, pose: Dictionary = {}) -> void:
+	var f: float = float(pose.get("face", 1.0))
+	var throw_t: float = float(pose.get("throw", 9.0))
+	var toss_t: float = float(pose.get("toss", 9.0))
+	var skin := Color(0.42, 0.62, 0.24)
+	var skin_dark := Color(0.3, 0.46, 0.17)
+	var leather := Color(0.42, 0.28, 0.18)
+	var cloth := banner_color(team_col)
+	var breath := sin(t * 2.2) * r * 0.03
+	var keep := ink
+	ink = OUTLINE
+	# --- the standard: in the back fist, planted, unless it has just been thrown
+	var armed: bool = throw_t >= THROW_REARM
+	var back_fist := Vector2(-r * 0.78 * f, r * 0.12 + breath)
+	if armed:
+		var lean := 0.12 + sin(t * 1.3) * 0.03
+		var flutter := 0.35
+		if ready:
+			# waving it: the whole pole swings and the cloth snaps
+			lean = sin(t * 4.6) * 0.42
+			flutter = 1.0
+			back_fist = Vector2(-r * 0.74 * f, -r * 0.1 + breath)
+		var up := Vector2(-f * sin(lean), -cos(lean))
+		standard(ci, back_fist - up * r * 0.75, back_fist + up * r * 1.75, cloth, t, f, flutter)
+	# --- legs and loincloth
 	for s in [-1.0, 1.0]:
-		ci.draw_colored_polygon(PackedVector2Array([
-			Vector2(s * r * 0.45, -r * 0.1), Vector2(s * r * 1.15, -r * 0.55), Vector2(s * r * 0.5, r * 0.25),
-		]), skin.darkened(0.1))
-	# head
-	ci.draw_circle(Vector2(0, -r * 0.15), r * 0.62, skin)
-	ci.draw_arc(Vector2(0, -r * 0.15), r * 0.62, 0.0, TAU, 22, Color(0.13, 0.12, 0.16), 2.2, true)
-	# grin
-	ci.draw_arc(Vector2(0, r * 0.05), r * 0.34, 0.15 * PI, 0.85 * PI, 14, Color(0.15, 0.1, 0.1), 3.0, true)
-	# eyes: red with flames when the ability is up
+		ellipse(ci, Vector2(s * r * 0.42, r * 0.72), r * 0.3, r * 0.22, skin_dark, 2.0)
+		ellipse(ci, Vector2(s * r * 0.5 + f * r * 0.08, r * 0.88), r * 0.26, r * 0.11, skin, 1.6)
+	poly(ci, PackedVector2Array([Vector2(-r * 0.3, r * 0.42), Vector2(r * 0.3, r * 0.42),
+		Vector2(r * 0.14, r * 0.92), Vector2(0, r * 0.78), Vector2(-r * 0.16, r * 0.94)]), leather, 1.6)
+	# --- torso: wide shoulders, a strap across the chest, a belt
+	ellipse(ci, Vector2(0, r * 0.14 + breath), r * 0.8, r * 0.52, skin, 2.2)
+	ci.draw_line(Vector2(-r * 0.5 * f, -r * 0.22 + breath), Vector2(r * 0.42 * f, r * 0.5), leather, r * 0.12, true)
+	ci.draw_line(Vector2(-r * 0.56, r * 0.46), Vector2(r * 0.56, r * 0.46), leather.darkened(0.2), r * 0.13, true)
+	circle(ci, Vector2(0, r * 0.46), r * 0.08, Color(0.8, 0.68, 0.36), 1.2)
+	# --- back arm (the spear arm)
+	var back_shoulder := Vector2(-r * 0.66 * f, -r * 0.08 + breath)
+	if not armed:
+		if throw_t < THROW_FOLLOW:
+			# just let go: arm flung out toward the enemy
+			back_fist = Vector2(r * 0.55 * f, -r * 0.85)
+		else:
+			# reaching back for the next one
+			var q := clampf((throw_t - THROW_FOLLOW) / (THROW_REARM - THROW_FOLLOW), 0.0, 1.0)
+			back_fist = Vector2(r * 0.55 * f, -r * 0.85).lerp(Vector2(-r * 1.0 * f, r * 0.3), q)
+	circle(ci, back_shoulder, r * 0.3, skin, 2.0)
+	ci.draw_line(back_shoulder, back_fist, skin_dark, r * 0.3, true)
+	ci.draw_line(back_shoulder.lerp(back_fist, 0.55), back_fist, leather, r * 0.32, true)
+	circle(ci, back_fist, r * 0.2, skin, 1.8)
+	# --- head: ears, mohawk, heavy brow, tusks
+	var head := Vector2(r * 0.14 * f, -r * 0.42 + breath)
+	for s in [-1.0, 1.0]:
+		poly(ci, PackedVector2Array([head + Vector2(s * r * 0.3, -r * 0.05), head + Vector2(s * r * 0.95, -r * 0.42),
+			head + Vector2(s * r * 0.34, r * 0.16)]), skin_dark, 1.8)
+	for i in 5:
+		var mx := (-0.24 + 0.12 * float(i)) * r
+		poly(ci, PackedVector2Array([head + Vector2(mx - r * 0.07, -r * 0.3), head + Vector2(mx - r * 0.06 * f, -r * (0.58 + 0.06 * sin(float(i) * 1.9))),
+			head + Vector2(mx + r * 0.07, -r * 0.3)]), Color(0.1, 0.3, 0.32), 1.2)
+	ellipse(ci, head, r * 0.42, r * 0.38, skin, 2.2)
+	ellipse(ci, head + Vector2(r * 0.04 * f, r * 0.2), r * 0.3, r * 0.17, skin.lightened(0.08), 1.6)
+	for s in [-1.0, 1.0]:
+		poly(ci, PackedVector2Array([head + Vector2(s * r * 0.2 + r * 0.04 * f, r * 0.22), head + Vector2(s * r * 0.25 + r * 0.04 * f, -r * 0.02),
+			head + Vector2(s * r * 0.12 + r * 0.04 * f, r * 0.2)]), Color(0.96, 0.92, 0.78), 1.2)
+	ci.draw_line(head + Vector2(-r * 0.12 + r * 0.04 * f, r * 0.2), head + Vector2(r * 0.12 + r * 0.04 * f, r * 0.2), Color(0.15, 0.1, 0.1), 2.0, true)
+	# eyes: dark until the ability is up, then lit in the team colour with flames
 	var eye := Color(0.1, 0.1, 0.12) if not ready else team_col.lightened(0.15)
 	if ready:
-		ci.draw_circle(Vector2(0, -r * 0.3), r * 0.5, Color(team_col.r, team_col.g, team_col.b, 0.18))
+		ci.draw_circle(head + Vector2(0, -r * 0.06), r * 0.42, Color(team_col.r, team_col.g, team_col.b, 0.18))
 	for s in [-1.0, 1.0]:
-		var e := Vector2(s * r * 0.26, -r * 0.3)
-		ci.draw_circle(e, r * 0.13, eye)
+		var e := head + Vector2(s * r * 0.17 + r * 0.03 * f, -r * 0.08)
+		ci.draw_circle(e, r * 0.085, eye)
+		ci.draw_line(e + Vector2(-s * r * 0.14, -r * 0.05), e + Vector2(s * r * 0.12, -r * 0.16), skin_dark, r * 0.07, true)
 		if ready:
 			for k in 3:
-				var fl := Vector2(e.x + sin(t * 9.0 + float(k)) * r * 0.06, e.y - r * (0.22 + 0.12 * float(k)))
-				ci.draw_circle(fl, r * (0.08 - 0.02 * float(k)), Color(team_col.r, team_col.g, team_col.b, 0.8 - 0.2 * float(k)))
-	# spear, thrown rather than held as a staff
-	var tip := Vector2(r * 0.95, -r * 0.95)
-	ci.draw_line(Vector2(-r * 0.15, r * 0.35), tip, Color(0.62, 0.45, 0.28), 3.0, true)
-	ci.draw_colored_polygon(PackedVector2Array([
-		tip + Vector2(r * 0.26, -r * 0.1), tip + Vector2(-r * 0.02, -r * 0.2), tip + Vector2(-r * 0.02, r * 0.16),
-	]), Color(0.85, 0.88, 0.92))
-	ci.draw_polyline(PackedVector2Array([
-		tip + Vector2(r * 0.26, -r * 0.1), tip + Vector2(-r * 0.02, -r * 0.2),
-		tip + Vector2(-r * 0.02, r * 0.16), tip + Vector2(r * 0.26, -r * 0.1),
-	]), Color(0.13, 0.12, 0.16), 1.4, true)
+				var fl := Vector2(e.x + sin(t * 9.0 + float(k)) * r * 0.05, e.y - r * (0.16 + 0.1 * float(k)))
+				ci.draw_circle(fl, r * (0.07 - 0.018 * float(k)), Color(team_col.r, team_col.g, team_col.b, 0.8 - 0.2 * float(k)))
+	# --- front arm: at his side, or scooping Shiesty up and hurling him
+	var front_shoulder := Vector2(r * 0.66 * f, -r * 0.08 + breath)
+	var front_fist := Vector2(r * 0.8 * f, r * 0.35 + breath)
+	if toss_t < TOSS_SCOOP:
+		front_fist = commander_toss_hand(r, f, toss_t / TOSS_SCOOP)
+	elif toss_t < TOSS_SCOOP + TOSS_FOLLOW:
+		var q2 := (toss_t - TOSS_SCOOP) / TOSS_FOLLOW
+		front_fist = commander_toss_hand(r, f, 1.0).lerp(Vector2(r * 1.2 * f, -r * 0.55), ease(q2, 0.35))
+	circle(ci, front_shoulder, r * 0.32, skin, 2.0)
+	ci.draw_line(front_shoulder, front_fist, skin, r * 0.3, true)
+	ci.draw_line(front_shoulder.lerp(front_fist, 0.55), front_fist, leather, r * 0.32, true)
+	circle(ci, front_fist, r * 0.22, skin, 1.8)
+	ink = keep
+
+
+## Shiesty: a small goblin swallowed by a ragged hood, ears out the sides, eyes
+## glinting in the shadow, the loot sack over his shoulder.
+static func shiesty(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var bob := sin(t * 12.0) * r * 0.1
+	var skin := Color(0.45, 0.7, 0.32)
+	var hood := Color(0.72, 0.58, 0.36)
+	var cloak := Color(0.38, 0.28, 0.2)
+	# sack, slung behind
+	circle(ci, Vector2(-r * 0.85 * f, r * 0.15 + bob), r * 0.42, Color(0.82, 0.7, 0.4), 1.6)
+	ci.draw_line(Vector2(-r * 0.6 * f, -r * 0.15 + bob), Vector2(-r * 0.1 * f, -r * 0.2 + bob), cloak.darkened(0.2), r * 0.1, true)
+	# feet
+	ellipse(ci, Vector2(-r * 0.25 * f, r * 0.95), r * 0.24, r * 0.1, skin.darkened(0.25), 1.2)
+	ellipse(ci, Vector2(r * 0.3 * f, r * 0.95), r * 0.24, r * 0.1, skin.darkened(0.25), 1.2)
+	# cloak with a ragged hem
+	poly(ci, PackedVector2Array([Vector2(-r * 0.4, -r * 0.25 + bob), Vector2(r * 0.4, -r * 0.25 + bob),
+		Vector2(r * 0.8, r * 0.7), Vector2(r * 0.5, r * 0.6), Vector2(r * 0.3, r * 0.88), Vector2(r * 0.05, r * 0.66),
+		Vector2(-r * 0.2, r * 0.9), Vector2(-r * 0.45, r * 0.62), Vector2(-r * 0.8, r * 0.74)]), cloak, 1.8)
+	# a clawed hand creeping out in front
+	ci.draw_line(Vector2(r * 0.35 * f, r * 0.1 + bob), Vector2(r * 0.85 * f, r * 0.3 + bob), skin, r * 0.16, true)
+	# ears out through the hood
+	var head := Vector2(r * 0.1 * f, -r * 0.5 + bob)
+	for s in [-1.0, 1.0]:
+		poly(ci, PackedVector2Array([head + Vector2(s * r * 0.4, r * 0.05), head + Vector2(s * r * 1.25, -r * 0.5),
+			head + Vector2(s * r * 0.45, -r * 0.3)]), skin, 1.6)
+		poly(ci, PackedVector2Array([head + Vector2(s * r * 0.52, -r * 0.05), head + Vector2(s * r * 1.0, -r * 0.4),
+			head + Vector2(s * r * 0.55, -r * 0.22)]), Color(0.8, 0.45, 0.28), 0.0)
+	# hood: a low wide peak pulled down over the face
+	poly(ci, PackedVector2Array([head + Vector2(-r * 0.62, r * 0.28), head + Vector2(-r * 0.5, -r * 0.3),
+		head + Vector2(r * 0.05 * f, -r * 0.72), head + Vector2(r * 0.5, -r * 0.3), head + Vector2(r * 0.62, r * 0.28),
+		head + Vector2(0, r * 0.48)]), hood, 1.8)
+	# the face in its shadow: two slit eyes and a smirk
+	ellipse(ci, head + Vector2(r * 0.06 * f, r * 0.08), r * 0.36, r * 0.27, Color(0.16, 0.12, 0.1), 0.0)
+	for s in [-1.0, 1.0]:
+		var e := head + Vector2(s * r * 0.15 + r * 0.06 * f, r * 0.03)
+		ci.draw_line(e + Vector2(-r * 0.08, s * r * 0.03 * f), e + Vector2(r * 0.08, -s * r * 0.03 * f), Color(1.0, 0.86, 0.3), r * 0.09, true)
+	ci.draw_arc(head + Vector2(r * 0.08 * f, r * 0.12), r * 0.16, 0.25, PI - 0.6, 8, Color(0.85, 0.75, 0.55), 1.2, true)
+	ink = keep
 
 
 ## Lizard soldier: small green spear-carrier, crest up, spear levelled.

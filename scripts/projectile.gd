@@ -227,6 +227,13 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.55, 0.15, 0.85))
 		draw_circle(Vector2.ZERO, 2.6, Color(1.0, 0.85, 0.4))
 		return
+	if kind == "spear":
+		# the goblin commander's standard, point first, banner streaming behind
+		var ang := (to - from).angle()
+		draw_set_transform(Vector2.ZERO, ang, Vector2.ONE)
+		DDArt.standard(self, Vector2(-34, 0), Vector2(12, 0), DDArt.banner_color(area.team_color(team)), clock, 1.0, 1.0)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if kind == "rifle":
 		draw_line(Vector2(-9, 0), Vector2(3, 0), Color(1.0, 0.86, 0.5, 0.9), 2.0, true)
 		draw_circle(Vector2(4, 0), 2.2, Color(1.0, 0.95, 0.7))

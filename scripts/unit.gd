@@ -213,8 +213,12 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	presence_shift = int(d.get("presence_shift", 0))
 	summon_cfg = d.get("summon", {})
 	if not summon_cfg.is_empty() and summon_cfg.has("spot"):
-		# a hatchery is on the clock, not on alert: first unit one interval in
+		# a hatchery is on the clock, not on alert: the first unit comes "first"
+		# seconds after it is played (one interval in if not given). The summon
+		# clock only starts once the deploy drop is over, so that is taken off.
 		summon_cd = float(summon_cfg.get("interval", 12.0))
+		if summon_cfg.has("first"):
+			summon_cd = maxf(0.0, float(summon_cfg["first"]) - DEPLOY_DELAY)
 	shoots = String(d.get("shoots", ""))
 	shoot_payload = d.get("payload", {})
 	troops_only = bool(d.get("troops_only", false))
@@ -479,6 +483,7 @@ func _physics_process(delta: float) -> void:
 			_burst()
 			return
 		state = S.APPROACH
+		speed = ground_speed * float(kamikaze_cfg.get("speed_mult", 1.0))
 		_move(delta)
 		queue_redraw()
 		return
@@ -1330,6 +1335,14 @@ func _target_valid(t: Node) -> bool:
 	return true
 
 
+## Where a hatchery's units come out: front and centre of the building.
+func _hatch_spot() -> Vector2:
+	var fwd := 1.0 if team == 0 else -1.0
+	var fp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
+	var depth: float = float(fp[1]) * 0.5 + 0.45
+	return position + Vector2(fwd * depth * float(arena.TILE), 0.0)
+
+
 func _tick_summon(delta: float) -> void:
 	summon_cd = maxf(0.0, summon_cd - delta)
 	if summon_cd > 0.0:
@@ -1338,11 +1351,7 @@ func _tick_summon(delta: float) -> void:
 		# the hatchery: one body out of the front hatch, centred on the building,
 		# on a fixed cadence rather than waiting for company
 		summon_cd = float(summon_cfg.get("interval", 12.0))
-		var fwd := 1.0 if team == 0 else -1.0
-		var fp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
-		var depth: float = float(fp[1]) * 0.5 + 0.45
-		var hatch: Vector2 = position + Vector2(fwd * depth * float(arena.TILE), 0.0)
-		arena.spawn_troop(String(summon_cfg["unit"]), team, hatch, true)
+		arena.spawn_troop(String(summon_cfg["unit"]), team, _hatch_spot(), true)
 		arena.shake(1.2)
 		return
 	var rng_t := float(summon_cfg["range"])
@@ -1521,6 +1530,9 @@ func _die() -> void:
 	if not da.is_empty():
 		arena.death_aoe(position, float(da["radius"]), float(da["dmg"]),
 			float(da["slow"]), float(da["slow_time"]), team)
+	# a hatchery gives up one last unit as it goes, however it went
+	if bool(summon_cfg.get("on_death", false)):
+		arena.spawn_troop(String(summon_cfg["unit"]), team, _hatch_spot(), true)
 	# zombies raise whatever they kill, on their own side — buildings are not
 	# people, they do not get back up
 	if kind != "zombie" and not is_building() and last_attacker != null and is_instance_valid(last_attacker):

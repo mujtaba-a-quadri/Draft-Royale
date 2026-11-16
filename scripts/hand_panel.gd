@@ -39,6 +39,19 @@ var ability_rect := Rect2()
 var cards: Array = []
 var drag_card: DDHandCard = null
 
+## Opening deal. The hand itself is dealt instantly (the simulation never waits
+## on this); the panel just holds the cards back and lets them fly in one per
+## beat, in time with the draws in the deal sound. Both panels run the same
+## clock, so the two hands fill together.
+##   own hand      right to left, each card out of the NEXT box
+##   opponent hand top to bottom, each card in from above the column
+const DEAL_BEAT_FALLBACK := 0.24
+var deal_started := false
+var deal_hidden: Array = []
+var deal_beat := 0.0
+var deal_clock := 0.0
+var deal_shown := 0
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -128,13 +141,52 @@ func hit_card(p: Vector2) -> int:
 
 ## Select a card the way a click does — used by the 1-8 keyboard shortcuts.
 func select_index(i: int) -> void:
+	# a card that has not been dealt onto the table yet cannot be picked up
+	var h: Array = hand()
+	if i >= 0 and i < h.size() and deal_hidden.has(String(h[i])):
+		return
 	_press_card(i)
+
+
+## Queue the opening hand for the deal: every card starts held back, in the order
+## it will be shown. One beat is one draw in the deal sound.
+func _begin_deal() -> void:
+	deal_started = true
+	var h: Array = hand()
+	deal_hidden = []
+	for k in h.size():
+		# own hand fills from the right; the opponent's column from the top
+		deal_hidden.append(String(h[k if compact else h.size() - 1 - k]))
+	deal_beat = DEAL_BEAT_FALLBACK
+	var sfx = arena.get("sfx")
+	if sfx != null and is_instance_valid(sfx) and float(sfx.slice_seconds) > 0.0:
+		deal_beat = float(sfx.slice_seconds)
+	deal_clock = 0.0
+	deal_shown = 0
+
+
+## Let the next card go on each beat. It flies in through the same arrival path
+## Pen uses, so it lands in its slot rather than popping into it.
+func _tick_deal(delta: float) -> void:
+	if deal_hidden.is_empty():
+		return
+	deal_clock += delta
+	while not deal_hidden.is_empty() and deal_clock >= float(deal_shown) * deal_beat:
+		var kind := String(deal_hidden.pop_front())
+		deal_shown += 1
+		if not hand().has(kind):
+			continue
+		var from: Vector2 = Vector2(size.x * 0.5, -30.0) if compact else next_rect().get_center()
+		pending_arrivals[kind] = global_position + from
 
 
 func _process(delta: float) -> void:
 	clock += delta
 	if arena == null:
 		return
+	if not deal_started:
+		_begin_deal()
+	_tick_deal(delta)
 	_sync_drag()
 	_layout_cards()
 	queue_redraw()
@@ -178,6 +230,10 @@ func _layout_cards() -> void:
 		c.grow = not compact
 		c.set_card(String(h[i]), compact and not faces)
 		c.visible = not shelf
+		if deal_hidden.has(String(h[i])):
+			# still in the deck as far as the eye is concerned
+			c.visible = false
+			continue
 		if c.visible and pending_arrivals.has(String(h[i])):
 			var from: Vector2 = pending_arrivals[String(h[i])]
 			pending_arrivals.erase(String(h[i]))
