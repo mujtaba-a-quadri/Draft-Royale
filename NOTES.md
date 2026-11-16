@@ -5,7 +5,7 @@ Read this plus `README.md` before touching anything. The README is the *product*
 reference (rules, cards, numbers); this file is the *working* reference (where code
 lives, how to verify, what is half-done and why).
 
-State at handoff: 18 cards (17 dealt), 150 s matches with a final-minute surge,
+State at handoff: 22 cards (21 dealt), 150 s matches with a final-minute surge,
 commander-tower wins, threat-driven bot with a measurement harness, arena split
 into rules / geometry / painting. Everything below was verified; nothing is
 half-finished in the tree.
@@ -57,7 +57,9 @@ extraction candidate.**
    `boomerang` (Fu), `roll` (Slate), `curl` (hedgehog), `chicken` + `kamikaze` (Hot Chicken,
    two phases), `spread` (Primal Aphid), `dodge` (Penny), `summon` (warren),
    `death_aoe` (snowman), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
-   `stationary`, `lifetime`, `shoots` + `payload`.
+   `stationary`, `lifetime`, `shoots` + `payload`, `greatsword` (Laniakea: owns its
+   own targeting in `_tick_greatsword`, cleave + leap/slam), `needle` (Femme Fatale:
+   `_tick_needle`, wind-up dash + three hit combo).
 5. **Projectile** visuals live in `projectile._draw()` keyed by `kind`; effects that
    hit on impact read the payload dictionary.
 6. **Bot roles are automatic** — `DDBotMatrix.roles_of()` derives them from card data.
@@ -65,7 +67,7 @@ extraction candidate.**
 7. **`README.md`**: a row in the card table, and bump the deck-count line.
 
 Hand slots are bound **by card kind**, so a deck must not contain duplicates. That
-matters when adding cards: `ORDER` is per-player deck size (currently 17, hand 4,
+matters when adding cards: `ORDER` is per-player deck size (currently 21, hand 4,
 `HAND_MAX` 8, draw every 8 s).
 
 ---
@@ -197,6 +199,19 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   dump and the encoder are generic, only the staging code is specific.
   The encoder is hand-written because there is no ffmpeg/ImageMagick/Pillow on this
   machine — do not assume those exist.
+* **Laniakea cannot hit a flyer inside 2.5 tiles.** His leap window is 2.5 – 3.5
+  tiles (centre to centre) and only opens when no ground body is closer than the
+  flyer; a melee flyer that has already reached him is safe from him. The cleave
+  never touches air and the slam's strip hits ground and air alike. All his ranges
+  live in the `greatsword` block and are centre distances, not the edge-to-edge
+  `reach` the other units use (`reach` 1.5 is only there for the card face and
+  the bot's melee role). Scenario: `--scenario=laniakea --log`.
+* **Femme Fatale never dashes across the river.** The dash only starts when
+  `route_point` says the walk to the target is a straight line, so she cannot
+  stop in the water. The dash ignores her attack cooldown (the wind-up is the
+  cost), a stun or shove cancels it, and her third combo hit pushes *her* back,
+  not the target. Ranges are centre distances in the `needle` block, like
+  Laniakea's. Scenario: `--scenario=femme --log`.
 * **Penny's dash ends in a leap**: after the spin she jumps at the nearest *air*
   unit within 2.5 tiles (else the closest body), lands 2× damage and stays
   untargetable through the whole thing. Both the swipes and the leaping blow do not

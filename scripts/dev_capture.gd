@@ -153,6 +153,12 @@ func _ready() -> void:
 	elif scenario == "firebolt":
 		shot_times = []
 		run_time = 3.0
+	elif scenario == "laniakea":
+		shot_times = []
+		run_time = 7.0
+	elif scenario == "femme":
+		shot_times = []
+		run_time = 9.5
 	elif scenario == "pennygif" or scenario == "pairgif":
 		shot_times = []
 		run_time = 6.0
@@ -307,6 +313,10 @@ func _process(delta: float) -> void:
 		_bld_steps()
 	elif scenario == "firebolt":
 		_firebolt_steps()
+	elif scenario == "laniakea":
+		_laniakea_steps()
+	elif scenario == "femme":
+		_femme_steps()
 	elif scenario == "pennygif" or scenario == "pairgif":
 		_pennygif_steps()
 	elif scenario == "flash":
@@ -942,6 +952,116 @@ func _chicken_steps() -> void:
 		print("[chicken] t%.1f hero_hp=%d hero_status=%d | chicken flying=%s alive=%s" % [
 			elapsed, int(alch.hp), int(alch.status),
 			str(probe.flying), str(is_instance_valid(probe) and not bool(probe.get("dead")))])
+
+
+## A body for Laniakea to hit that neither walks nor hits back.
+func _lani_dummy(kind: String, at: Vector2) -> Node:
+	var u = arena.spawn_troop(kind, 1, at, true)
+	# spawn_troop snaps to the tile; the checks need the exact offset
+	u.position = at
+	u.deploy_timer = 0.0
+	u.speed = 0.0
+	u.dmg = 0.0
+	return u
+
+
+func _lani_clear() -> void:
+	for u in arena.units.duplicate():
+		if is_instance_valid(u):
+			u.take_damage(99999.0, u.position)
+
+
+## Laniakea's three cases: the cleave (arc + shove, nothing behind him), the leap
+## (flyer + the strip behind it, stun) and the dead zone (flyer inside 2.5 tiles).
+var lani_marks: Array = []
+func _laniakea_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		probe = arena.spawn_troop("laniakea", 0, arena.tile_center(9.5, 20.5), true)
+		probe.deploy_timer = 0.0
+		probe.speed = 0.0
+		var p: Vector2 = probe.position
+		var fwd: Vector2 = (arena.tile_center(9.5, 19.5) - p).normalized()
+		lani_marks = [
+			_lani_dummy("hero", p + fwd * 1.3 * t),
+			_lani_dummy("hero", p + fwd.rotated(deg_to_rad(60.0)) * 2.0 * t),
+			_lani_dummy("hero", p + fwd.rotated(deg_to_rad(100.0)) * 1.8 * t),
+			_lani_dummy("hero", p - fwd * 1.8 * t),
+			_lani_dummy("aphid", p + fwd * 1.6 * t),
+		]
+		print("[laniakea] cleave: target 1.3 ahead, 60deg flank at 2.0, 100deg flank at 1.8, one behind, a flyer in the arc")
+	if _at(0.9):
+		print("[laniakea] hp target/flank60/flank100/behind/flyer = %s (expect 125,125,150,150,110; multiples of 12 off are tower shots)" % [
+			str(lani_marks.map(func(u): return int(u.hp)))])
+		print("[laniakea] dist target/flank60 = %.2f / %.2f (expect ~1.80 / ~2.50, the shared impulse runs one tick long), atk_cd=%.2f" % [
+			arena.tiles_between(probe.position, lani_marks[0].position),
+			arena.tiles_between(probe.position, lani_marks[1].position), probe.atk_cd])
+	if _at(2.0):
+		_lani_clear()
+		probe = arena.spawn_troop("laniakea", 0, arena.tile_center(9.5, 20.5), true)
+		probe.deploy_timer = 0.0
+		var p2: Vector2 = probe.position
+		var fwd2: Vector2 = (arena.tile_center(9.5, 19.5) - p2).normalized()
+		lani_marks = [
+			_lani_dummy("aphid", p2 + fwd2 * 3.0 * t),
+			_lani_dummy("hero", p2 + fwd2 * 5.0 * t),
+			_lani_dummy("hero", p2 + fwd2 * 5.0 * t + fwd2.orthogonal() * 2.0 * t),
+		]
+		print("[laniakea] leap: flyer at 3.0, hero 2.0 behind it, hero 2.0 off to the side")
+	if _at(2.2):
+		print("[laniakea] leaping=%s" % str(probe.leaping))
+	if _at(2.7):
+		print("[laniakea] hp flyer/behind/side = %s (expect 60,100,150) stunned flyer/behind = %s/%s gap to flyer=%.2f" % [
+			str(lani_marks.map(func(u): return int(u.hp))),
+			str(lani_marks[0].stunned > 0.0), str(lani_marks[1].stunned > 0.0),
+			arena.gap_between(probe.position, lani_marks[0].position, probe.radius_t, lani_marks[0].radius_t)])
+	if _at(4.0):
+		_lani_clear()
+		probe = arena.spawn_troop("laniakea", 0, arena.tile_center(9.5, 20.5), true)
+		probe.deploy_timer = 0.0
+		var p3: Vector2 = probe.position
+		var fwd3: Vector2 = (arena.tile_center(9.5, 19.5) - p3).normalized()
+		lani_marks = [_lani_dummy("aphid", p3 + fwd3 * 2.0 * t)]
+		print("[laniakea] dead zone: flyer at 2.0")
+	if _at(6.5):
+		var tg = probe.target
+		print("[laniakea] flyer hp=%d (expect 110) leaping=%s target_is_tower=%s" % [
+			int(lani_marks[0].hp), str(probe.leaping),
+			str(tg != null and is_instance_valid(tg) and tg.is_tower())])
+
+
+## Femme Fatale: the dash (4.0 tiles: wind-up, lunge to 1.5, 25 on the tip), then
+## the combo from a 3.0 tile walk-up (12, 12, 12 + half a tile of recoil).
+## Towers are silenced so every point of damage in the log is hers.
+func _femme_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.2):
+		for tw in arena.towers:
+			tw.dmg = 0.0
+	if _at(0.3):
+		probe = arena.spawn_troop("femme", 0, arena.tile_center(9.5, 21.5), true)
+		probe.deploy_timer = 0.0
+		var fwd: Vector2 = (arena.tile_center(9.5, 20.5) - probe.position).normalized()
+		lani_marks = [_lani_dummy("hero", probe.position + fwd * 4.0 * t)]
+		print("[femme] dash: hero 4.0 tiles ahead")
+	if _at(0.5):
+		print("[femme] t0.5 dash_phase=%d (expect 1, winding up) dist=%.2f" % [
+			probe.dash_phase, arena.tiles_between(probe.position, lani_marks[0].position)])
+	if _at(1.3):
+		print("[femme] t1.3 dash_phase=%d dist=%.2f (expect 0 / 1.50) hero hp=%d (expect 125)" % [
+			probe.dash_phase, arena.tiles_between(probe.position, lani_marks[0].position), int(lani_marks[0].hp)])
+	if _at(3.0):
+		_lani_clear()
+		probe = arena.spawn_troop("femme", 0, arena.tile_center(9.5, 21.5), true)
+		probe.deploy_timer = 0.0
+		var fwd2: Vector2 = (arena.tile_center(9.5, 20.5) - probe.position).normalized()
+		lani_marks = [_lani_dummy("hero", probe.position + fwd2 * 3.0 * t)]
+		print("[femme] combo: hero 3.0 tiles ahead (inside the dash window's near edge)")
+	if _at(3.3):
+		print("[femme] t3.3 dash_phase=%d (expect 0, walking)" % probe.dash_phase)
+	if _at(4.6) or _at(5.8) or _at(6.6) or _at(7.4) or _at(9.0):
+		print("[femme] t%.1f hero hp=%d step=%d dist=%.2f" % [elapsed, int(lani_marks[0].hp),
+			probe.needle_step, arena.tiles_between(probe.position, lani_marks[0].position)])
 
 
 func _burn_steps() -> void:

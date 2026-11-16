@@ -79,6 +79,10 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			_penny(ci, r, t, facing)
 		"pen":
 			_pen(ci, r, t, facing)
+		"laniakea":
+			laniakea(ci, r, facing, t, 0, ink_col)
+		"femme":
+			femme(ci, r, facing, t, 0, ink_col)
 		"aphid":
 			_aphid(ci, r, t, facing)
 		"lizard":
@@ -670,6 +674,141 @@ static func _pen(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(-r * 1.35 * f, r * 0.22), Vector2(-r * 1.05 * f, r * 0.13), Color(0.78, 0.62, 0.3), r * 0.18, true)
 
 
+## A slab of a sword from hilt to tip, w wide: one straight edge, one slanted
+## point, a dark grip behind the guard. Used on Laniakea's back and, by the
+## unit itself, for the blade in mid-swing.
+static func greatsword(ci: CanvasItem, hilt: Vector2, tip: Vector2, w: float, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var d := tip - hilt
+	if d.length() < 0.01:
+		ink = keep
+		return
+	var n := d.normalized()
+	var s := n.orthogonal() * w * 0.5
+	ci.draw_line(hilt - n * w * 0.9, hilt, Color(0.2, 0.19, 0.24), w * 0.3, true)
+	poly(ci, PackedVector2Array([hilt + s, hilt + d * 0.8 + s, hilt + d - s, hilt - s]),
+		Color(0.72, 0.74, 0.79), 1.8)
+	ci.draw_line(hilt + d * 0.08, hilt + d * 0.74 + s * 0.15, Color(0.52, 0.54, 0.6), w * 0.16, true)
+	ci.draw_line(hilt + s * 1.5, hilt - s * 1.5, Color(0.3, 0.3, 0.37), w * 0.26, true)
+	ink = keep
+
+
+## Laniakea: a small armoured bug under a pale mask with a crown of jagged
+## horns, hauling a sword bigger than he is.
+## pose 0 = sword slung on his back, 1 = raised overhead (the leap),
+## 2 = no sword drawn (the unit paints the swing itself).
+static func laniakea(ci: CanvasItem, r: float, facing: float, t: float, pose: int = 0, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var bob := sin(t * 4.0) * r * 0.05
+	var mask := Color(0.96, 0.95, 0.9)
+	var plate := Color(0.37, 0.38, 0.45)
+	var plate_dark := Color(0.22, 0.22, 0.28)
+	if pose == 0:
+		# slung across the back: grip over the shoulder, blade trailing behind
+		greatsword(ci, Vector2(-r * 0.05 * f, -r * 0.5 + bob), Vector2(-r * 1.9 * f, r * 0.95 + bob), r * 0.52, ink_col)
+	# legs
+	ci.draw_line(Vector2(-r * 0.2 * f, r * 0.5), Vector2(-r * 0.36 * f, r * 1.08), plate_dark, r * 0.15, true)
+	ci.draw_line(Vector2(r * 0.2 * f, r * 0.5), Vector2(r * 0.34 * f, r * 1.08), plate_dark, r * 0.15, true)
+	# armoured body, banded, with a short skirt of plates
+	poly(ci, PackedVector2Array([Vector2(-r * 0.5, r * 0.4 + bob), Vector2(-r * 0.62, r * 0.78 + bob),
+		Vector2(0, r * 0.62 + bob), Vector2(r * 0.62, r * 0.78 + bob), Vector2(r * 0.5, r * 0.4 + bob)]), plate_dark, 1.6)
+	ellipse(ci, Vector2(0, r * 0.2 + bob), r * 0.46, r * 0.5, plate)
+	ci.draw_arc(Vector2(0, r * 0.02 + bob), r * 0.4, 0.5, PI - 0.5, 12, plate_dark, r * 0.08, true)
+	ci.draw_arc(Vector2(0, r * 0.22 + bob), r * 0.4, 0.5, PI - 0.5, 12, plate_dark, r * 0.08, true)
+	# sword arm
+	var hand := Vector2(r * 0.5 * f, r * 0.3 + bob)
+	if pose == 0:
+		hand = Vector2(-r * 0.12 * f, -r * 0.42 + bob)
+	elif pose == 1:
+		hand = Vector2(r * 0.1 * f, -r * 1.25 + bob)
+	ci.draw_line(Vector2(r * 0.3 * f, -r * 0.05 + bob), hand, plate_dark, r * 0.16, true)
+	# the crown: five jagged horns fanned over the mask, the middle one tallest
+	var head := Vector2(r * 0.08 * f, -r * 0.62 + bob)
+	var tall: Array = [0.95, 1.2, 1.45, 1.15, 0.9]
+	for i in 5:
+		var a := deg_to_rad(-150.0 + 30.0 * float(i)) + 0.12 * f
+		var out := Vector2(cos(a), sin(a))
+		var side := out.orthogonal() * r * 0.16
+		poly(ci, PackedVector2Array([head + out * r * 0.3 + side, head + out * r * float(tall[i]),
+			head + out * r * 0.3 - side]), mask, 1.6)
+	ellipse(ci, head, r * 0.52, r * 0.45, mask)
+	# two hollow eyes
+	ellipse(ci, head + Vector2(-r * 0.2 + r * 0.06 * f, r * 0.06), r * 0.11, r * 0.16, Color(0.08, 0.07, 0.1), 0.0)
+	ellipse(ci, head + Vector2(r * 0.2 + r * 0.06 * f, r * 0.06), r * 0.11, r * 0.16, Color(0.08, 0.07, 0.1), 0.0)
+	if pose == 1:
+		# both hands up, blade straight overhead and a little behind
+		greatsword(ci, Vector2(r * 0.1 * f, -r * 1.3 + bob), Vector2(-r * 0.7 * f, -r * 3.6 + bob), r * 0.52, ink_col)
+	ink = OUTLINE
+
+
+## A needle from hilt to tip: a blade that is all taper, a short dark grip and a
+## small guard. w is the width at the hilt.
+static func needle(ci: CanvasItem, hilt: Vector2, tip: Vector2, w: float, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var d := tip - hilt
+	if d.length() < 0.01:
+		ink = keep
+		return
+	var n := d.normalized()
+	var s := n.orthogonal() * w * 0.5
+	ci.draw_line(hilt - n * w * 2.4, hilt, Color(0.2, 0.17, 0.2), w * 0.7, true)
+	poly(ci, PackedVector2Array([hilt + s, tip, hilt - s]), Color(0.87, 0.89, 0.94), 1.2)
+	ci.draw_line(hilt + s * 2.2, hilt - s * 2.2, Color(0.62, 0.52, 0.3), w * 0.6, true)
+	ink = keep
+
+
+## Femme Fatale: a slight figure lost in a hood and a heavy cloak, carrying a
+## needle longer than she is tall.
+## pose 0 = needle trailing at her side, 1 = raised straight up (the wind-up),
+## 2 = no needle drawn (the unit paints the lunge and the combo itself).
+static func femme(ci: CanvasItem, r: float, facing: float, t: float, pose: int = 0, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var bob := sin(t * 3.4) * r * 0.04
+	var sway := sin(t * 2.6) * r * 0.06
+	var hood := Color(0.29, 0.2, 0.2)
+	var cloak := Color(0.43, 0.26, 0.27)
+	var robe := Color(0.5, 0.45, 0.33)
+	var skin := Color(0.96, 0.86, 0.79)
+	var hair := Color(0.46, 0.2, 0.17)
+	if pose == 0:
+		# trailing behind her, point down
+		needle(ci, Vector2(r * 0.5 * f, r * 0.2 + bob), Vector2(-r * 2.7 * f, r * 1.0), r * 0.2, ink_col)
+	# legs
+	ci.draw_line(Vector2(-r * 0.16 * f, r * 0.6), Vector2(-r * 0.24 * f, r * 1.08), INK, r * 0.13, true)
+	ci.draw_line(Vector2(r * 0.16 * f, r * 0.6), Vector2(r * 0.22 * f, r * 1.08), INK, r * 0.13, true)
+	# cloak, open down the front over a paler robe
+	poly(ci, PackedVector2Array([Vector2(-r * 0.34, -r * 0.4 + bob), Vector2(r * 0.34, -r * 0.4 + bob),
+		Vector2(r * 0.74 + sway, r * 0.84), Vector2(-r * 0.74 + sway, r * 0.84)]), cloak)
+	poly(ci, PackedVector2Array([Vector2(-r * 0.08 * f, -r * 0.3 + bob), Vector2(r * 0.2 * f, -r * 0.3 + bob),
+		Vector2(r * 0.38 * f + sway, r * 0.84), Vector2(-r * 0.12 * f + sway, r * 0.84)]), robe, 0.0)
+	# sword arm
+	var hand := Vector2(r * 0.5 * f, r * 0.2 + bob)
+	if pose == 1:
+		hand = Vector2(r * 0.42 * f, -r * 0.9 + bob)
+	elif pose == 2:
+		hand = Vector2(r * 0.62 * f, -r * 0.05 + bob)
+	ci.draw_line(Vector2(r * 0.26 * f, -r * 0.22 + bob), hand, hood, r * 0.17, true)
+	# hood: a deep cowl with a soft point at the back, mantle over the shoulders
+	poly(ci, PackedVector2Array([Vector2(-r * 0.3 * f, -r * 1.25 + bob), Vector2(-r * 0.86 * f, -r * 0.82 + bob),
+		Vector2(-r * 0.3 * f, -r * 0.5 + bob)]), hood, 1.6)
+	ellipse(ci, Vector2(r * 0.04 * f, -r * 0.8 + bob), r * 0.56, r * 0.58, hood)
+	ellipse(ci, Vector2(0, -r * 0.3 + bob), r * 0.58, r * 0.2, hood)
+	# the face in the shadow of it, a fringe of dark red hair
+	ellipse(ci, Vector2(r * 0.16 * f, -r * 0.72 + bob), r * 0.33, r * 0.37, skin, 1.2)
+	ci.draw_arc(Vector2(r * 0.16 * f, -r * 0.72 + bob), r * 0.3, PI + 0.25, TAU - 0.25, 12, hair, r * 0.13, true)
+	ci.draw_circle(Vector2(r * 0.07 * f, -r * 0.7 + bob), r * 0.05, INK)
+	ci.draw_circle(Vector2(r * 0.29 * f, -r * 0.7 + bob), r * 0.05, INK)
+	# brooch
+	ci.draw_circle(Vector2(r * 0.06 * f, -r * 0.28 + bob), r * 0.09, Color(0.9, 0.72, 0.3))
+	if pose == 1:
+		needle(ci, hand, Vector2(hand.x, -r * 4.2), r * 0.2, ink_col)
+	ink = OUTLINE
+
+
 static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: bool) -> void:
 	var bob := sin(t * 9.0) * r * 0.08
 	var body := Color(1.0, 0.56, 0.22)
@@ -847,6 +986,10 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			creature(ci, "penny", r, 1.0, t)
 		"pen":
 			creature(ci, "pen", r, 1.0, t)
+		"laniakea":
+			creature(ci, "laniakea", r, 1.0, t)
+		"femme":
+			creature(ci, "femme", r, 1.0, t)
 		"aphid":
 			creature(ci, "aphid", r, 1.0, t)
 		"lizard":

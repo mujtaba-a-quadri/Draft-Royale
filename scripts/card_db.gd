@@ -265,6 +265,40 @@ const CARDS := {
 		"giant": true,
 		"accent": Color(0.9, 0.45, 0.3),
 	},
+	"laniakea": {
+		"name": "Laniakea",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "A bug with a sword twice his size. Cleaves everything on the ground in front of him and shoves it back; leaps at flyers and brings the blade down through them and whatever is behind.",
+		"hp": 100.0, "dmg": 25.0, "speed": 0.7, "reach": 1.5, "interval": 2.0,
+		"radius": 0.45, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		# every distance here is centre to centre, in tiles
+		"greatsword": {
+			"swing_range": 1.5, "arc_deg": 140.0, "length": 2.2,
+			"push": 0.5, "push_time": 0.2,
+			"leap_min": 2.5, "leap_max": 3.5, "leap_time": 0.4,
+			"leap_dmg": 50.0, "leap_line": 2.5, "leap_width": 0.6, "stun": 0.5,
+		},
+		"accent": Color(0.93, 0.93, 0.9),
+	},
+	"femme": {
+		"name": "Femme Fatale",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "Hooded, and carrying a needle longer than she is. From a distance she raises it, the tip glints, and she is suddenly in front of you. Up close: a flick, a stab, and a stab that carries her back out.",
+		"hp": 60.0, "dmg": 12.0, "speed": 1.2, "reach": 1.5, "interval": 1.2,
+		"radius": 0.38, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		# every distance here is centre to centre, in tiles
+		"needle": {
+			"range": 1.5, "tip": 1.6,
+			"dash_min": 3.5, "dash_max": 4.5, "windup": 0.45, "dash_speed": 12.0, "dash_dmg": 25.0,
+			"swing_deg": 15.0, "recoil": 0.5, "recoil_time": 0.18,
+		},
+		"accent": Color(0.5, 0.3, 0.3),
+	},
 	# Not in ORDER: entities that never appear in a deck but still need a real
 	# identity for the hover inspector and any card lookup.
 	"shiesty": {
@@ -299,7 +333,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme"]
 
 
 ## Every card in the game. Pen is not in the deck — he only arrives when Penny is

@@ -10,7 +10,7 @@ const ATTACK_NAMES := {
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
-	"ovomachine": "Hatch",
+	"ovomachine": "Hatch", "laniakea": "Greatsword", "femme": "Needle",
 	"fireball": "Fireball", "firebolt": "Firebolt", "snowball": "Snowball",
 }
 

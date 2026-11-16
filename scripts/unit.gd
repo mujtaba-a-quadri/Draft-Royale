@@ -113,6 +113,41 @@ var carrying := false
 var carry_dir := Vector2.RIGHT
 var carry_contact := 0.0
 var invincible := false
+## Laniakea: one greatsword, two swings. A ground target gets a wide cleave with
+## a shove; a flyer in the leap window gets a jump and an overhead slam that
+## carries on in a line behind it.
+var sword_cfg: Dictionary = {}
+var leaping := false
+var leap_t := 0.0
+var leap_from := Vector2.ZERO
+var leap_to := Vector2.ZERO
+var leap_dir := Vector2.RIGHT
+var leap_victim: Node = null
+## cosmetic timers for the two swings (the hits themselves land on one tick)
+const SWING_SHOW := 0.22
+const SLAM_SHOW := 0.28
+var swing_t := 0.0
+var swing_from := 0.0
+var swing_to := 0.0
+var slam_t := 0.0
+var slam_len := 0.0
+## Femme Fatale: a long needle. A far ground target gets a wind-up and a lunge
+## that stops at needle range; up close it is a three hit combo (flick, stab,
+## stab that recoils her).
+var needle_cfg: Dictionary = {}
+## 0 = not dashing, 1 = needle raised (wind-up), 2 = lunging
+var dash_phase := 0
+var dash_t := 0.0
+var dash_dir := Vector2.RIGHT
+var dash_victim: Node = null
+var dash_left := 0.0
+var needle_step := 0
+var needle_target_id := 0
+## cosmetic: the needle drawn in board space for a moment after each hit
+const NEEDLE_SHOW := 0.2
+var needle_t := 0.0
+var needle_from := 0.0
+var needle_to := 0.0
 ## Untargetable: the arena's enemy queries skip these (Penny mid-dodge).
 var untargetable := false
 var is_b := false
@@ -184,6 +219,8 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	shoot_payload = d.get("payload", {})
 	troops_only = bool(d.get("troops_only", false))
 	dodge_cfg = d.get("dodge", {})
+	sword_cfg = d.get("greatsword", {})
+	needle_cfg = d.get("needle", {})
 	footprint = d.get("footprint", [1, 1])
 	is_b = String(d.get("type", "troop")) == "building"
 	ground_speed = speed
@@ -287,6 +324,23 @@ func _physics_process(delta: float) -> void:
 	if attack_stretch > 0.0:
 		attack_stretch = maxf(0.0, attack_stretch - delta)
 	flash = maxf(0.0, flash - delta * 5.0)
+	swing_t = maxf(0.0, swing_t - delta)
+	slam_t = maxf(0.0, slam_t - delta)
+	needle_t = maxf(0.0, needle_t - delta)
+	if dash_phase != 0:
+		# a stun or a shove knocks her out of it; otherwise the dash runs to its end
+		if stunned > 0.0 or knock_time > 0.0 or arena.match_over:
+			dash_phase = 0
+			dash_victim = null
+		else:
+			_tick_dash(delta)
+			queue_redraw()
+			return
+	if leaping:
+		# committed: once he is off the ground the slam is coming
+		_tick_leap(delta)
+		queue_redraw()
+		return
 	if dodging or jumping:
 		if jumping:
 			_tick_jump(delta)
@@ -437,6 +491,15 @@ func _physics_process(delta: float) -> void:
 		return
 	if stationary:
 		state = S.IDLE
+		queue_redraw()
+		return
+	if not sword_cfg.is_empty():
+		# Laniakea picks his own target and his own swing every tick
+		_tick_greatsword(delta)
+		queue_redraw()
+		return
+	if not needle_cfg.is_empty():
+		_tick_needle(delta)
 		queue_redraw()
 		return
 	if not curl_cfg.is_empty() and not curled and gap <= reach:
@@ -688,6 +751,308 @@ func _tick_jump(delta: float) -> void:
 			arena.add_child(burst)
 			arena.shake(1.6)
 		_end_dash()
+
+
+## Nearest enemy on one layer (ground or air), under the same aggro rules as
+## _acquire: towers always count, troops inside aggro, buildings a little further.
+func _nearest_on_layer(air: bool) -> Node:
+	var best: Node = null
+	var best_d := INF
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		if (e.get("flying") == true) != air:
+			continue
+		if arena.is_doomed(e):
+			continue
+		var d: float = arena.tiles_between(position, e.position)
+		if not e.is_tower():
+			var limit: float = aggro
+			if e.is_building():
+				limit = maxf(aggro, 7.5)
+			if d > limit:
+				continue
+		if d < best_d - 0.0001:
+			best = e
+			best_d = d
+		elif absf(d - best_d) <= 0.0001 and best != null and e.get_instance_id() < best.get_instance_id():
+			best = e
+	return best
+
+
+## Laniakea's whole decision, once a tick:
+##   ground body inside swing range                  -> stand and cleave
+##   flyer inside the leap window, nothing on the
+##   ground closer than it                           -> stand and leap
+##   otherwise walk: at the flyer if it is the closest thing and still too far to
+##   leap at, else at the nearest ground body or tower. A flyer that is already
+##   inside the window's near edge cannot be hit at all — that is the card.
+func _tick_greatsword(delta: float) -> void:
+	var ground: Node = _nearest_on_layer(false)
+	var air: Node = _nearest_on_layer(true)
+	var gd := INF
+	var ad := INF
+	if ground != null:
+		gd = arena.tiles_between(position, ground.position)
+		# a big body (tower, hatchery, dragon) is swung at from its edge
+		var swing_at: float = maxf(float(sword_cfg["swing_range"]),
+			radius_t + float(ground.get_radius_t()) + 0.2)
+		if gd <= swing_at:
+			target = ground
+			state = S.ATTACK
+			if atk_cd <= 0.0:
+				_cleave()
+			return
+	if air != null:
+		ad = arena.tiles_between(position, air.position)
+		if ad < gd and ad >= float(sword_cfg["leap_min"]) and ad <= float(sword_cfg["leap_max"]):
+			target = air
+			state = S.ATTACK
+			if atk_cd <= 0.0:
+				_begin_leap()
+			return
+	if air != null and ad < gd and ad > float(sword_cfg["leap_max"]):
+		target = air
+	elif ground != null:
+		target = ground
+	else:
+		target = arena.nearest_enemy_tower(team, position)
+	if target == null:
+		state = S.IDLE
+		return
+	state = S.APPROACH
+	_move(delta)
+
+
+## The ground swing: a 140 degree arc centred on the target, swept from the side
+## nearer the middle of the board to the side nearer its edge. Every ground body
+## the blade crosses takes the hit and is shoved straight away from him. Flyers
+## are above it.
+func _cleave() -> void:
+	var to: Vector2 = target.position - position
+	var dir: Vector2 = to.normalized() if to.length() > 0.01 else Vector2(facing, 0.0)
+	if absf(dir.x) > 0.05:
+		facing = signf(dir.x)
+	_mark_attack()
+	atk_cd = interval
+	var half: float = deg_to_rad(float(sword_cfg["arc_deg"])) * 0.5
+	var len_t: float = float(sword_cfg["length"])
+	var mid: float = dir.angle()
+	var centre: Vector2 = arena.board_rect().get_center()
+	var len_px: float = len_t * float(arena.TILE)
+	var end_plus: Vector2 = position + Vector2.from_angle(mid + half) * len_px
+	var end_minus: Vector2 = position + Vector2.from_angle(mid - half) * len_px
+	var turn := 1.0 if end_minus.distance_to(centre) <= end_plus.distance_to(centre) else -1.0
+	swing_from = mid - half * turn
+	swing_to = mid + half * turn
+	swing_t = SWING_SHOW
+	var primary: Node = target
+	var push: float = float(sword_cfg["push"])
+	var push_time: float = float(sword_cfg["push_time"])
+	for e in arena.enemy_entities(team).duplicate():
+		if not is_instance_valid(e) or e.dead or e.get("flying") == true:
+			continue
+		var off: Vector2 = e.position - position
+		var d: float = off.length() / float(arena.TILE)
+		if e != primary:
+			if d > len_t + float(e.get_radius_t()):
+				continue
+			if d > 0.01 and absf(angle_difference(mid, off.angle())) > half:
+				continue
+		e.take_damage(dmg, position, self)
+		if is_instance_valid(e) and not e.dead and e.has_method("apply_impulse"):
+			e.apply_impulse(off.normalized() if d > 0.01 else dir, push, push_time)
+	arena.shake(1.2)
+
+
+## The air swing, part one: jump at the flyer. The landing spot is fixed when he
+## leaves the ground (edge to edge with where the flyer was), never a live chase.
+func _begin_leap() -> void:
+	var victim: Node = target
+	var to: Vector2 = victim.position - position
+	var dist: float = to.length()
+	leap_dir = to / dist if dist > 0.01 else Vector2(facing, 0.0)
+	if absf(leap_dir.x) > 0.05:
+		facing = signf(leap_dir.x)
+	var contact: float = (radius_t + float(victim.get_radius_t())) * float(arena.TILE)
+	var br: Rect2 = arena.board_rect()
+	leaping = true
+	leap_t = 0.0
+	leap_from = position
+	leap_to = (position + leap_dir * maxf(dist - contact, 0.0)).clamp(br.position, br.end)
+	leap_victim = victim
+	atk_cd = interval
+	state = S.ATTACK
+	_mark_attack()
+
+
+func _tick_leap(delta: float) -> void:
+	var total: float = maxf(0.1, float(sword_cfg["leap_time"]))
+	leap_t += delta
+	var f: float = clampf(leap_t / total, 0.0, 1.0)
+	position = leap_from.lerp(leap_to, f)
+	if f >= 1.0:
+		leaping = false
+		_slam()
+
+
+## The air swing, part two: the blade comes down on the flyer and keeps going
+## for leap_line tiles behind it. Everything in that strip, ground or air, takes
+## the hit; units are stunned as well.
+func _slam() -> void:
+	var victim: Node = leap_victim
+	leap_victim = null
+	var held: bool = victim != null and is_instance_valid(victim) and not victim.dead
+	var line_t: float = float(sword_cfg["leap_line"])
+	if held:
+		line_t += maxf(0.0, (victim.position - position).dot(leap_dir) / float(arena.TILE))
+	var width: float = float(sword_cfg["leap_width"])
+	var power: float = float(sword_cfg["leap_dmg"])
+	var stun_s: float = float(sword_cfg["stun"])
+	slam_t = SLAM_SHOW
+	slam_len = line_t
+	for e in arena.enemy_entities(team).duplicate():
+		if not is_instance_valid(e) or e.dead:
+			continue
+		if not (held and e == victim):
+			var off: Vector2 = (e.position - position) / float(arena.TILE)
+			var r: float = float(e.get_radius_t())
+			var along: float = off.dot(leap_dir)
+			if along < -r or along > line_t + r or absf(off.cross(leap_dir)) > width + r:
+				continue
+		e.take_damage(power, position, self)
+		if is_instance_valid(e) and not e.dead and e.get("stunned") != null:
+			e.stunned = maxf(float(e.stunned), stun_s)
+	arena.shake(2.4)
+
+
+## How close Femme Fatale stands to a body: needle range, or its edge if it is big.
+func _needle_stop(body: Node) -> float:
+	return maxf(float(needle_cfg["range"]), radius_t + float(body.get_radius_t()) + 0.2)
+
+
+## Femme Fatale's decision, once a tick. She only ever looks at the ground:
+##   nearest ground body inside needle range          -> stand and run the combo
+##   nearest ground body 3.5 - 4.5 tiles off, with a
+##   straight walk to it (no river in between)        -> raise the needle and dash
+##   otherwise                                        -> walk at it
+func _tick_needle(delta: float) -> void:
+	var near: Node = _nearest_on_layer(false)
+	if near == null:
+		near = arena.nearest_enemy_tower(team, position)
+	if near == null:
+		state = S.IDLE
+		return
+	target = near
+	var d: float = arena.tiles_between(position, near.position)
+	if d <= _needle_stop(near):
+		state = S.ATTACK
+		if atk_cd <= 0.0:
+			_needle_combo()
+		return
+	if d >= float(needle_cfg["dash_min"]) and d <= float(needle_cfg["dash_max"]) \
+			and arena.route_point(position, near.position).is_equal_approx(near.position):
+		dash_phase = 1
+		dash_t = float(needle_cfg["windup"])
+		dash_victim = near
+		dash_dir = (near.position - position).normalized()
+		if absf(dash_dir.x) > 0.05:
+			facing = signf(dash_dir.x)
+		state = S.ATTACK
+		return
+	state = S.APPROACH
+	_move(delta)
+
+
+## The dash. Wind-up: she stands with the needle straight up and keeps turning to
+## face the target. Lunge: a straight line at dash_speed, ended when she is at
+## needle range from the target or the distance she set out to cover runs out.
+func _tick_dash(delta: float) -> void:
+	var held: bool = dash_victim != null and is_instance_valid(dash_victim) and not dash_victim.dead
+	if not held:
+		dash_phase = 0
+		dash_victim = null
+		return
+	var tile: float = float(arena.TILE)
+	var to: Vector2 = dash_victim.position - position
+	var stop_px: float = _needle_stop(dash_victim) * tile
+	if dash_phase == 1:
+		if to.length() > 0.01:
+			dash_dir = to.normalized()
+		if absf(dash_dir.x) > 0.05:
+			facing = signf(dash_dir.x)
+		dash_t -= delta
+		if dash_t <= 0.0:
+			dash_phase = 2
+			# half a tile of slack for a target that is walking away
+			dash_left = maxf(to.length() - stop_px, 0.0) + 0.5 * tile
+		return
+	var need: float = to.length() - stop_px
+	var step: float = float(needle_cfg["dash_speed"]) * tile * delta
+	if need <= step or dash_left <= step:
+		position += dash_dir * maxf(minf(need, dash_left), 0.0)
+		moved_this_frame = true
+		dash_phase = 0
+		_dash_hit()
+		return
+	position += dash_dir * step
+	dash_left -= step
+	moved_this_frame = true
+
+
+## End of the lunge: the tip lands if the target is inside tip range of where she
+## stopped. Either way the swing is spent and the combo starts from the flick.
+func _dash_hit() -> void:
+	var victim: Node = dash_victim
+	dash_victim = null
+	atk_cd = interval
+	needle_step = 0
+	if victim == null or not is_instance_valid(victim) or victim.dead:
+		return
+	target = victim
+	_mark_attack()
+	var ang: float = dash_dir.angle()
+	needle_from = ang
+	needle_to = ang
+	needle_t = NEEDLE_SHOW
+	var d: float = arena.tiles_between(position, victim.position)
+	if d <= maxf(float(needle_cfg["tip"]), _needle_stop(victim) + 0.1):
+		victim.take_damage(float(needle_cfg["dash_dmg"]), position, self)
+		arena.shake(1.4)
+
+
+## The close combo, one hit per swing: a flick in from the side nearer the middle
+## of the board (the arc is only drawn, the hit is single target), a stab, and a
+## stab whose recoil carries her half a tile back out.
+func _needle_combo() -> void:
+	var id: int = target.get_instance_id()
+	if id != needle_target_id:
+		needle_target_id = id
+		needle_step = 0
+	var to: Vector2 = target.position - position
+	var dir: Vector2 = to.normalized() if to.length() > 0.01 else Vector2(facing, 0.0)
+	if absf(dir.x) > 0.05:
+		facing = signf(dir.x)
+	_mark_attack()
+	atk_cd = interval
+	var step := needle_step
+	needle_step = (needle_step + 1) % 3
+	var mid: float = dir.angle()
+	needle_from = mid
+	needle_to = mid
+	needle_t = NEEDLE_SHOW
+	if step == 0:
+		var off: float = deg_to_rad(float(needle_cfg["swing_deg"]))
+		var centre: Vector2 = arena.board_rect().get_center()
+		var plus: Vector2 = position + Vector2.from_angle(mid + off) * 100.0
+		var minus: Vector2 = position + Vector2.from_angle(mid - off) * 100.0
+		needle_from = mid + off if plus.distance_to(centre) <= minus.distance_to(centre) else mid - off
+	if target.has_method("take_damage"):
+		arena.reserve_damage(get_instance_id(), target, dmg)
+		target.take_damage(dmg, position, self)
+		arena.release_reservation(get_instance_id())
+	if step == 2:
+		apply_impulse(-dir, float(needle_cfg["recoil"]), float(needle_cfg["recoil_time"]))
 
 
 ## Giants (the dragon) shrug off the shove: they take the hit and stay planted.
@@ -1198,6 +1563,12 @@ func _draw() -> void:
 		lift = sin(jf * PI) * float(arena.TILE) * 1.1
 		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
 		draw_circle(Vector2.ZERO, px * (0.9 - 0.4 * sin(jf * PI)), Color(0.05, 0.06, 0.1, 0.3))
+	elif leaping:
+		# Laniakea going up to meet a flyer: an arc that ends at flying height
+		var lf: float = clampf(leap_t / maxf(0.1, float(sword_cfg["leap_time"])), 0.0, 1.0)
+		lift = sin(lf * PI) * float(arena.TILE) * 0.9 + lf * 18.0
+		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
+		draw_circle(Vector2.ZERO, px * (0.9 - 0.4 * sin(lf * PI)), Color(0.05, 0.06, 0.1, 0.3))
 	# squash & stretch: drop-in, landing squash, attack lunge
 	var sx := 1.0
 	var sy := 1.0
@@ -1233,6 +1604,24 @@ func _draw() -> void:
 		DDArt.dragon(self, px, facing, clock, flying, 0.0, ink)
 		if flying:
 			_draw_maw_flame(px)
+	elif kind == "laniakea":
+		# sword on his back, overhead in the leap, or out of his hands mid-swing
+		# (the swing itself is drawn below, in board space)
+		var pose := 0
+		if leaping:
+			pose = 1
+		elif swing_t > 0.0 or slam_t > 0.0:
+			pose = 2
+		DDArt.laniakea(self, px, facing, clock, pose, ink)
+	elif kind == "femme":
+		# needle at her side, straight up for the wind-up, or out of her hands
+		# while the lunge / combo hit is drawn below in board space
+		var fpose := 0
+		if dash_phase == 1:
+			fpose = 1
+		elif dash_phase == 2 or needle_t > 0.0:
+			fpose = 2
+		DDArt.femme(self, px, facing, clock, fpose, ink)
 	else:
 		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2, ink, flying)
 	if status == Status.SLOW:
@@ -1247,6 +1636,52 @@ func _draw() -> void:
 	if hurt_frames > 0:
 		draw_circle(Vector2.ZERO, px * 1.0, Color(1.0, 0.55, 0.72, 0.62))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if swing_t > 0.0:
+		# the cleave: the blade sweeps the arc and leaves a fading wake behind it
+		var sf: float = 1.0 - swing_t / SWING_SHOW
+		var ang: float = lerpf(swing_from, swing_to, ease(sf, 0.5))
+		var blade_px: float = float(sword_cfg["length"]) * float(arena.TILE)
+		draw_arc(Vector2.ZERO, blade_px * 0.78, swing_from, ang, 24,
+			Color(1.0, 1.0, 1.0, 0.34 * (1.0 - sf * 0.6)), blade_px * 0.4, true)
+		var along := Vector2.from_angle(ang)
+		DDArt.greatsword(self, along * px * 0.7, along * blade_px, px * 0.5, ink)
+	elif slam_t > 0.0:
+		# the overhead: blade buried along the line, a shock running on behind it
+		var kf: float = slam_t / SLAM_SHOW
+		var blade_px2: float = float(sword_cfg["length"]) * float(arena.TILE)
+		var line_px: float = slam_len * float(arena.TILE)
+		var wide: float = float(sword_cfg["leap_width"]) * 2.0 * float(arena.TILE)
+		draw_line(Vector2.ZERO, leap_dir * line_px, Color(1.0, 1.0, 1.0, 0.4 * kf), wide * (0.4 + 0.6 * kf), true)
+		DDArt.greatsword(self, leap_dir * px * 0.7, leap_dir * blade_px2, px * 0.5, ink)
+	if not needle_cfg.is_empty():
+		var tip_px: float = float(needle_cfg["tip"]) * float(arena.TILE)
+		if dash_phase == 1:
+			# the glint on the raised tip: a four point star that swells as she is
+			# about to go (the tip position matches DDArt.femme pose 1)
+			var wf: float = 1.0 - clampf(dash_t / maxf(0.05, float(needle_cfg["windup"])), 0.0, 1.0)
+			var at := Vector2(px * 0.42 * facing, -px * 4.2)
+			var arm: float = px * (0.25 + 0.75 * sin(wf * PI))
+			var spark := Color(1.0, 1.0, 1.0, 0.95)
+			draw_line(at - Vector2(arm, 0.0), at + Vector2(arm, 0.0), spark, 2.0, true)
+			draw_line(at - Vector2(0.0, arm), at + Vector2(0.0, arm), spark, 2.0, true)
+			draw_line(at - Vector2(arm, arm) * 0.45, at + Vector2(arm, arm) * 0.45, spark, 1.4, true)
+			draw_line(at - Vector2(arm, -arm) * 0.45, at + Vector2(arm, -arm) * 0.45, spark, 1.4, true)
+		elif dash_phase == 2:
+			# the lunge: needle levelled, a few streaks trailing behind her
+			for i in 3:
+				var back: Vector2 = -dash_dir * px * (1.0 + 0.9 * float(i))
+				var side: Vector2 = dash_dir.orthogonal() * px * 0.45 * (float(i) - 1.0)
+				draw_line(back + side, back + side - dash_dir * px * 1.4, Color(1.0, 1.0, 1.0, 0.4), 2.0, true)
+			DDArt.needle(self, dash_dir * px * 0.5, dash_dir * tip_px, px * 0.2, ink)
+		elif needle_t > 0.0:
+			# a combo hit (or the dash landing): the flick sweeps in, a stab thrusts out
+			var nf: float = 1.0 - needle_t / NEEDLE_SHOW
+			var nang: float = lerp_angle(needle_from, needle_to, ease(nf, 0.4))
+			var out_f: float = 1.0 if needle_from != needle_to else lerpf(0.72, 1.0, ease(nf, 0.3))
+			var nd := Vector2.from_angle(nang)
+			if needle_from != needle_to:
+				draw_arc(Vector2.ZERO, tip_px * 0.85, needle_from, nang, 8, Color(1.0, 1.0, 1.0, 0.35), tip_px * 0.12, true)
+			DDArt.needle(self, nd * px * 0.5, nd * tip_px * out_f, px * 0.2, ink)
 	if not roll_cfg.is_empty() and roll_level > 0:
 		var lines := roll_level + 1
 		for i in lines:
