@@ -36,7 +36,7 @@ class CardFace extends Node2D:
 	const H := 1060.0
 	const OUT := Color(0.13, 0.12, 0.16)
 	const ATTACK_NAMES := {
-		"dragon": "Claw", "chicken": "Pecking Fire", "fu": "Boomerang Throw",
+		"dragon": "Claw", "chicken": "Burst", "fu": "Boomerang Throw",
 		"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 		"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 		"snowman": "—", "idol": "Taunt",

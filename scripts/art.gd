@@ -10,11 +10,16 @@ const OUTLINE_W := 2.4
 
 const INK := Color(0.16, 0.13, 0.2)
 
+## Outline ink is draw state: the creature and tower entry points set it to the
+## drawing team's colour for the length of one draw and restore it, so chrome
+## (coins, card faces, UI) keeps the neutral outline.
+static var ink := OUTLINE
+
 
 static func circle(ci: CanvasItem, c: Vector2, r: float, fill: Color, w: float = OUTLINE_W) -> void:
 	ci.draw_circle(c, r, fill)
 	if w > 0.0:
-		ci.draw_arc(c, r, 0.0, TAU, 48, OUTLINE, w, true)
+		ci.draw_arc(c, r, 0.0, TAU, 48, ink, w, true)
 
 
 static func ellipse(ci: CanvasItem, c: Vector2, rx: float, ry: float, fill: Color, w: float = OUTLINE_W) -> void:
@@ -30,13 +35,13 @@ static func poly(ci: CanvasItem, pts: PackedVector2Array, fill: Color, w: float 
 	if w > 0.0:
 		var loop := pts.duplicate()
 		loop.append(pts[0])
-		ci.draw_polyline(loop, OUTLINE, w, true)
+		ci.draw_polyline(loop, ink, w, true)
 
 
 static func rect_outlined(ci: CanvasItem, r: Rect2, fill: Color, w: float = OUTLINE_W) -> void:
 	ci.draw_rect(r, fill, true)
 	if w > 0.0:
-		ci.draw_rect(r, OUTLINE, false, w)
+		ci.draw_rect(r, ink, false, w)
 
 
 static func coin(ci: CanvasItem, c: Vector2, r: float) -> void:
@@ -45,7 +50,8 @@ static func coin(ci: CanvasItem, c: Vector2, r: float) -> void:
 
 
 ## r is the drawing radius in pixels; t is a shared animation clock.
-static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: float, hurt: float = 0.0, phase2: bool = false) -> void:
+static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: float, hurt: float = 0.0, phase2: bool = false, ink_col: Color = OUTLINE, fly: bool = false) -> void:
+	ink = ink_col
 	match kind:
 		"snowman":
 			_snowman(ci, r, t)
@@ -62,9 +68,15 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 		"zombie":
 			_zombie(ci, r, t, facing)
 		"hedgehog":
-			hedgehog(ci, r, facing, t, false)
+			hedgehog(ci, r, facing, t, false, ink_col)
 		"chicken":
-			_chicken(ci, r, t, facing, false)
+			_chicken(ci, r, t, facing, fly)
+		"penny":
+			_penny(ci, r, t, facing)
+		"pen":
+			_pen(ci, r, t, facing)
+		"aphid":
+			_aphid(ci, r, t, facing)
 		"lizard":
 			_lizard(ci, r, t, facing)
 		"warren":
@@ -79,13 +91,14 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			circle(ci, Vector2.ZERO, r, Color.MAGENTA)
 	if hurt > 0.0:
 		ci.draw_circle(Vector2.ZERO, r * 1.15, Color(1, 1, 1, clampf(hurt, 0.0, 0.55)))
+	ink = OUTLINE
 
 
 static func _snowman(ci: CanvasItem, r: float, t: float) -> void:
 	var bob := sin(t * 2.0) * r * 0.05
 	var body := Color(0.93, 0.97, 1.0)
 	var shade := Color(0.72, 0.84, 0.95)
-	# arms
+	# arms — unit detail, drawn in the neutral ink so only outlines take the team colour
 	ci.draw_line(Vector2(-r * 0.55, -r * 0.1), Vector2(-r * 1.35, -r * 0.65), OUTLINE, 2.0, true)
 	ci.draw_line(Vector2(r * 0.55, -r * 0.1), Vector2(r * 1.35, -r * 0.5), OUTLINE, 2.0, true)
 	ellipse(ci, Vector2(0, r * 0.45 + bob), r * 0.78, r * 0.72, body)
@@ -210,7 +223,8 @@ static func _hero(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 		Vector2(-r * 0.06, -r * 1.02 + bob)]), cape, 1.4)
 
 
-static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bool, hurt: float = 0.0) -> void:
+static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bool, hurt: float = 0.0, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
 	var skin := Color(0.72, 0.2, 0.22)
 	var dark := Color(0.48, 0.12, 0.16)
 	var belly := Color(0.93, 0.6, 0.35)
@@ -258,6 +272,7 @@ static func dragon(ci: CanvasItem, r: float, facing: float, t: float, flying: bo
 				ci.draw_arc(Vector2(cx, cy + r * 0.1), r * 0.11, 0.0, TAU, 12, Color(0.78, 0.79, 0.86), 2.0, true)
 	if hurt > 0.0:
 		ci.draw_circle(Vector2.ZERO, r * 1.1, Color(1, 1, 1, clampf(hurt, 0.0, 0.5)))
+	ink = OUTLINE
 
 
 static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
@@ -265,9 +280,9 @@ static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	var cloth := Color(0.36, 0.55, 0.86)
 	var skin := Color(0.87, 0.72, 0.52)
 	var straw := Color(0.93, 0.81, 0.5)
-	# legs
-	ci.draw_line(Vector2(-r * 0.28, r * 0.6 + bob), Vector2(-r * 0.42, r * 1.05 + bob), DDArt.OUTLINE, 3.0, true)
-	ci.draw_line(Vector2(r * 0.26, r * 0.6 + bob), Vector2(r * 0.4, r * 1.05 + bob), DDArt.OUTLINE, 3.0, true)
+	# legs — unit detail, not an outline
+	ci.draw_line(Vector2(-r * 0.28, r * 0.6 + bob), Vector2(-r * 0.42, r * 1.05 + bob), OUTLINE, 3.0, true)
+	ci.draw_line(Vector2(r * 0.26, r * 0.6 + bob), Vector2(r * 0.4, r * 1.05 + bob), OUTLINE, 3.0, true)
 	# poncho
 	poly(ci, PackedVector2Array([
 		Vector2(-r * 0.72, r * 0.75 + bob), Vector2(r * 0.72, r * 0.75 + bob),
@@ -281,7 +296,7 @@ static func _fu(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	poly(ci, PackedVector2Array([
 		Vector2(-r * 0.62, -r * 0.72 + bob), Vector2(r * 0.62, -r * 0.72 + bob),
 		Vector2(0, -r * 1.35 + bob)]), straw)
-	ci.draw_line(Vector2(-r * 0.62, -r * 0.72 + bob), Vector2(r * 0.62, -r * 0.72 + bob), DDArt.OUTLINE, 2.0, true)
+	ci.draw_line(Vector2(-r * 0.62, -r * 0.72 + bob), Vector2(r * 0.62, -r * 0.72 + bob), DDArt.ink, 2.0, true)
 	# boomerang in hand
 	var bx := r * 0.85 * facing
 	ci.draw_line(Vector2(bx, r * 0.15 + bob), Vector2(bx + r * 0.42 * facing, -r * 0.12 + bob), Color(0.75, 0.55, 0.28), 3.5, true)
@@ -371,12 +386,12 @@ static func _lizard(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(-dir * r * 0.6, r * 0.25 + bob), Vector2(-dir * r * 1.25, r * 0.05 + bob), skin.darkened(0.15), r * 0.24, true)
 	# body
 	ci.draw_circle(Vector2(0, bob), r * 0.62, skin)
-	ci.draw_arc(Vector2(0, bob), r * 0.62, 0.0, TAU, 18, OUTLINE, 1.8, true)
+	ci.draw_arc(Vector2(0, bob), r * 0.62, 0.0, TAU, 18, ink, 1.8, true)
 	ci.draw_circle(Vector2(dir * r * 0.1, r * 0.18 + bob), r * 0.34, belly)
 	# head
 	var head := Vector2(dir * r * 0.55, -r * 0.35 + bob)
 	ci.draw_circle(head, r * 0.34, skin)
-	ci.draw_arc(head, r * 0.34, 0.0, TAU, 16, OUTLINE, 1.8, true)
+	ci.draw_arc(head, r * 0.34, 0.0, TAU, 16, ink, 1.8, true)
 	# crest
 	ci.draw_colored_polygon(PackedVector2Array([
 		head + Vector2(-dir * r * 0.1, -r * 0.3),
@@ -403,7 +418,7 @@ static func _lizard(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 		tip + Vector2(-dir * r * 0.06, -r * 0.16),
 		tip + Vector2(-dir * r * 0.06, r * 0.16),
 		tip + Vector2(dir * r * 0.22, 0.0),
-	]), OUTLINE, 1.4, true)
+	]), ink, 1.4, true)
 
 
 ## Lizard warren: a mound with a dark burrow mouth and eyes peeking out.
@@ -425,7 +440,7 @@ static func _warren(ci: CanvasItem, r: float, t: float) -> void:
 		Vector2(r * 0.35, -r * 0.6),
 		Vector2(r * 0.9, -r * 0.05),
 		Vector2(r * 1.1, r * 0.55),
-	]), OUTLINE, 2.0, true)
+	]), ink, 2.0, true)
 	ci.draw_colored_polygon(PackedVector2Array([
 		Vector2(-r * 0.55, r * 0.55),
 		Vector2(-r * 0.7, -r * 0.1),
@@ -442,11 +457,101 @@ static func _warren(ci: CanvasItem, r: float, t: float) -> void:
 	# rocks
 	for p in [Vector2(-r * 0.85, r * 0.42), Vector2(r * 0.8, r * 0.38)]:
 		ci.draw_circle(p, r * 0.13, Color(0.5, 0.48, 0.45))
-		ci.draw_arc(p, r * 0.13, 0.0, TAU, 12, OUTLINE, 1.4, true)
+		ci.draw_arc(p, r * 0.13, 0.0, TAU, 12, ink, 1.4, true)
 
 
 ## Hot Chicken: a round orange bird with a flame crest. Airborne it spreads its
 ## wings and shows its claws.
+## Primal Aphid: a hovering masked bug. Pale mask with dark eye slots, banded
+## brown body, fluttering wings and the little spit tube it fires its cone from.
+static func _aphid(ci: CanvasItem, r: float, t: float, facing: float) -> void:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var beat := 0.5 + 0.5 * sin(t * 24.0)
+	# wings
+	for s in [-1.0, 1.0]:
+		var tip := Vector2(-r * (0.35 + 0.45 * beat) * f, -r * (0.85 + 0.35 * beat) * f)
+		ci.draw_line(Vector2(-r * 0.15 * f, -r * 0.3), tip, Color(0.85, 0.92, 1.0, 0.45), r * 0.26, true)
+		ci.draw_line(Vector2(-r * 0.15 * f, -r * 0.3), tip + Vector2(s * r * 0.25 * f, r * 0.15),
+			Color(0.85, 0.92, 1.0, 0.28), r * 0.16, true)
+	# body
+	ellipse(ci, Vector2(-r * 0.1 * f, r * 0.1), r * 0.82, r * 0.68, Color(0.42, 0.29, 0.19))
+	ellipse(ci, Vector2(-r * 0.25 * f, r * 0.25), r * 0.4, r * 0.3, Color(0.66, 0.47, 0.28), 0.0)
+	# legs
+	for k in 3:
+		var y := r * (0.35 + float(k) * 0.22)
+		ci.draw_line(Vector2(-r * 0.35 * f, y), Vector2(-r * 0.75 * f, y + r * 0.16), ink, r * 0.09, true)
+	# mask
+	ellipse(ci, Vector2(r * 0.42 * f, -r * 0.05), r * 0.6, r * 0.58, Color(0.95, 0.93, 0.86))
+	# eye slots
+	ellipse(ci, Vector2(r * 0.24 * f, -r * 0.16), r * 0.16, r * 0.22, Color(0.15, 0.12, 0.14), 0.0)
+	ellipse(ci, Vector2(r * 0.62 * f, -r * 0.12), r * 0.14, r * 0.2, Color(0.15, 0.12, 0.14), 0.0)
+	# crest
+	poly(ci, PackedVector2Array([Vector2(r * 0.2 * f, -r * 0.55), Vector2(r * 0.45 * f, -r * 1.0),
+		Vector2(r * 0.62 * f, -r * 0.5)]), Color(0.72, 0.52, 0.32), r * 0.1)
+	# spit tube
+	ci.draw_line(Vector2(r * 0.82 * f, r * 0.12), Vector2(r * 1.34 * f, r * 0.18), Color(0.28, 0.2, 0.15), r * 0.18, true)
+	ci.draw_circle(Vector2(r * 1.34 * f, r * 0.18), r * 0.1, Color(0.96, 0.86, 0.52))
+
+## Penny: a small calico cat — white base, orange and black patches, green eyes.
+static func _penny(ci: CanvasItem, r: float, t: float, facing: float) -> void:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var wag := sin(t * 7.0) * 0.35
+	# tail
+	ci.draw_line(Vector2(-r * 1.0 * f, r * 0.5), Vector2(-r * 1.7 * f, r * 0.1 + r * wag), ink, r * 0.26, true)
+	ci.draw_circle(Vector2(-r * 1.7 * f, r * 0.1 + r * wag), r * 0.17, Color(0.94, 0.55, 0.22))
+	# body and haunches
+	ellipse(ci, Vector2(-r * 0.2 * f, r * 0.45), r * 0.95, r * 0.68, Color(0.97, 0.95, 0.9))
+	ellipse(ci, Vector2(-r * 0.55 * f, r * 0.25), r * 0.42, r * 0.38, Color(0.94, 0.55, 0.22), 0.0)
+	ellipse(ci, Vector2(r * 0.3 * f, r * 0.72), r * 0.4, r * 0.28, Color(0.28, 0.24, 0.26), 0.0)
+	# head
+	ellipse(ci, Vector2(r * 0.62 * f, -r * 0.3), r * 0.6, r * 0.52, Color(0.97, 0.95, 0.9))
+	poly(ci, PackedVector2Array([Vector2(r * 0.25 * f, -r * 0.68), Vector2(r * 0.42 * f, -r * 1.28),
+		Vector2(r * 0.78 * f, -r * 0.78)]), Color(0.97, 0.95, 0.9), r * 0.12)
+	poly(ci, PackedVector2Array([Vector2(r * 0.82 * f, -r * 0.78), Vector2(r * 1.06 * f, -r * 1.24),
+		Vector2(r * 1.18 * f, -r * 0.55)]), Color(0.28, 0.24, 0.26), r * 0.12)
+	# eyes and nose
+	ci.draw_circle(Vector2(r * 0.52 * f, -r * 0.34), r * 0.11, Color(0.3, 0.8, 0.45))
+	ci.draw_circle(Vector2(r * 0.88 * f, -r * 0.3), r * 0.11, Color(0.3, 0.8, 0.45))
+	ci.draw_circle(Vector2(r * 0.7 * f, -r * 0.06), r * 0.08, Color(0.95, 0.6, 0.65))
+	# whiskers
+	ci.draw_line(Vector2(r * 0.6 * f, -r * 0.1), Vector2(r * 1.25 * f, -r * 0.22), ink, 1.2, true)
+	ci.draw_line(Vector2(r * 0.6 * f, -r * 0.04), Vector2(r * 1.25 * f, r * 0.1), ink, 1.2, true)
+
+
+## Pen: Penny's other half. Tall, purple-eared, wrapped in a yellow toga, with a
+## long blowgun held across him.
+static func _pen(ci: CanvasItem, r: float, t: float, facing: float) -> void:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var toga := Color(0.93, 0.72, 0.16)
+	var toga_dark := Color(0.72, 0.5, 0.11)
+	var fur := Color(0.87, 0.79, 0.73)
+	var ear := Color(0.74, 0.42, 0.74)
+	# legs
+	ci.draw_line(Vector2(-r * 0.22 * f, r * 1.05), Vector2(-r * 0.3 * f, r * 0.5), ink, r * 0.24, true)
+	ci.draw_line(Vector2(r * 0.26 * f, r * 1.05), Vector2(r * 0.32 * f, r * 0.5), ink, r * 0.24, true)
+	# toga
+	poly(ci, PackedVector2Array([Vector2(-r * 0.78 * f, r * 0.7), Vector2(r * 0.78 * f, r * 0.7),
+		Vector2(r * 0.5 * f, -r * 0.5), Vector2(-r * 0.55 * f, -r * 0.42)]), toga)
+	ci.draw_line(Vector2(-r * 0.45 * f, -r * 0.35), Vector2(r * 0.32 * f, r * 0.65), toga_dark, r * 0.13, true)
+	# bare shoulder and welcoming hand
+	ci.draw_line(Vector2(-r * 0.62 * f, -r * 0.28), Vector2(-r * 1.2 * f, -r * 0.02), fur, r * 0.26, true)
+	ci.draw_circle(Vector2(-r * 1.28 * f, -r * 0.02), r * 0.2, fur)
+	# head
+	ellipse(ci, Vector2(r * 0.12 * f, -r * 0.95), r * 0.52, r * 0.55, fur)
+	# tall ears
+	poly(ci, PackedVector2Array([Vector2(-r * 0.18 * f, -r * 1.32), Vector2(r * 0.02 * f, -r * 1.92),
+		Vector2(r * 0.3 * f, -r * 1.28)]), ear)
+	poly(ci, PackedVector2Array([Vector2(r * 0.4 * f, -r * 1.3), Vector2(r * 0.66 * f, -r * 1.86),
+		Vector2(r * 0.74 * f, -r * 1.12)]), ear)
+	# eyes and muzzle
+	ci.draw_circle(Vector2(-r * 0.02 * f, -r * 0.98), r * 0.12, Color(0.97, 0.85, 0.28))
+	ci.draw_circle(Vector2(r * 0.42 * f, -r * 0.98), r * 0.12, Color(0.97, 0.85, 0.28))
+	ellipse(ci, Vector2(r * 0.18 * f, -r * 0.74), r * 0.2, r * 0.14, Color(0.98, 0.95, 0.92), 0.0)
+	# blowgun
+	ci.draw_line(Vector2(-r * 1.35 * f, r * 0.22), Vector2(r * 1.0 * f, -r * 0.18), Color(0.52, 0.35, 0.2), r * 0.15, true)
+	ci.draw_line(Vector2(-r * 1.35 * f, r * 0.22), Vector2(-r * 1.05 * f, r * 0.13), Color(0.78, 0.62, 0.3), r * 0.18, true)
+
+
 static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: bool) -> void:
 	var bob := sin(t * 9.0) * r * 0.08
 	var body := Color(1.0, 0.56, 0.22)
@@ -463,9 +568,9 @@ static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: 
 			ci.draw_colored_polygon(wp, Color(1.0, 0.72, 0.35))
 			var outline: PackedVector2Array = wp.duplicate()
 			outline.append(wp[0])
-			ci.draw_polyline(outline, OUTLINE, 2.0, true)
+			ci.draw_polyline(outline, ink, 2.0, true)
 	ci.draw_circle(Vector2(0, bob), r * 0.82, body)
-	ci.draw_arc(Vector2(0, bob), r * 0.82, 0.0, TAU, 22, OUTLINE, 2.0, true)
+	ci.draw_arc(Vector2(0, bob), r * 0.82, 0.0, TAU, 22, ink, 2.0, true)
 	# flame crest
 	var flame: PackedVector2Array = PackedVector2Array([
 		Vector2(-r * 0.3, -r * 0.7 + bob),
@@ -473,7 +578,7 @@ static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: 
 		Vector2(r * 0.3, -r * 0.7 + bob),
 	])
 	ci.draw_colored_polygon(flame, Color(1.0, 0.85, 0.25))
-	ci.draw_polyline(PackedVector2Array([flame[0], flame[1], flame[2], flame[0]]), OUTLINE, 1.6, true)
+	ci.draw_polyline(PackedVector2Array([flame[0], flame[1], flame[2], flame[0]]), ink, 1.6, true)
 	# beak + eye
 	var dir: float = 1.0 if facing >= 0.0 else -1.0
 	var beak: PackedVector2Array = PackedVector2Array([
@@ -482,14 +587,15 @@ static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: 
 		Vector2(dir * r * 0.72, r * 0.3 + bob),
 	])
 	ci.draw_colored_polygon(beak, Color(1.0, 0.8, 0.3))
-	ci.draw_polyline(PackedVector2Array([beak[0], beak[1], beak[2], beak[0]]), OUTLINE, 1.6, true)
+	ci.draw_polyline(PackedVector2Array([beak[0], beak[1], beak[2], beak[0]]), ink, 1.6, true)
 	ci.draw_circle(Vector2(dir * r * 0.32, -r * 0.28 + bob), r * 0.13, Color(0.1, 0.08, 0.1))
 	if flying:
 		for s in [-1.0, 1.0]:
 			ci.draw_line(Vector2(s * r * 0.35, r * 0.72 + bob), Vector2(s * r * 0.6, r * 1.05 + bob), dark, 2.0, true)
 
 
-static func hedgehog(ci: CanvasItem, r: float, facing: float, t: float, curled: bool) -> void:
+static func hedgehog(ci: CanvasItem, r: float, facing: float, t: float, curled: bool, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
 	var body := Color(0.66, 0.52, 0.38)
 	var spike := Color(0.32, 0.26, 0.2)
 	var belly := Color(0.82, 0.72, 0.58)
@@ -513,6 +619,7 @@ static func hedgehog(ci: CanvasItem, r: float, facing: float, t: float, curled: 
 			Vector2(r * 0.85 * facing, -r * 0.18), Vector2(r * 1.5 * facing, 0),
 			Vector2(r * 0.85 * facing, r * 0.22)]), body, 1.4)
 		ci.draw_circle(Vector2(r * 0.7 * facing, -r * 0.25), r * 0.12, Color(0.12, 0.1, 0.14))
+	ink = OUTLINE
 
 
 static func _zombie(ci: CanvasItem, r: float, t: float, facing: float) -> void:
@@ -532,7 +639,8 @@ static func _zombie(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(-r * 0.3, -r * 0.78 + sway), Vector2(r * 0.32, -r * 0.7 + sway), Color(0.26, 0.32, 0.22), 1.6, true)
 
 
-static func bird(ci: CanvasItem, r: float, facing: float, t: float, lead: bool) -> void:
+static func bird(ci: CanvasItem, r: float, facing: float, t: float, lead: bool, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
 	# super-auto-pets-ish: chunky simple shapes, thick outline, one big eye
 	var frame := int(t * 9.0) % 3
 	var lift: float = [-1.0, 0.0, 1.0][frame]
@@ -556,9 +664,11 @@ static func bird(ci: CanvasItem, r: float, facing: float, t: float, lead: bool) 
 	poly(ci, PackedVector2Array([
 		Vector2(r * 0.1 * facing, -r * 0.15), Vector2(-r * 0.25 + r * 0.2 * facing, -r * (0.5 + 0.5 * lift)),
 		Vector2(r * 0.35 * facing, r * 0.25)]), wing.lightened(0.12), 1.6)
+	ink = OUTLINE
 
 
-static func tower(ci: CanvasItem, w: float, h: float, team_color: Color, hurt: float = 0.0, crown: bool = false) -> void:
+static func tower(ci: CanvasItem, w: float, h: float, team_color: Color, hurt: float = 0.0, crown: bool = false, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
 	var half := Vector2(w, h) * 0.5
 	var body := Rect2(-half, Vector2(w, h))
 	rect_outlined(ci, body, team_color)
@@ -580,6 +690,7 @@ static func tower(ci: CanvasItem, w: float, h: float, team_color: Color, hurt: f
 	ci.draw_rect(Rect2(-half.x + 3, -half.y + 4, w * 0.18, h * 0.7), Color(1, 1, 1, 0.16), true)
 	if hurt > 0.0:
 		ci.draw_rect(body, Color(1, 1, 1, clampf(hurt, 0.0, 0.5)), true)
+	ink = OUTLINE
 
 
 ## Small card-sheet icon, drawn inside a rounded card.
@@ -610,6 +721,12 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			creature(ci, "hedgehog", r, 1.0, t)
 		"chicken":
 			creature(ci, "chicken", r, 1.0, t)
+		"penny":
+			creature(ci, "penny", r, 1.0, t)
+		"pen":
+			creature(ci, "pen", r, 1.0, t)
+		"aphid":
+			creature(ci, "aphid", r, 1.0, t)
 		"lizard":
 			creature(ci, "lizard", r, 1.0, t)
 		"warren":

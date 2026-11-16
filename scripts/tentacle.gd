@@ -70,6 +70,8 @@ func _release() -> void:
 	dead = true
 	if is_instance_valid(ensnared) and ensnared.get("stunned") != null:
 		ensnared.stunned = 0.0
+	# the card is the payoff for the cast, and it arrives when the tentacle is done
+	arena.draw_card(team)
 	arena.unregister(self)
 	queue_free()
 

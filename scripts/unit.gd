@@ -60,15 +60,37 @@ var knock_time := 0.0
 
 var curl_cfg: Dictionary = {}
 var curled := false
+## Hot Chicken: pecks fireballs, then takes to the air and rams.
 var chicken_cfg: Dictionary = {}
 var chicken_hits := 0
 var chicken_target := 0
 var airborne := false
 var burn_per_hit := 0.0
+## Second phase of a chicken: fly at the target and burst on contact.
+var kamikaze_cfg: Dictionary = {}
+## Primal Aphid: a cone of pellets instead of a single shot.
+var spread_cfg: Dictionary = {}
 var targets_weakest := false
 var presence_shift := 0
 var summon_cfg: Dictionary = {}
 var shoots := ""
+var shoot_payload: Dictionary = {}
+## Some units only ever pick fights with troops (Penny ignores buildings/towers).
+var troops_only := false
+## Penny: three swipes, then an invincible fading step-back and a quarter circle.
+var dodge_cfg: Dictionary = {}
+var swipes := 0
+var dodging := false
+var dodge_t := 0.0
+var dodge_sign := 1.0
+var dodge_picked := false
+var dodge_center := Vector2.ZERO
+var dodge_radius := 0.0
+var dodge_start_r := 0.0
+var dodge_angle0 := 0.0
+var invincible := false
+## Untargetable: the arena's enemy queries skip these (Penny mid-dodge).
+var untargetable := false
 var is_b := false
 var occupied_tiles: Array = []
 var footprint: Array = [1, 1]
@@ -125,11 +147,16 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	boom_cfg = d.get("boomerang", {})
 	curl_cfg = d.get("curl", {})
 	chicken_cfg = d.get("chicken", {})
+	kamikaze_cfg = d.get("kamikaze", {})
+	spread_cfg = d.get("spread", {})
 	burn_per_hit = float(d.get("burn", 0.0))
 	targets_weakest = bool(d.get("targets_weakest", false))
 	presence_shift = int(d.get("presence_shift", 0))
 	summon_cfg = d.get("summon", {})
 	shoots = String(d.get("shoots", ""))
+	shoot_payload = d.get("payload", {})
+	troops_only = bool(d.get("troops_only", false))
+	dodge_cfg = d.get("dodge", {})
 	footprint = d.get("footprint", [1, 1])
 	is_b = String(d.get("type", "troop")) == "building"
 	ground_speed = speed
@@ -233,9 +260,22 @@ func _physics_process(delta: float) -> void:
 	if attack_stretch > 0.0:
 		attack_stretch = maxf(0.0, attack_stretch - delta)
 	flash = maxf(0.0, flash - delta * 5.0)
-	if lifetime > 0.0 and age >= lifetime:
-		_die()
+	if dodging:
+		_tick_dodge(delta)
+		queue_redraw()
 		return
+	if lifetime > 0.0:
+		# Clash-Royale style decay: a building bleeds its whole HP bar away over
+		# its lifetime, so it always dies on the timer unless something kills it
+		# sooner. The rate is max_hp / lifetime per second.
+		if is_building():
+			hp = maxf(0.0, hp - max_hp / lifetime * delta)
+			if hp <= 0.0:
+				_die()
+				return
+		if age >= lifetime:
+			_die()
+			return
 	if arena.match_over:
 		queue_redraw()
 		return
@@ -295,7 +335,8 @@ func _physics_process(delta: float) -> void:
 	if not summon_cfg.is_empty():
 		_tick_summon(delta)
 
-	# curled hedgehog: hold position while anything is inside thorn range
+	# a balled-up hedgehog holds its ground while anything is inside thorn reach;
+	# once nothing is, it uncurls and walks again
 	if not curl_cfg.is_empty() and curled:
 		if _enemy_within(float(curl_cfg["thorn_range"])) == null:
 			curled = false
@@ -307,10 +348,8 @@ func _physics_process(delta: float) -> void:
 	if kind == "dragon" and not flying and hp <= max_hp * 0.5 and hp > 0.0:
 		_take_off()
 
-	if phase2:
-		var tw: Node = arena.nearest_enemy_tower(team, position)
-		if tw != null:
-			target = tw
+	# a turned alchemist only has eyes for structures; _acquire enforces it, so
+	# the nearest tower *or* building is what he charges
 
 	if target == null or not _target_valid(target):
 		target = _acquire()
@@ -324,12 +363,25 @@ func _physics_process(delta: float) -> void:
 			if d_new < d_old - 0.3:
 				target = cand
 
+	if target == null and not stationary:
+		# nothing worth shooting: advance on the nearest enemy tower rather than
+		# standing in the open waiting for someone to walk into range
+		target = arena.nearest_enemy_tower(team, position)
 	if target == null:
 		state = S.IDLE if stationary else S.APPROACH
 		queue_redraw()
 		return
 
 	var gap: float = arena.gap_between(position, target.position, radius_t, float(target.get_radius_t()))
+	if not kamikaze_cfg.is_empty() and airborne:
+		# airborne: it flies at whatever it picked and bursts on contact
+		if gap <= reach:
+			_burst()
+			return
+		state = S.APPROACH
+		_move(delta)
+		queue_redraw()
+		return
 	if phase2:
 		if gap <= 0.35:
 			_explode()
@@ -341,7 +393,8 @@ func _physics_process(delta: float) -> void:
 		state = S.IDLE
 		queue_redraw()
 		return
-	if not curl_cfg.is_empty() and not curled and gap <= float(curl_cfg["range"]):
+	if not curl_cfg.is_empty() and not curled and gap <= reach:
+		# a hedgehog has no jab: getting into reach is the cue to ball up
 		_curl()
 		queue_redraw()
 		return
@@ -403,11 +456,14 @@ func _attack() -> void:
 	if not chicken_cfg.is_empty():
 		_attack_chicken()
 		return
+	if not spread_cfg.is_empty():
+		_attack_spread()
+		return
 	if shoots != "":
 		_mark_attack()
 		atk_cd = interval
 		arena.spawn_projectile(position, target.position, team, dmg, 0.0, shoots,
-			get_instance_id(), "bolt", false, self, 950.0, target)
+			get_instance_id(), "bolt", false, self, 950.0, target, shoot_payload)
 		return
 	var dist: float = arena.tiles_between(position, target.position)
 	atk_cd = interval + cooldown_per_tile * dist
@@ -431,6 +487,10 @@ func _attack() -> void:
 			arena.reserve_damage(get_instance_id(), target, hit_dmg)
 			target.take_damage(hit_dmg, position, self)
 			arena.release_reservation(get_instance_id())
+	if not dodge_cfg.is_empty() and not dodging:
+		swipes += 1
+		if swipes >= int(dodge_cfg["after_hits"]):
+			_begin_dodge()
 
 
 ## Burn tint walks red → orange → yellow across its ticks; the tick that ends
@@ -447,18 +507,87 @@ static func burn_color(ticks: int, max_ticks: int) -> Color:
 	return red.lerp(orange, f * 2.0) if f < 0.5 else orange.lerp(yellow, (f - 0.5) * 2.0)
 
 
+## Penny's fade: she vanishes (invincible + untargetable), backs off half a tile
+## and steps a quarter circle around whoever she was hitting. The first strafe
+## turns toward the outside of the board; after that she keeps turning the same
+## way, so the fight drifts rather than doubling back.
+func _begin_dodge() -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	swipes = 0
+	dodging = true
+	untargetable = true
+	invincible = true
+	dodge_t = 0.0
+	atk_cd = 0.0
+	dodge_center = target.position
+	dodge_start_r = position.distance_to(dodge_center)
+	dodge_radius = dodge_start_r + float(dodge_cfg["back"]) * arena.TILE
+	dodge_angle0 = (position - dodge_center).angle()
+	if not dodge_picked:
+		dodge_picked = true
+		var sweep := deg_to_rad(float(dodge_cfg["sweep_deg"]))
+		var outer: Vector2 = arena.board_rect().get_center()
+		var plus: Vector2 = dodge_center + Vector2(cos(dodge_angle0 + sweep), sin(dodge_angle0 + sweep)) * dodge_radius
+		var minus: Vector2 = dodge_center + Vector2(cos(dodge_angle0 - sweep), sin(dodge_angle0 - sweep)) * dodge_radius
+		dodge_sign = 1.0 if plus.distance_to(outer) > minus.distance_to(outer) else -1.0
+
+
+func _tick_dodge(delta: float) -> void:
+	var total: float = maxf(0.1, float(dodge_cfg["time"]))
+	dodge_t += delta
+	if target != null and is_instance_valid(target) and not target.dead:
+		dodge_center = target.position
+	var back_time: float = total * 0.3
+	if dodge_t <= back_time:
+		var f: float = dodge_t / back_time
+		var r: float = lerpf(dodge_start_r, dodge_radius, ease(f, 0.4))
+		position = dodge_center + Vector2(cos(dodge_angle0), sin(dodge_angle0)) * r
+	else:
+		var f: float = clampf((dodge_t - back_time) / (total - back_time), 0.0, 1.0)
+		var ang: float = dodge_angle0 + dodge_sign * deg_to_rad(float(dodge_cfg["sweep_deg"])) * ease(f, 0.6)
+		position = dodge_center + Vector2(cos(ang), sin(ang)) * dodge_radius
+		var dir := position - dodge_center
+		if absf(dir.x) > 1.0:
+			facing = signf(dir.x)
+	if dodge_t >= total:
+		dodging = false
+		untargetable = false
+		invincible = false
+		atk_cd = 0.0
+
+
+## Primal Aphid: a shotgun cone, five pellets spread across cone_deg, each flying
+## its own full length whether or not anything is in front of it. The pellets
+## carry further than the aphid's own 2 tile stance, so they reach into a lane it
+## never has to enter.
+func _attack_spread() -> void:
+	if target == null:
+		return
+	_mark_attack()
+	atk_cd = interval
+	var dir: Vector2 = target.position - position
+	if dir.length() < 1.0:
+		dir = Vector2(facing, 0.0)
+	var base_angle := dir.angle()
+	var n: int = maxi(1, int(spread_cfg["count"]))
+	var half := deg_to_rad(float(spread_cfg["cone_deg"])) * 0.5
+	var reach_px: float = float(spread_cfg["reach"]) * arena.TILE
+	for i in n:
+		var f := 0.0
+		if n > 1:
+			f = (float(i) / float(n - 1)) * 2.0 - 1.0
+		var ang: float = base_angle + half * f
+		var to: Vector2 = position + Vector2(cos(ang), sin(ang)) * reach_px
+		arena.spawn_projectile(position, to, team, float(spread_cfg["dmg"]), 0.0, "aphid",
+			get_instance_id(), "bolt", false, self, float(spread_cfg["speed"]), null,
+			{"first_hit": true})
+
+
+## Hot Chicken's ground phase: peck fireballs. Three hits on one target and it
+## takes off — the ram below does the rest.
 func _attack_chicken() -> void:
 	if target == null or atk_cd > 0.0:
-		return
-	if airborne:
-		var dir: Vector2 = target.position - position
-		if absf(dir.x) > 0.01:
-			facing = signf(dir.x)
-		_mark_attack()
-		atk_cd = float(chicken_cfg["claw_interval"])
-		target.take_damage(float(chicken_cfg["claw_dmg"]), position, self)
-		if burn_per_hit > 0.0 and target.has_method("apply_burn"):
-			target.apply_burn(burn_per_hit)
 		return
 	_mark_attack()
 	atk_cd = interval
@@ -474,7 +603,17 @@ func _attack_chicken() -> void:
 	if chicken_hits >= int(chicken_cfg["hits_to_fly"]):
 		airborne = true
 		flying = true
-		reach = float(chicken_cfg["claw_reach"])
+		reach = float(chicken_cfg["burst_reach"])
+		atk_cd = 0.0
+
+
+## Hot Chicken's air phase: fly into the target and burst, killing itself.
+func _burst() -> void:
+	if dead:
+		return
+	arena.spawn_splash_burst(position, float(kamikaze_cfg["radius"]), float(kamikaze_cfg["dmg"]),
+		team, Color(1.0, 0.62, 0.25))
+	_die()
 
 
 func _attack_fu() -> void:
@@ -505,39 +644,49 @@ func _attack_fu() -> void:
 		get_instance_id(), "return", false, self, speed_px, target)
 
 
+## Nearest enemy whose gap to this unit's *edge* is inside range_t. Edge to edge
+## on purpose: a ranged attacker the hedgehog has walked up on still counts.
 func _enemy_within(range_t: float) -> Node:
 	var best: Node = null
 	var best_d := INF
 	for e in arena.enemy_entities(team):
 		if not is_instance_valid(e) or e.dead:
 			continue
-		var d: float = arena.tiles_between(position, e.position)
-		if d <= range_t + float(e.get_radius_t()) and d < best_d:
+		var d: float = arena.gap_between(position, e.position, radius_t, float(e.get_radius_t()))
+		if d <= range_t and d < best_d:
 			best = e
 			best_d = d
 	return best
 
 
+## The hedgehog's reach attack: ball up, quills out at everything inside thorn
+## reach, and a short shove — short enough that nothing leaves the thorns, which
+## is where the reflection happens. It never opens up again on its own; that is
+## the uncurl above, and it only happens when the thorns can reach nothing.
 func _curl() -> void:
 	curled = true
 	state = S.IDLE
 	target = null
 	atk_cd = 0.0
 	var burst := float(curl_cfg["burst_dmg"])
-	var push := float(curl_cfg["push"])
 	var tr := float(curl_cfg["thorn_range"])
+	var push := float(curl_cfg["push"])
 	for e in arena.enemy_entities(team).duplicate():
 		if not is_instance_valid(e) or e.dead:
 			continue
-		if arena.tiles_between(position, e.position) > tr + float(e.get_radius_t()):
+		var gap: float = arena.gap_between(position, e.position, radius_t, float(e.get_radius_t()))
+		if gap > tr:
 			continue
 		if e.has_method("take_damage"):
 			e.take_damage(burst, position, self)
 		if e.has_method("apply_impulse"):
-			var d: Vector2 = e.position - position
-			if d.length() < 0.01:
-				d = Vector2(facing, 1.0)
-			e.apply_impulse(d.normalized(), push, float(curl_cfg["push_time"]))
+			# never shove a unit out of thorn reach
+			var shove: float = minf(push, maxf(tr - gap - 0.1, 0.0))
+			if shove > 0.02:
+				var d: Vector2 = e.position - position
+				if d.length() < 0.01:
+					d = Vector2(facing, 1.0)
+				e.apply_impulse(d.normalized(), shove, float(curl_cfg["push_time"]))
 
 
 func _mark_attack() -> void:
@@ -630,13 +779,15 @@ func _acquire() -> Node:
 		for e in arena.enemy_entities(team):
 			if not is_instance_valid(e) or e.dead:
 				continue
-			if e.is_tower():
-				continue
 			if e.get("flying") == true and not hits_air:
 				continue
 			if arena.is_doomed(e):
 				continue
 			if buildings_only and not e.is_building():
+				continue
+			if troops_only and (e.is_building() or e.is_tower()):
+				continue
+			if phase2 and not (e.is_building() or e.is_tower()):
 				continue
 			var dw: float = arena.tiles_between(position, e.position)
 			if dw > aggro:
@@ -657,6 +808,10 @@ func _acquire() -> Node:
 			continue
 		if buildings_only and not e.is_building():
 			continue
+		if troops_only and (e.is_building() or e.is_tower()):
+			continue
+		if phase2 and not (e.is_building() or e.is_tower()):
+			continue
 		if kind == "dragon" and flying and not e.is_building():
 			continue
 		var d: float = arena.tiles_between(position, e.position)
@@ -675,7 +830,7 @@ func _acquire() -> Node:
 
 
 func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
-	if dead or amount <= 0.0:
+	if dead or amount <= 0.0 or invincible:
 		return
 	var taken := amount
 	if curled and not curl_cfg.is_empty():
@@ -689,13 +844,18 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 	if arena.show_damage():
 		var tint := Color(1.0, 0.45, 0.45) if hp <= 0.0 else (Color(1.0, 0.85, 0.5) if taken >= 20.0 else Color(0.95, 0.95, 1.0))
 		arena.spawn_damage_text(position + Vector2(0.0, -radius_t * arena.TILE - 8.0), taken, tint)
-	# quills: fixed damage back at anything hitting us from within thorn range
+	# quills: anything that hits the ball from inside thorn reach gets poked, so
+	# a ranged attacker that has been closed on is punished exactly like a melee
+	# one. The guard stops two hedgehogs poking each other forever.
 	if curled and not curl_cfg.is_empty() and arena.damage_guard == 0:
 		var src_node: Node = attacker
 		var src_pos := from
 		if src_node != null and is_instance_valid(src_node):
 			src_pos = src_node.position
-		if arena.tiles_between(position, src_pos) <= float(curl_cfg["thorn_range"]):
+		var src_r := 0.0
+		if src_node != null and src_node.has_method("get_radius_t"):
+			src_r = float(src_node.get_radius_t())
+		if arena.gap_between(position, src_pos, radius_t, src_r) <= float(curl_cfg["thorn_range"]):
 			if src_node != null and is_instance_valid(src_node) and src_node.has_method("take_damage"):
 				arena.damage_guard += 1
 				src_node.take_damage(float(curl_cfg["thorn_dmg"]), position, self)
@@ -748,8 +908,9 @@ func _die() -> void:
 	if not da.is_empty():
 		arena.death_aoe(position, float(da["radius"]), float(da["dmg"]),
 			float(da["slow"]), float(da["slow_time"]), team)
-	# zombies raise whatever they kill, on their own side
-	if kind != "zombie" and last_attacker != null and is_instance_valid(last_attacker):
+	# zombies raise whatever they kill, on their own side — buildings are not
+	# people, they do not get back up
+	if kind != "zombie" and not is_building() and last_attacker != null and is_instance_valid(last_attacker):
 		if String(last_attacker.get("kind")) == "zombie":
 			var risen = arena.spawn_troop("zombie", int(last_attacker.team), position, true)
 			if risen != null and is_instance_valid(risen):
@@ -766,6 +927,8 @@ func _die() -> void:
 				dir = Vector2(0, -1)
 			dir = dir.normalized()
 		arena.spawn_boulder(position, dir, team)
+	# mini confetti in the card's accent and the owner's colour
+	arena.spawn_unit_confetti(position, kind, team, radius_t)
 	arena.unregister(self)
 	queue_free()
 
@@ -802,14 +965,16 @@ func _draw() -> void:
 			sy = 1.0 + 0.2 * a
 			sx = 1.0 - 0.1 * a
 	draw_set_transform(Vector2(0, -lift + drop), 0.0, Vector2(sx, sy))
+	# every unit is outlined in a darker shade of its own team's colour
+	var ink: Color = arena.team_ink(int(team))
 	if kind == "hedgehog":
-		DDArt.hedgehog(self, px, facing, clock, curled)
+		DDArt.hedgehog(self, px, facing, clock, curled, ink)
 	elif kind == "hawk":
-		DDArt.bird(self, px, facing, clock, bird_lead)
+		DDArt.bird(self, px, facing, clock, bird_lead, ink)
 	elif kind == "dragon":
-		DDArt.dragon(self, px, facing, clock, flying, 0.0)
+		DDArt.dragon(self, px, facing, clock, flying, 0.0, ink)
 	else:
-		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2)
+		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2, ink, flying)
 	if status == Status.SLOW:
 		draw_circle(Vector2.ZERO, px * 1.15, Color(0.18, 0.32, 0.85, 0.45))
 		draw_arc(Vector2.ZERO, px * 1.15, 0.0, TAU, 20, Color(0.35, 0.55, 1.0, 0.6), 2.0, true)

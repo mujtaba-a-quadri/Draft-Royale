@@ -20,6 +20,8 @@ var interval := 1.0
 var flying := false
 var gives_presence := false
 var tower_ignore := true
+## Airborne on the way out: nothing can see or hurt him until he lands.
+var untargetable := true
 var dead := false
 var incoming := 0.0
 var phase: int = P.LAND
@@ -29,7 +31,7 @@ var from := Vector2.ZERO
 var target_tower: Node = null
 var home_tower: Node = null
 var stolen := 0.0
-var speed_px := 60.0
+var speed_px := 25.0
 var radius_t := 0.4
 var run_clock := 0.0
 
@@ -96,6 +98,8 @@ func _land() -> void:
 		arena.gold[enemy_team] = float(arena.gold[enemy_team]) - steal
 	stolen = steal
 	arena.banner_flash("Shiesty picks a pocket! %d gold taken" % int(steal))
+	# back on the ground: the run home is the dangerous part
+	untargetable = false
 	phase = P.RETURN
 	clock = 0.0
 	queue_redraw()
@@ -105,11 +109,14 @@ func _escape() -> void:
 	arena.stat_shiesty_escaped += 1
 	arena.gold[team] = minf(float(arena.gold_max), float(arena.gold[team]) + stolen)
 	arena.banner_flash("Shiesty gets away with %d gold" % int(stolen))
+	# no gold delivered, no card: the draw is the reward for getting home
+	if stolen > 0.0:
+		arena.draw_card(team)
 	_finish()
 
 
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
-	if dead or amount <= 0.0:
+	if dead or amount <= 0.0 or untargetable:
 		return
 	hp -= amount
 	if hp <= 0.0:

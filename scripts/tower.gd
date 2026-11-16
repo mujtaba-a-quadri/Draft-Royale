@@ -137,7 +137,7 @@ func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 
 
 func _draw() -> void:
-	var col := Color(0.36, 0.62, 0.95) if team == 0 else Color(0.92, 0.4, 0.42)
+	var col: Color = area.team_color(int(team))
 	if dead:
 		var wall := Color(0.5, 0.48, 0.46)
 		draw_rect(Rect2(-w * 0.5, h * 0.12, w, h * 0.38), wall, true)
@@ -155,10 +155,10 @@ func _draw() -> void:
 		if area != null and area.has_method("ability_ready"):
 			ready = bool(area.ability_ready(int(team)))
 		draw_circle(Vector2(0, h * 0.28), w * 0.62, Color(0, 0, 0, 0.18))
-		var team_col := Color(0.45, 0.7, 1.0) if int(team) == 0 else Color(1.0, 0.42, 0.42)
+		var team_col: Color = col.lightened(0.18)
 		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col)
 	else:
-		DDArt.tower(self, w, h, col, flash, crown)
+		DDArt.tower(self, w, h, col, flash, crown, area.team_ink(int(team)))
 	if hp <= 0.0:
 		return
 	if burn_timer > 0.0:

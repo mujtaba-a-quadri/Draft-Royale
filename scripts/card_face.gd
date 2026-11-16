@@ -6,7 +6,7 @@ extends RefCounted
 
 const OUT := Color(0.13, 0.12, 0.16)
 const ATTACK_NAMES := {
-	"dragon": "Claw", "chicken": "Pecking Fire", "fu": "Boomerang",
+	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
@@ -46,6 +46,36 @@ static func rate_text(d: Dictionary) -> String:
 	return " · ".join(parts)
 
 
+## The art pane: one big creature for a single body, or — for a swarm — the
+## whole formation, scaled to fit, so the card reads like the deploy preview.
+static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
+	var offsets: Array = DDCard.get_card(kind).get("swarm_offsets", [])
+	if offsets.is_empty():
+		ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
+		if kind == "dragon":
+			DDArt.dragon(ci, art.size.y * 0.40, 1.0, 0.0, false)
+		elif kind == "hawk":
+			DDArt.bird(ci, art.size.y * 0.34, 1.0, 0.0, true)
+		else:
+			DDArt.creature(ci, kind, art.size.y * 0.34, 1.0, 0.0)
+		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	var half_x := 0.0
+	var half_y := 0.0
+	for off in offsets:
+		half_x = maxf(half_x, absf(float((off as Array)[0])))
+		half_y = maxf(half_y, absf(float((off as Array)[1])))
+	# each body is one tile wide with a 0.44 tile radius, in the preview's units
+	var unit_scale: float = minf(art.size.x / (half_x * 2.0 + 0.9), art.size.y / (half_y * 2.0 + 0.9))
+	var centre := art.get_center()
+	for off in offsets:
+		# the preview mirrors a formation's y offsets for team 0 (ydir = -1); the
+		# card art uses the same orientation so the two line up
+		var at: Vector2 = centre + Vector2(float((off as Array)[0]), -float((off as Array)[1])) * unit_scale
+		DDArt.icon(ci, kind, at, unit_scale * 0.44)
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 ## Largest integer size no bigger than start that fits the space, never below floor_size.
 static func fitted(font: Font, text: String, avail: float, start: float, floor_size: float) -> int:
 	var s := start
@@ -54,7 +84,10 @@ static func fitted(font: Font, text: String, avail: float, start: float, floor_s
 	return int(maxf(s, floor_size))
 
 
-static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0) -> void:
+## cost_col overrides the cost medallion's digit — the hand uses it to flag a
+## card the player cannot pay for yet.
+static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0,
+		cost_col: Color = Color(0, 0, 0, 0), hide_art: bool = false) -> void:
 	if kind == "" or rect.size.x < 26.0:
 		return
 	var d: Dictionary = DDCard.get_card(kind)
@@ -72,8 +105,11 @@ static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0) 
 	ci.draw_circle(cc, cr, Color(0.86, 0.68, 0.18, a))
 	ci.draw_circle(cc + Vector2(-cr * 0.28, -cr * 0.28), cr * 0.38, Color(1.0, 0.94, 0.62, a * 0.9))
 	ci.draw_arc(cc, cr, 0.0, TAU, 16, Color(0.45, 0.32, 0.05, a), 1.2, true)
+	var cost_ink := Color(0.2, 0.18, 0.16, a)
+	if cost_col.a > 0.0:
+		cost_ink = Color(cost_col.r, cost_col.g, cost_col.b, a)
 	ci.draw_string(font, cc + Vector2(-cr, cr * 0.44), str(int(d["cost"])), HORIZONTAL_ALIGNMENT_CENTER,
-		cr * 2.0, int(clampf(cr * 1.5, 8.0, 18.0)), Color(0.2, 0.18, 0.16, a))
+		cr * 2.0, int(clampf(cr * 1.5, 8.0, 18.0)), cost_ink)
 	var name_avail := w - cr * 2.0 - 10.0
 	var name_start: float = clampf(w * 0.155, 8.0, 19.0)
 	var nm := DDCard.short_name(kind)
@@ -84,17 +120,12 @@ static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0) 
 	ci.draw_string(font, rect.position + Vector2(cr * 2.0 + 6.0, head_h * 0.74), nm,
 		HORIZONTAL_ALIGNMENT_CENTER, name_avail, nsize, Color(1, 1, 1, a))
 	var art := Rect2(rect.position + Vector2(4.0, head_h + 2.0), Vector2(w - 8.0, h * 0.42))
-	for i in 8:
-		var f := float(i) / 7.0
-		ci.draw_rect(Rect2(art.position.x, art.position.y + f * art.size.y, art.size.x, art.size.y / 7.0 + 1.0),
-			Color(accent.lightened(0.70 - f * 0.3), a))
-	ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
-	if kind == "dragon":
-		DDArt.dragon(ci, art.size.y * 0.40, 1.0, 0.0, false)
-	elif kind == "hawk":
-		DDArt.bird(ci, art.size.y * 0.34, 1.0, 0.0, true)
-	else:
-		DDArt.creature(ci, kind, art.size.y * 0.34, 1.0, 0.0)
+	if not hide_art:
+		for i in 8:
+			var f := float(i) / 7.0
+			ci.draw_rect(Rect2(art.position.x, art.position.y + f * art.size.y, art.size.x, art.size.y / 7.0 + 1.0),
+				Color(accent.lightened(0.70 - f * 0.3), a))
+		_draw_art(ci, kind, art)
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	ci.draw_rect(art, Color(0.13, 0.12, 0.16, a), false, 1.4)
 	# HP ribbon under the art

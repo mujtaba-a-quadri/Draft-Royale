@@ -775,9 +775,9 @@ func _chicken_steps() -> void:
 		alch.deploy_timer = 0.0
 		print("[chicken] chicken vs hero, 2.7 tiles apart (hero hp %d)" % int(alch.hp))
 	if _at(1.6) or _at(2.8) or _at(4.2) or _at(5.6):
-		print("[chicken] t%.1f hero_hp=%d hero_burn=%.1f hero_status=%d | chicken air=%s flying=%s hits=%d" % [
-			elapsed, int(alch.hp), alch.burn_stack, int(alch.status),
-			str(probe.airborne), str(probe.flying), probe.chicken_hits])
+		print("[chicken] t%.1f hero_hp=%d hero_status=%d | chicken flying=%s alive=%s" % [
+			elapsed, int(alch.hp), int(alch.status),
+			str(probe.flying), str(is_instance_valid(probe) and not bool(probe.get("dead")))])
 
 
 func _burn_steps() -> void:
@@ -808,8 +808,8 @@ func _burn_steps() -> void:
 		alch = tgt
 		print("[burn] chicken vs hero placed 2 tiles apart")
 	if _at(8.6):
-		print("[burn] chicken airborne=%s flying=%s reach=%.1f hits=%d | hero hp=%d burn=%.1f" % [
-			str(probe.airborne), str(probe.flying), probe.reach, probe.chicken_hits,
+		print("[burn] chicken flying=%s reach=%.1f alive=%s | hero hp=%d burn=%.1f" % [
+			str(probe.flying), probe.reach, str(is_instance_valid(probe) and not bool(probe.get("dead"))),
 			int(alch.hp), alch.burn_stack if alch.has_method("apply_burn") else -1.0])
 
 

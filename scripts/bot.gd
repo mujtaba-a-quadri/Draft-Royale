@@ -49,8 +49,8 @@ func _physics_process(delta: float) -> void:
 	if think_cd > 0.0:
 		return
 	think_cd = DECISION_INTERVAL + rng.randf() * 0.25
-	# hero ability: fire it when it will not starve the card economy
-	if float(arena.gold[player]) >= 5.0 and arena.ability_valid(player):
+	# hero ability: only when it will actually do its job
+	if _wants_ability():
 		arena.use_ability(player)
 		return
 	_decide()
@@ -112,6 +112,95 @@ func _commit() -> void:
 	hover_index = -1
 	if not ok and int(arena.hands[player].size()) > 0:
 		think_cd = maxf(think_cd, 0.2)
+
+
+# -------------------------------------------------------------------- ability
+
+## Both abilities buy a temporary body for 2 gold, so firing them blindly is gold
+## thrown away: a tentacle dropped where three of their troops are standing is cut
+## apart on reveal, and Shiesty is a thief who only pays out if he gets home.
+## (The card draw lives on the payload now — tentacle on death, Shiesty on
+## delivery — so "will it survive" is about the gold and the damage, not the card.)
+const SHIESTY_SAFE_DPS := 20.0  ## enemy damage at his target tower that dooms him
+
+
+func _wants_ability() -> bool:
+	if not arena.ability_valid(player):
+		return false
+	if float(arena.gold[player]) < 5.0:
+		return false
+	if String(arena.ability[player]) == "tentacle":
+		return _wants_tentacle()
+	return _wants_shiesty()
+
+
+func _wants_tentacle() -> bool:
+	var victim: Node = arena._highest_hp_enemy_unit(player)
+	if victim == null:
+		return false
+	var hp: float = float(victim.get("hp"))
+	# the reveal burst alone finishes it: that is a kill for 2 gold
+	if hp <= float(arena.TENTACLE_DMG):
+		return true
+	# can my side finish it inside the hold? then the stun is earning its keep
+	var allied := 0.0
+	for u in arena.units:
+		if not is_instance_valid(u) or bool(u.get("dead")) or int(u.team) != player:
+			continue
+		if arena.tiles_between(victim.position, u.position) <= 3.5:
+			allied += _dps_of(u)
+	for tw in arena.towers:
+		if not is_instance_valid(tw) or tw.dead or int(tw.team) != player:
+			continue
+		if arena.tiles_between(victim.position, tw.position) <= float(tw.reach) + 1.0:
+			allied += _dps_of(tw)
+	if allied * float(arena.TENTACLE_TIME) * 0.75 >= hp:
+		return true
+	# a starved hand makes the draw the reason to spend at all
+	if int(arena.hands[player].size()) <= 3:
+		return true
+	# otherwise keep it in the pocket while their side has the bodies to cut the
+	# tentacle down the instant it surfaces
+	var incoming := 0.0
+	for u in arena.enemy_units(player):
+		# the victim itself does not count: the tentacle holds it stunned
+		if not is_instance_valid(u) or u.dead or u == victim:
+			continue
+		if arena.tiles_between(victim.position, u.position) <= 3.0:
+			incoming += _dps_of(u)
+	for tw in arena.towers:
+		if not is_instance_valid(tw) or tw.dead or int(tw.team) != player:
+			continue
+		if arena.tiles_between(victim.position, tw.position) <= float(tw.reach) + 1.0:
+			incoming += _dps_of(tw)
+	return incoming * 0.8 < float(arena.TENTACLE_HP)
+
+
+func _wants_shiesty() -> bool:
+	var tower: Node = arena._highest_hp_enemy_tower(player)
+	if tower == null:
+		return false
+	# nothing in the pocket means nothing to carry home, so no card either
+	if float(arena.gold[1 - player]) < 1.0:
+		return false
+	# he is untargetable on the way in, so only the landing and the run home
+	# matter: whoever is standing at that tower meets him there
+	var danger := 0.0
+	for u in arena.enemy_units(player):
+		if not is_instance_valid(u) or u.dead:
+			continue
+		if arena.tiles_between(tower.position, u.position) <= 3.5:
+			danger += _dps_of(u)
+	return danger < SHIESTY_SAFE_DPS
+
+
+## Damage per second a unit or tower puts out.
+func _dps_of(e: Node) -> float:
+	var dmg := float(e.get("dmg") if e.get("dmg") != null else 0.0)
+	var iv := float(e.get("interval") if e.get("interval") != null else 1.0)
+	if iv <= 0.01:
+		iv = 1.0
+	return dmg / iv
 
 
 # --------------------------------------------------------------- candidates
@@ -198,6 +287,9 @@ func _threat_of(e: Node) -> float:
 	var dps := dmg / interval
 	var hp: float = float(e.get("hp"))
 	var t := dps * 0.22 + hp / 130.0
+	var kam = e.get("kamikaze_cfg")
+	if kam != null and not (kam as Dictionary).is_empty():
+		t += float((kam as Dictionary)["dmg"]) / 32.0   # a suicide burst counts too
 	if e.is_building():
 		t *= 0.65
 	return clampf(t, 0.0, 6.0)

@@ -1,8 +1,14 @@
 # Deep Draft — arena slice
 
+**0.4.2** · Godot 4.7.2
+
 Clash-Royale-shaped arena, RTS troop play, two local hands driven by one mouse.
 This slice is the **arena foundation** for the roguelike layer (deck building,
 relics, heroes and match types come later).
+
+> Working notes — where each system lives, how to add a card, how to measure the
+> bot, and the traps that cost time — are in [`NOTES.md`](NOTES.md). Read that
+> first if you are picking this up cold.
 
 ## Run
 
@@ -16,19 +22,26 @@ godot --path .                 # play
 | Input | Action |
 | --- | --- |
 | Left click a card in either side panel | Select that card for that player |
+| **1 – 8** (solo view only) | Pull that card out of your hand — press it again to put it back |
+| **9** (solo view only) | Fire your hero ability |
 | Left click the board | Deploy it (troops: your half only, spells: anywhere) |
 | Right click (anywhere) or Esc | Clear the armed card |
-| Hover a troop or tower (no card armed) | Name + HP, **pale yellow aggro ring**, **pale red attack-range ring** |
+| Hover a troop or tower (no card armed) | Name + HP, **pale yellow aggro ring**, **pale red attack-range ring**, and for a summoner (Lizard Warren) a **pale green summoning radius** |
 | B | Toggle the bot for player 2 |
 | 1 / 2 / 3 (**Tab / debug view only**) | Debug gold: +1 to player 1 / both players / player 2 |
 | Tab (dual view) | Shows floating **damage numbers** on troops: white under 20, amber 20+, red on a killing hit |
-| A (**Tab / debug view only**) | Toggle the **all-cards shelf**: the bottom hand becomes a 4-column grid of every card, hover for its description, click to arm and place it for free. Placing on the **top half** deploys it for the opponent; on **purple (both-controlled)** tiles the side is random |
+| A (**Tab / debug view only**) | Toggle the **all-cards overlay**: a scrolling grid of every card, 8 per row, with **BUILDINGS / TROOPS / SPELLS** filter buttons above it (click to filter, click again to clear, several at once allowed — the header says what is showing). Click a card to arm and place it for free. Placing on the **top half** deploys it for the opponent; on **purple (both-controlled)** tiles the side is random |
 | R | Restart after a match ends |
 
 Both hands are live at once: the left panel is Player 1 (blue, bottom half),
 the right panel is Player 2 (red, top half). Only one card can be armed at a
 time so a single mouse is never ambiguous — and the bot playing its own card
 never disarms yours.
+
+The opponent's hand runs down the right edge as **one column of up to four
+cards**. The fifth makes that column shrink to half width and starts a second
+column beside it, so a full hand reads as four plus one. Everything in a column
+is the same size, shrunk so the whole column fits the panel.
 
 ## Board
 
@@ -51,29 +64,39 @@ never disarms yours.
 * **View modes** — solo layout (cards on the left third, arena on the right,
   opponent info strip) and dual hotseat (both hands). Tab toggles; the panel
   button does the same.
-* Three towers per side: two princess towers and one king tower, **250 HP each**.
-* 12-card deck per player, 4 cards in hand, 1 "next", cycling exactly like
-  Clash Royale: play a card and it goes to the back of the queue.
-* Gold: starts at 5, caps at 10, regenerates 1 per 2.4 s.
+* Three towers per side: two princess towers and one **commander (king) tower**, **250 HP each**.
+  **Taking the commander tower wins the match outright** — princess towers alone never end it.
+* **150 second matches.** The clock is the chip at the top of the board. The last 60 seconds are the
+  closing window: **double gold**, **half ability cooldowns**, and card draws **one second faster**.
+  If the clock runs out, the match goes to whoever has **more tower HP left** (all three towers
+  summed, not the tower count) — an exact tie is a draw.
+* **18 cards in the game, 17 in each deck** — Pen is not dealt out, he only arrives when Penny is
+  played. 4 cards in hand, 1 "next", cycling exactly like
+  Clash Royale: play a card and it goes to the back of the queue. Both decks are
+  **shuffled fresh every match**, independently of each other.
+* Gold: starts at 5, caps at 10, regenerates 1 per 2.4 s — **double rate in the final minute**.
 
 ## Cards (base numbers, all tunable in `scripts/card_db.gd`)
 
 | Card | Cost | HP | Damage | Notes |
 | --- | --- | --- | --- | --- |
 | Hero | 3 | 150 | 25 / 1.0 s | Very high HP for the cost. Also rides down an airborne dragon |
-| Snowman | 2 | 90 | – | Stationary decoy, 30 s lifetime, draws attention (7.5 tile lure). **On death: 3-tile blast for 30 damage and a 3 s / 30 % slow** (troops only, dark blue tint) |
+| Snowman | 2 | 90 | – | Stationary decoy, **60 s lifetime**, draws attention (7.5 tile lure). **On death: 3-tile blast for 30 damage and a 3 s / 30 % slow** (troops only, dark blue tint) |
 | Slate | 3 | **200** | 12 / 1.6 s | Slow tank that ignores every moving troop — only structures and towers |
 | The Chained Dragon | 9 | **400** | claw 45 / 1.4 s → breath 45 | Chained on the ground; at half HP it flies and burns the ground |
-| Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges its caster's tower at high speed and detonates for 100 |
+| Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges the nearest **tower or building** at high speed and detonates for 100. After turning it ignores troops entirely |
 | Fireball | 5 | – | 40 splash + **60 burn**, shoves loose units 1.2 tiles out | Fired from your **king tower**; `tower_mult` cuts tower damage |
-| Firebolt | 2 | – | **No damage — 40 burn** | An arrow of fire from your **nearest tower** |
-| Golden Idol | 4 | 35 | – | Stationary, taunts. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
-| Hedgehog | 3 | 60 each | 10 / 1.2 s | Three burrowers. In melee they **curl**: 45 % incoming damage, the quill burst deals 12 and shoves enemies 0.7 tiles (thorns range 2.2 keeps them inside it), and every hit taken inside thorns range returns 8 fixed damage |
-| Zombie Horde | 6 | 111 each | 15 / 1.0 s each | Six melee bruisers in a 2x3 block. **Anything a zombie kills rises as a full-HP zombie on the killer's side** |
+| Firebolt | 2 | – | **No damage — 40 burn** | An arrow of fire from your **nearest tower**. The only card that **locks onto a troop**: while you hold it, hovering an enemy troop pins the preview to that troop and follows it smoothly instead of snapping to a tile  **Two casts**: after the first throw the card stays in your hand and stays armed, so clicking again throws again — right click (or picking another card) puts it back with one charge left, shaded over the spent half (the triangle below the bottom-left → top-right diagonal). Only the **second** cast consumes it |
+| Golden Idol | 4 | 35 | – | Stationary, taunts, **10 s lifetime**. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
+| Hedgehog | 3 | 60 each | 12 curl / 8 thorns | Two burrowers with **no jab at all**. They walk to their melee reach and **ball up**: 12 damage plus a shove of about half a tile, always short enough that nothing leaves quill reach. Balled up they take **45 % damage**, and anything striking the ball from within **1.5 tiles gets 8 back — melee or ranged**, since projectiles are credited to their shooter. They hold while the quills can reach something and **walk again once nothing is in reach** |
+| Zombie Horde | 6 | 111 each | 15 / 1.0 s each | Six melee bruisers in a 2x3 block. **Anything a zombie kills rises as a full-HP zombie on the killer's side — troops only, buildings stay dead** |
 | Honeycreeper Flock | 4 | 10 each (lead 20) | 6 / 1.0 s each | Flying swarm of 5 in a diamond, lead i'iwi in front. Ground troops can't touch them; they can hit the flying dragon. Alchemist and Boomerang-Fu can hit air too |
-| Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s **rifle at 3.5 tiles** | Wedge of three. **Always retargets the weakest troop in range**, not the nearest, and its presence cone sits **one row further forward** |
-| Lizard Warren | 4 | 130 | – | Stationary burrow. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
-| Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn, then **10 claws + 5 burn** after 3 hits on one target | Pecks from range; three hits and it takes to the air (becomes a flyer) to claw at close range |
+| Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s **rifle at 3.5 tiles** | Wedge of three. **Always retargets the weakest thing in range — troops, buildings and towers alike** — not the nearest, and its presence cone sits **one row further forward**. With nothing in range it **advances on the nearest enemy tower** instead of standing still |
+| Lizard Warren | 4 | 130 | – | Stationary burrow with a **60 s lifetime**. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
+| Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn; **then 30 splash** on contact | Two phases. It **pecks fireballs from range**, and after **three hits on one target** it takes to the air: a **fire spirit that flies at that target and rams it for 30 in a 1.4 tile radius, dying in its own blast**. It becomes a flyer for the ram, so ground troops without anti-air cannot stop it — but it is **killable in flight** by anything that hits air, and shooting it down means no burst at all |
+| Penny | 3 | 90 | 18 / 0.7 s, melee | Calico blur, and the only card that **only ever picks fights with troops** — buildings and towers are ignored. After **3 swipes** she goes **invincible and untargetable**: she steps **half a tile back** and **strafes a quarter circle** around her target (first strafe turns toward the outside of the board, later ones keep turning the same way), then carries on. **Playing Penny replaces her card with Pen on the spot** — his card flies from where she landed into the hand slot she left |
+| Pen | 2 | 100 | 10 / 1.8 s, **5 tile blowgun** | Penny's other half: slow, calm, wrapped in a yellow toga. Every **dart paralyses** whatever it hits for **0.5 s** (units only — towers have nothing to paralyse). A perfectly ordinary card otherwise: he can be played or discarded like any other, and he does **not** turn back into Penny (so the deck never grows a second one) |
+| Primal Aphid | 3 | 110 | **5 × 8** in a 45° cone, every 2 s | A flyer that **hovers in to 2 tiles and stops** — it never closes. From there it spits a **five pellet shotgun** across a 45° cone aimed at its target. Each pellet flies **3.5 tiles**, so it reaches a full tile and a half past the aphid's own stance, and it can hit **ground or air**. Pellets **do not pierce**: the first body a pellet crosses eats it and the pellet is spent |
 | Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick (never on air — he throws at flyers even point blank) | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
 
 Tower fire: 12 damage / 1.0 s, 6 tile range.
@@ -141,21 +164,34 @@ without redoing animation:
    attacks on a fixed cadence until the target dies or it retargets.
 
 Everything runs in `_physics_process` with fixed ticks, no randomness in combat.
+Only the cosmetics roll dice: a dying unit **pops into mini confetti** — its card accent and its
+owner's team colour, each with a lighter and a darker variation — thrown further, faster and in
+greater number the bigger the body was (the randomiser lives in `confetti.gd`).
 
 ## Project layout
 
 ```
 scenes/arena.tscn      root Node2D + arena.gd
-scripts/arena.gd       board, towers, gold, hands, deploy rules, drawing
+scripts/arena.gd       towers, gold, hands, deploy rules, drawing (the scene)
+scripts/board.gd       DDBoard — grid constants, tile <-> screen maths, footprints
+scripts/arena_draw.gd  DDArenaDraw — board, deploy hint, hover box, HUD, result overlay
 scripts/card_db.gd     card data (the single balance surface)
 scripts/unit.gd        troop AI + phase 2 behaviour
 scripts/tower.gd       tower AI, HP, rubble
 scripts/art.gd         all procedural outlined art (Adventure Time-ish flat)
-scripts/hand_panel.gd  per-player hand UI (cards, gold, next)
+scripts/hand_panel.gd  per-player hand (slot layout, NEXT, input routing, fly-in)
+scripts/hand_card.gd   DDHandCard — one hand card node (rect, hover/drag/fly-back, tween)
+scripts/card_grid.gd   DDCardGrid — filtered, scrolling card grid (debug overlay today)
+scripts/card_face.gd   DDCardFace — the printed face of a card
+scripts/bot.gd         DDBot  — v1 flat utility scorer (A/B baseline)
+scripts/bot2.gd        DDBot2 — perception, states, role-matrix scoring
+scripts/bot_matrix.gd  card roles derived from data + the answers table
+scripts/bot_sim.gd     headless A/B harness (--botsim=<seed>)
 scripts/projectile.gd  potion / tower shot
 scripts/spell.gd       fireball / firebolt cast + impact
 scripts/boulder.gd     golden idol revenge boulder
 scripts/burst.gd       splash impact ring
+scripts/confetti.gd    DDConfetti — the mini confetti a dying unit leaves behind
 scripts/dev_capture.gd verification helper (see below)
 ```
 
@@ -171,22 +207,29 @@ cannot cheat the normal layout by accident:
 B  -> toggle the bot
 ```
 
-The keys are listed on a hint line under the mid-control chip in dual view.
+The keys are listed on a hint line under the match clock in dual view.
 
 ## Hero abilities
 
 Each player is assigned **one** of two abilities at random per match. Both cost
-**2 gold** and share a **20 s cooldown**. The button sits in the top-right of your
-panel and shows the cooldown, or the reason it cannot fire (`2g`, `no target`,
-`no tower`).
+**2 gold** and share a **15 s cooldown** (**7.5 s in the final minute**). The button sits in the
+top-right of your panel and shows the cooldown, or the reason it cannot fire (`2g`, `no target`,
+`no tower`). Both also pay out **one card draw**, but only when the payload actually lands —
+the tentacle's draw arrives when it dies, Shiesty's when he gets the gold home.
 
 | Ability | Effect |
 | --- | --- |
-| **Tentacle** | Bursts from the ground under the enemy troop with the most HP. Deals **20 on reveal** (no more after that) and holds it for **4 s**. The tentacle has **20 HP**; the ensnared side's own units or towers can kill it to free their troop early |
-| **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot, being killed on the way hands it back. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him |
+| **Tentacle** | Bursts from the ground under the enemy troop with the most HP. Deals **20 on reveal** (no more after that) and holds it for **4 s**. The tentacle has **20 HP**; the ensnared side's own units or towers can kill it to free their troop early. **Its card draw comes when it dies** |
+| **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). The flight out is **invincible and untargetable** — nothing can see or touch him until he lands. He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot (**and pays the card draw**), being killed on the way hands it back and pays nothing. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him, and only on the way home |
 
-The bot uses its ability too, whenever it is ready and it can spare the gold
-(gold >= 5, so it does not starve its card economy).
+The bot holds the ability until it will pay off (it still needs gold ≥ 5 first):
+
+* **Tentacle** — fires if the reveal burst alone kills the target, or if its own units and nearby
+  towers can finish the held troop inside the 4 s hold, or if its hand is down to 3 cards (then the
+  draw is the point). It **will not** fire into a target that a crowd of enemy units and towers are
+  standing over — that tentacle dies on reveal for nothing.
+* **Shiesty** — never fires while enemy units and towers near the target will meet him, and never
+  fires when the enemy has no gold to steal (nothing to deliver means no card either).
 
 Force a specific assignment for testing: `--ability=tentacle` or `--ability=shiesty`
 (player 1 gets it, player 2 gets the other).
@@ -194,7 +237,9 @@ Force a specific assignment for testing: `--ability=tentacle` or `--ability=shie
 ### Buildings
 
 The Snowman and Golden Idol are **1x1 buildings**; the Lizard Warren is a **2x2 building**. Buildings are
-stationary and **immune to knockback and shoves**.
+stationary and **immune to knockback and shoves**, and every one of them has a **lifetime**: it bleeds
+its whole HP bar away at `max_hp / lifetime` per second, so it dies on the timer unless something
+kills it sooner. The Snowman and the Warren last **60 s**, the Golden Idol **10 s**.
 
 * You cannot deploy onto a **1x1** building tile at all (a swarm's outer bodies can still spill onto it).
 * The **2x2** Warren sits **centred on the corner between four tiles** (its preview outlines all four),
@@ -224,16 +269,48 @@ bottom. Flip `LANDSCAPE` in `arena.gd` to get the original portrait board back �
 primitive goes through `tile_rect()` / `tile_center()` / `tile_of()`, so nothing else has to change
 (only the HUD layout would need to follow).
 
+### Team colours
+
+Both sides are **data, not literals**. `arena.team_colors = [colour, colour]` recolours everything a
+side owns — towers, the panel accent, the control tint, the deploy ghost and the NEXT trace — and
+every unit's outline is a darker shade of its own colour instead of black. Nothing else hard-codes
+blue or red. To see it without a menu:
+
+```
+godot --path . -- --colors=#ff8800,#22ccaa
+```
+
 ### The hand
 
 Cards are **compact TCG faces** — cost medallion, name, HP (`60 ×3` for swarms), tall art, stat
-strip and the attack line with its timing. No flavour text.
+strip and the attack line with its timing. No flavour text. A **swarm card's art shows the whole
+formation**, not one body, oriented exactly like the deploy preview — and that art is **blanked out
+while you drag the card over the arena**, so the placement preview is the only copy on screen.
 
-* **Hover** enlarges a card in place (1.3×) without moving it out of the strip.
-* **Press and drag** pulls it out at normal size and it follows the cursor.
-* Over the board the card fades out (22 %) and the **board preview takes over**: tile outline,
-  tinted swarm ghost, spell radius.
-* **Release over the board** deploys; release anywhere else leaves the card armed.
+* **Unplayable** — a card you cannot pay for is washed dark grey and see-through, with a light grey
+  fill climbing it for every part of its cost you already hold and its cost written in **red**. It
+  only shows its true colours once it is affordable, but it can still be picked up and carried onto
+  the board and its ghost keeps the grey, the fill and the red cost.
+* **Clicking to place something you cannot pay for** spends nothing: two or more gold short and the
+  cost **flashes**; **less than one coin short** and the placement is **queued** and plays itself the
+  moment the gold arrives. Picking any other card first cancels the queue — and the gold is only ever
+  spent when the troop actually lands.
+* **Hover** grows a card 1.25× and lifts it half out of the strip, drawn see-through (and thinner
+  still when troops stand behind it) so the board stays readable.
+* **Picking a card up** — press-and-drag and click-then-move are the same gesture: the card leaves
+  the strip and follows the cursor whether or not the button is held. Clicking the same card again
+  puts it back.
+* Over the board it becomes a **transparent ghost of itself snapped to the grid** (the tile centre,
+  or a 2x2 building's whole footprint) on top of the **board preview**: tile outline, tinted swarm
+  ghost, spell radius.
+* **Release or click on the board** deploys it; anywhere else leaves it armed.
+* **It always flies back into its slot** (0.34 s, eased) instead of snapping — after a deploy, on right click, on
+  Esc, or when it is carried back off the board after being on it.
+* **Drawing while you hold a card keeps holding it**: when a full hand throws its leftmost card away
+  every slot shifts, and the selection follows the card rather than the slot.
+* **NEXT** — the next card's edge is traced by a progress line that starts and ends at its top-left
+  corner and fills with the draw timer. It is your team colour, and your opponent's while the hand
+  is full (the next draw throws the leftmost card away).
 
 ### Hover previews
 
@@ -241,6 +318,10 @@ While a card is armed, the tile under the cursor is outlined on the grid and a g
 placement is drawn on the **tile centre**: swarms show the whole formation, the ghost is
 half-transparent and tinted the placing team's colour, and spells draw their damage radius.
 Legal tiles highlight green, illegal red.
+
+The **Firebolt** is the exception: it locks onto an enemy **troop** under the cursor, rings it instead
+of outlining a tile, and both its preview and its cast follow the troop's live position — so it keeps
+tracking a moving target and lands on it, not on the ground under it.
 
 ### Towers
 
@@ -253,34 +334,82 @@ Towers fire an **aimed single-target bolt** — no splash, so a stacked pair onl
 * On the way home it can still clip **anything closer than that target**, once each.
 * It travels at 2 tiles/s, so a long throw is a slow, readable commitment.
 
-## The bot (utility AI v1)
+## The bots
 
-`scripts/bot.gd`. Player 2 is bot-controlled by default; **B** toggles it, and its
-"thinking" (the card it is about to play, plus a target ring on the board) is only
-drawn while **both hands are visible** (Tab).
+Player 2 is bot-controlled by default; **B** toggles it, and a bot's "thinking" (the card it is
+about to play, plus a target ring) is only drawn while **both hands are visible** (Tab).
 
-Decision loop, ~2 Hz plus a 0.55 s telegraph before committing:
+* `scripts/bot.gd` — **v1**, the flat utility scorer. The baseline the harness measures against.
+* `scripts/bot2.gd` — **v2**, perception → state → scored play, all card knowledge in roles.
+* `scripts/bot_matrix.gd` — card roles + the answers table.
+* `scripts/bot_sim.gd` — the headless A/B harness.
 
-1. **Candidates** — every affordable card x a jittered set of anchor tiles (near
-   enemies, near enemy towers, our lane openings, our towers, the band).
-2. **Score** — gold pressure + defence value (summed enemy threat within 4 tiles,
-   falling off with distance) + push value (progress toward the nearest enemy
-   tower) + spell value (damage fraction x worth, towers worth more) + band control
-   bonus − a cost penalty that shrinks when gold is near the cap.
-3. **Pick** — sort, keep the top 3, softmax-weighted random choice with a per-bot
-   seeded RNG. Same seed = same match; new seed = new match.
-4. **Telegraph** — hold ~0.55 s with the card highlighted, then deploy.
+### v1 (baseline)
 
-Self-play harness (headless, fast-forward):
+~2 Hz decision tick plus a 0.55 s telegraph. Candidates are every affordable card × a jittered set
+of anchor tiles (near enemies, near enemy towers, our lane openings, our towers, the band). One flat
+score: gold pressure + enemy threat within 4 tiles + progress toward the nearest enemy tower + spell
+damage fraction + a band bonus − a cost penalty. Top 3 go through a seeded softmax.
+
+### v2
+
+It reads the board first, then picks a state:
+
+| state | when | what it does |
+| --- | --- | --- |
+| **DEFEND** | enemy units threatening one of my towers past a pressure threshold | plays the best *answer* to that cluster, lands it beside the cluster, no softmax — a tower is at stake |
+| **COUNTER** | my troops are alive on their half | supports the survivors from behind |
+| **ATTACK** | board is quiet and gold ≥ 6 | pushes the weakest non-crown tower: tank first, ranged/splash once something is walking |
+| **HOLD** | none of the above | spends nothing rather than feeding |
+
+"How good is this card here" comes from the **role matrix**, never from card names — decks shuffle, so
+the bot reasons about the hand it actually holds. Roles are derived from card data: `stationary` →
+building, `swarm_offsets` ≥ 3 → swarm, `flying_unit` → air, `reach` ≥ 1.8 → ranged, `hp` ≥ 150 →
+tank, `type` = spell → spell. A new card needs tags, not a new row:
+
+| answer ↓ / threat → | swarm | tank | ranged | melee | building | air |
+| --- | --- | --- | --- | --- | --- | --- |
+| air | | | | 2.0 | 2.5 | |
+| melee | | 1.6 | 2.0 | | 1.0 | |
+| swarm | | 2.0 | 1.2 | | 0.8 | |
+| splash | 2.6 | | 1.0 | | 2.0 | |
+| ranged | | | | | 0.6 | 1.5 |
+| spell | 2.2 | | 1.0 | | 1.2 | |
+| tank | 0.8 | | 1.2 | | | |
+
+A card that cannot hit air scores nothing against a flyer (except spells), and a defensive play that
+lands more than ~3.4 tiles from the danger is refused outright.
+
+### Measuring it: the A/B harness
 
 ```
-godot --headless --fixed-fps 60 --quit-after 20000 --path . -- --bots=both --scenario=bot --log
+godot --headless --path . --fixed-fps 60 -- --botsim=<seed>      # v2 vs v1 (side flips with seed parity)
+godot --headless --path . --fixed-fps 60 -- --botsim=<100+seed>  # control: v1 vs v1
 ```
 
-Known gaps, in rough priority: no counter-knowledge (it reacts to threat, not to
-*which* card is coming), no tracking of the opponent's gold, spells valued only for
-immediate damage, no retreating, and band control is a flat bonus rather than a
-plan.
+One line per match, ~20 s of wall time for 150 s of game:
+
+```
+BOTSIM result seed=0 v2=0 winner=-1 time=150.0 hp0=331 hp1=363 tow0=3 tow1=2 plays0=18 plays1=16 gold0=51 gold1=47
+```
+
+Decks are shuffled from the seed, the two hero abilities are handed out evenly across seeds, the v2
+side flips with parity so lane bias cancels, and a match ends exactly like a real one: a commander
+tower falls, or the 150 s clock runs out and the tower HP is summed. Same seed = same match, byte for
+byte.
+
+**Last measured at 0.3.9** — the card set, abilities and match rules have all changed since, so
+re-run the baseline before trusting these numbers. 8 seeds, 4 per side: v2 went **5 wins, 3 losses** and
+averaged **+129 tower HP**. A v1-vs-v1 control over 6 seeds shows the weaker side of the board is
+worth ±138 HP on its own, so the side-corrected gain is ≈ +130 HP — smaller than the **+363 HP / 3-0**
+it scored before the clock rules landed, because overtime's double gold makes the last minute a
+scramble where card-count and tempo matter less.
+
+An "always spend on a quiet board" tempo bonus was also tried: it made v2 push into nothing and fall
+to 2W-2L / **−26 HP** average, so it was reverted. The remaining known gaps are the same as v1's,
+in priority order: the hero ability still fires whenever gold ≥ 5 instead of when it will connect,
+no tracking of the opponent's gold, spells valued only for damage, no retreating, and lane control
+is still a flat bonus rather than a plan.
 
 ## Verification hooks
 
@@ -294,3 +423,19 @@ godot --path . -- --scenario=click --log              # simulated mouse: card ->
 godot --path . -- --scenario=kit --shots=<abs dir>    # scripted visual kit
 godot --path . -- --scenario=win --shots=<abs dir>    # match-over screen
 ```
+
+Bot A/B harness — one headless match per run, deterministic for a seed:
+
+```
+godot --headless --path . --fixed-fps 60 -- --botsim=<seed>      # v2 vs v1, sides alternate
+godot --headless --path . --fixed-fps 60 -- --botsim=<100+seed>  # control: v1 vs v1
+```
+
+**What counts as verification here**, cheapest first: an eval assertion for
+behaviour (rects, ranges, cooldowns, states); the seeded sim line for a refactor
+(run before and after and compare bytes); a *single full-resolution* screenshot for
+rendering-only questions. Art and game feel cannot be verified from inside the
+engine — those go to the human.
+
+> Adding a card: [`NOTES.md` §2](NOTES.md) has the checklist (data, art in two
+> dispatch tables, attack name, optional behaviour hook, README row).

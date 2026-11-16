@@ -14,7 +14,8 @@ func show_for(k: String, tm: int, at: Vector2) -> void:
 	team = tm
 	position = at
 	visible = true
-	modulate = Color(0.72, 0.88, 1.0, 0.62) if tm == 0 else Color(1.0, 0.78, 0.78, 0.62)
+	var c: Color = arena.team_color(tm).lightened(0.4) if arena != null else Color(0.85, 0.9, 1.0)
+	modulate = Color(c.r, c.g, c.b, 0.62)
 	queue_redraw()
 
 

@@ -37,6 +37,11 @@ var home_point := Vector2.ZERO
 var target_node: Node = null
 var burn := 0.0
 var burn_ticks := 4
+## Seconds of paralysis applied to whatever this hits (Pen's blowgun).
+var stun := 0.0
+## Shotgun pellet: the first body it crosses takes it, and then it is spent. No
+## pierce, and it does not need a locked target.
+var first_hit := false
 var knock_tiles := 0.0
 var tower_mult := 1.0
 var spell_blast := false
@@ -48,6 +53,8 @@ func setup(a: Node2D, f: Vector2, t: Vector2, tm: int, dm: float, sp: float, k: 
 	target_node = target_n
 	burn = float(payload.get("burn", 0.0))
 	burn_ticks = int(payload.get("burn_ticks", 4))
+	stun = float(payload.get("stun", 0.0))
+	first_hit = bool(payload.get("first_hit", false))
 	knock_tiles = float(payload.get("knock", 0.0))
 	tower_mult = float(payload.get("tower_mult", 1.0))
 	spell_blast = bool(payload.get("spell", false))
@@ -98,6 +105,21 @@ func _travel_out(delta: float) -> void:
 	travel += speed_px * delta
 	var f := clampf(travel / leg, 0.0, 1.0)
 	position = from.lerp(to, f)
+	# a shotgun pellet: whichever body it reaches first eats it, then it is done
+	if first_hit:
+		for u in area.enemy_units(team):
+			if not is_instance_valid(u) or u.dead:
+				continue
+			var uid: int = u.get_instance_id()
+			if hit.has(uid):
+				continue
+			if area.tiles_between(position, u.position) <= 0.3 + float(u.get_radius_t()):
+				hit[uid] = true
+				if dmg > 0.0:
+					var src: Node = owner_node if is_instance_valid(owner_node) else null
+					u.take_damage(dmg, position, src)
+				_finish_out()
+				return
 	# a boomerang only strikes the thing it was aimed at on the way out
 	if target_node != null and is_instance_valid(target_node):
 		var id: int = target_node.get_instance_id()
@@ -106,7 +128,12 @@ func _travel_out(delta: float) -> void:
 			if area.tiles_between(position, target_node.position) <= tr:
 				hit[id] = true
 				if dmg > 0.0:
-					target_node.take_damage(dmg, position)
+					# credit the shooter, not the bolt: a hedgehog's quills need to
+					# know who to poke back at
+					var src: Node = owner_node if is_instance_valid(owner_node) else null
+					target_node.take_damage(dmg, position, src)
+				if stun > 0.0 and target_node.get("stunned") != null:
+					target_node.stunned = maxf(float(target_node.stunned), stun)
 				if burn > 0.0 and target_node.has_method("apply_burn"):
 					target_node.apply_burn(burn, burn_ticks)
 				_finish_out()
@@ -159,7 +186,7 @@ func _pierce_hits() -> void:
 			continue
 		if area.tiles_between(position, u.position) <= 0.6 + float(u.get_radius_t()):
 			hit[key] = true
-			u.take_damage(dmg, position)
+			u.take_damage(dmg, position, owner_node if is_instance_valid(owner_node) else null)
 			if burn > 0.0 and u.has_method("apply_burn"):
 				u.apply_burn(burn, burn_ticks)
 
@@ -187,13 +214,22 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, 4.0 * fl, Color(1.0, 0.75, 0.3))
 		draw_arc(Vector2.ZERO, 7.0 * fl, 0.0, TAU, 16, Color(1.0, 0.9, 0.55, 0.8), 1.5, true)
 		return
-	if kind == "rifle":
-		draw_line(Vector2(-9, 0), Vector2(3, 0), Color(1.0, 0.86, 0.5, 0.9), 2.0, true)
-		draw_circle(Vector2(4, 0), 2.2, Color(1.0, 0.95, 0.7))
+	if kind == "aphid":
+		draw_circle(Vector2.ZERO, 3.6, Color(0.96, 0.86, 0.52))
+		draw_circle(Vector2.ZERO, 1.9, Color(0.76, 0.46, 0.16))
+		return
+	if kind == "dart":
+		draw_line(Vector2(-7, 0), Vector2(7, 0), Color(0.55, 0.42, 0.2), 2.0, true)
+		draw_circle(Vector2(7, 0), 2.2, Color(0.9, 0.85, 0.6))
+		draw_line(Vector2(-7, 0), Vector2(-11, 0), Color(0.8, 0.3, 0.35), 2.5, true)
 		return
 	if kind == "chicken":
 		draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.55, 0.15, 0.85))
 		draw_circle(Vector2.ZERO, 2.6, Color(1.0, 0.85, 0.4))
+		return
+	if kind == "rifle":
+		draw_line(Vector2(-9, 0), Vector2(3, 0), Color(1.0, 0.86, 0.5, 0.9), 2.0, true)
+		draw_circle(Vector2(4, 0), 2.2, Color(1.0, 0.95, 0.7))
 		return
 	if kind == "alchemist":
 		draw_circle(Vector2.ZERO, radius_px, Color(0.55, 0.92, 0.5))

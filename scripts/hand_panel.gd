@@ -1,32 +1,63 @@
 class_name HandPanel
 extends Control
 
-## Bottom hand strip. Cards are compact TCG faces; hovering enlarges one,
-## dragging pulls it out at normal size, and dropping it on the board deploys.
-## While the cursor is over the board the dragged card fades out so the board's
-## own deploy preview takes over.
+## A player's hand. One DDHandCard node per hand slot owns that card's rect,
+## its hover / drag / return state and its tween; the panel owns the layout
+## policy (where a slot sits) and everything around the hand — backing, NEXT,
+## the full-hand discard warning and the debug shelf.
+##
+## Pressing a card arms it for the arena and lifts its node out of the strip. The
+## node follows the cursor from then on whether or not the button is still held —
+## a click and a press-and-drag are the same gesture — and it snaps to the grid
+## over the board. Releases are handled globally, because once the lifted card
+## leaves the strip this Control stops receiving mouse events.
 
-const SIDE := 16.0
 const GAP := 5.0
 const HAND_LEFT := 249.0
 const NEXT_CX := 1351.0
 const NEXT_W := 100.0
 
+## A hovered card is see-through enough to read the board underneath it, and
+## fades further while troops stand behind it.
+const HOVER_ALPHA := 0.6
+const HOVER_OCCLUDED_ALPHA := 0.32
+
+## Opponent hand: one column of up to four cards, then a second column to its
+## right — the first shrinks in width to make room for it.
+const COL_MIN := 8.0
+const COL_TOP := 34.0
+const COL_GAP := 6.0
+const COL_ROWS := 4
+const COL_BOTTOM := 8.0
+
 var player := 0
 var arena: Node2D = null
 var compact := false
 var clock := 0.0
-var hover := -1
-var dragging := -1
-var drag_pos := Vector2.ZERO
-var shelf_hover := -1
 var toggle_rect := Rect2()
 var ability_rect := Rect2()
+var cards: Array = []
+var drag_card: DDHandCard = null
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = false
+	_build_cards()
+
+
+## One pooled node per possible hand slot. Slots are re-bound to a card kind
+## instead of nodes being created and freed, so a slot keeps its node — and the
+## tween it owns — across draws and deploys.
+func _build_cards() -> void:
+	if not cards.is_empty():
+		return
+	var slots: int = int(arena.HAND_MAX) if arena != null else 8
+	for i in slots:
+		var c := DDHandCard.new()
+		c.setup(self, player, i)
+		add_child(c)
+		cards.append(c)
 
 
 func shelf_mode() -> bool:
@@ -39,14 +70,10 @@ func span_width() -> float:
 
 
 func card_w() -> float:
-	if compact:
-		return 100.0
 	return DDCard.hand_size(span_width(), maxi(hand().size(), 1)).x
 
 
 func card_h() -> float:
-	if compact:
-		return 156.0
 	return DDCard.hand_size(span_width(), maxi(hand().size(), 1)).y
 
 
@@ -54,95 +81,228 @@ func hand() -> Array:
 	return arena.hands[player] if arena != null else []
 
 
+## Slot rect for hand index i. The strip sizes its cards to the hand; the
+## opponent column stacks them down the right edge instead.
 func card_rect(i: int) -> Rect2:
-	var n: int = hand().size()
-	var cw := card_w()
-	var ch := card_h()
 	if compact:
-		# opponent column: stacked top to bottom
-		return Rect2((size.x - cw) * 0.5, 42.0 + float(i) * (ch + 10.0), cw, ch)
-	return Rect2(HAND_LEFT + float(i) * (cw + GAP), size.y - ch - 6.0, cw, ch)
+		return column_rect(i)
+	return Rect2(HAND_LEFT + float(i) * (card_w() + GAP), size.y - card_h() - 6.0, card_w(), card_h())
+
+
+func column_rect(i: int) -> Rect2:
+	var n: int = hand().size()
+	var cols: int = 1 if n <= COL_ROWS else 2
+	var col: int = int(float(i) / float(COL_ROWS))
+	var row: int = i % COL_ROWS
+	# every card in a column is the same size, sized so the whole column fits
+	var rows: int = mini(maxi(n, 1), COL_ROWS)
+	var avail_w: float = (size.x - COL_MIN * 2.0 - float(cols - 1) * COL_GAP) / float(cols)
+	var avail_h: float = size.y - COL_TOP - COL_BOTTOM
+	var ch: float = minf(avail_w * 1.45, (avail_h - float(rows - 1) * COL_GAP) / float(rows))
+	return Rect2(COL_MIN + float(col) * (avail_w + COL_GAP),
+		COL_TOP + float(row) * (ch + COL_GAP), avail_w, ch)
+
+
+## The NEXT card's box. The "next up" progress line will trace this rect,
+## starting and ending at its top-left corner.
+func next_rect() -> Rect2:
+	return Rect2(NEXT_CX - NEXT_W * 0.5, 96.0, NEXT_W, 88.0)
+
+
+## Panel accent: the colour of the team this hand belongs to.
+func accent_color() -> Color:
+	return arena.team_color(player) if arena != null else Color(0.36, 0.62, 0.95)
 
 
 func hit_card(p: Vector2) -> int:
-	var h: Array = hand()
-	for i in h.size():
-		if card_rect(i).has_point(p):
-			return i
+	var n: int = hand().size()
+	for c in cards:
+		if not c.visible or c.state == DDHandCard.S.DRAG:
+			continue
+		if c.index < 0 or c.index >= n:
+			continue
+		if c.home.has_point(p):
+			return c.index
 	return -1
+
+
+## Select a card the way a click does — used by the 1-8 keyboard shortcuts.
+func select_index(i: int) -> void:
+	_press_card(i)
 
 
 func _process(delta: float) -> void:
 	clock += delta
-	if arena != null:
-		var m := get_local_mouse_position()
-		hover = hit_card(m) if not shelf_mode() else hover
-		if dragging >= 0:
-			drag_pos = m
+	if arena == null:
+		return
+	_sync_drag()
+	_layout_cards()
 	queue_redraw()
 
+
+## Bind every hand slot to a card node for this frame, then let the cards place
+## themselves. Nodes are matched to slots **by card kind**, not by pool position:
+## when a full hand discards its leftmost card every index shifts, and the card
+## the player is holding must stay the card they are holding.
+func _layout_cards() -> void:
+	var h: Array = hand()
+	var shelf := shelf_mode()
+	var faces: bool = int(arena.view_mode) == 1
+	var pool: Array = cards.duplicate()
+	var bound := {}
+	# exact matches first, so a lifted card keeps its own node and its slot
+	for i in mini(h.size(), cards.size()):
+		for cand in pool:
+			if String(cand.kind) == String(h[i]):
+				bound[i] = cand
+				pool.erase(cand)
+				break
+	# then any free node for the kinds that just arrived
+	for i in mini(h.size(), cards.size()):
+		if bound.has(i):
+			continue
+		for cand in pool:
+			if cand.state == DDHandCard.S.DRAG or cand.state == DDHandCard.S.RETURN:
+				continue
+			bound[i] = cand
+			pool.erase(cand)
+			break
+	for i in bound.keys():
+		var c: DDHandCard = bound[i]
+		var r := card_rect(int(i))
+		if compact and r.end.y > size.y:
+			c.visible = false
+			continue
+		c.index = int(i)
+		c.set_slot(r)
+		c.grow = not compact
+		c.set_card(String(h[i]), compact and not faces)
+		c.visible = not shelf
+		if c.visible and pending_arrivals.has(String(h[i])):
+			var from: Vector2 = pending_arrivals[String(h[i])]
+			pending_arrivals.erase(String(h[i]))
+			c.fly_in_from(from)
+	# whatever is left over is either flying home or not in the hand at all
+	for c in pool:
+		c.visible = c.state == DDHandCard.S.RETURN
+
+
+# --------------------------------------------------------- board-facing hooks
+
+func is_over_board(local: Vector2) -> bool:
+	return arena != null and arena.board_rect().has_point(global_position + local)
+
+
+## Where a lifted card previews. The arena owns the aiming rules — including the
+## Firebolt's troop lock, which follows a troop instead of snapping to tiles.
+func snap_world(local: Vector2) -> Vector2:
+	var world: Vector2 = global_position + local
+	return arena.aim_point(world) if arena != null else world
+
+
+## Can this player pay for the card right now?
+func can_afford(kind: String) -> bool:
+	return arena != null and kind != "" and float(arena.gold[player]) >= float(DDCard.cost(kind))
+
+
+## How much of the card's cost the player already holds (0..1).
+func gold_fraction(kind: String) -> float:
+	if arena == null or kind == "":
+		return 1.0
+	return clampf(float(arena.gold[player]) / float(maxi(DDCard.cost(kind), 1)), 0.0, 1.0)
+
+
+## Alpha a hovered card takes: see-through, and thinner still with troops behind.
+func hover_alpha_for(rect: Rect2) -> float:
+	if arena != null and arena.any_units_under(rect):
+		return HOVER_OCCLUDED_ALPHA
+	return HOVER_ALPHA
+
+
+# -------------------------------------------------------------------- drawing
 
 func _draw() -> void:
 	if arena == null:
 		return
 	var font := ThemeDB.fallback_font
-	var accent: Color = Color(0.36, 0.62, 0.95) if player == 0 else Color(0.92, 0.4, 0.42)
+	var accent := accent_color()
 	# backing
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.1, 0.1, 0.14, 0.94), true)
 	draw_rect(Rect2(0, 0, size.x, 5.0), accent, true)
 	if shelf_mode():
-		_draw_shelf(font)
+		# the all-cards overlay draws itself
 		return
-	if player == 1:
-		_draw_opponent(font)
-		return
-	var h: Array = hand()
-	# gold + labels on the left
-	if not compact:
-		draw_string(font, Vector2(20, 152), "PLAYER %d" % (player + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
-			accent.lightened(0.3))
-		# NEXT sits at the right end with a draw-timer bar underneath
-		if arena.queues[player].size() > 0:
-			var nk := String(arena.queues[player][0])
-			draw_string(font, Vector2(NEXT_CX - NEXT_W * 0.5, 90), "NEXT", HORIZONTAL_ALIGNMENT_CENTER, NEXT_W, 11,
-				Color(0.62, 0.64, 0.74))
-			DDCardFace.draw(self, nk, Rect2(NEXT_CX - NEXT_W * 0.5, 96, NEXT_W, 88), 0.9)
-			var frac: float = 1.0 - clampf(float(arena.draw_timer[player]) / float(arena.DRAW_INTERVAL), 0.0, 1.0)
-			var bar := Rect2(NEXT_CX - NEXT_W * 0.5, 188, NEXT_W, 8.0)
-			draw_rect(bar, Color(0.16, 0.16, 0.2, 1.0), true)
-			draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)),
-				Color(0.55, 0.85, 1.0, 0.9) if frac < 1.0 else Color(1.0, 0.9, 0.4), true)
-			draw_rect(bar, Color(0.4, 0.4, 0.5), false, 1.0)
-	# cards
-	for i in h.size():
-		if i == dragging:
-			continue
-		var r := card_rect(i)
-		if i == hover:
-			var grow := r.size * 1.25
-			var pos := r.position + Vector2(-r.size.x * 0.12, -r.size.y * 0.95)
-			pos.x = clampf(pos.x, 8.0, size.x - grow.x - 8.0)
-			pos.y = -grow.y + 26.0
-			var big := Rect2(pos, grow)
-			# fade the card if troops stand behind it, so the board stays readable
-			var hidden_behind: bool = arena.any_units_under(Rect2(global_position + big.position, big.size))
-			DDCardFace.draw(self, String(h[i]), big, 0.55 if hidden_behind else 1.0)
-		else:
-			DDCardFace.draw(self, String(h[i]), r, 1.0)
-	# dragged card follows the cursor, fading over the board
-	if dragging >= 0 and dragging < h.size():
-		var m := get_global_mouse_position()
-		var over_board: bool = arena.board_rect().has_point(m)
-		var a := 0.22 if over_board else 1.0
-		var r2 := Rect2(drag_pos - Vector2(card_w(), card_h()) * 0.5, Vector2(card_w(), card_h()))
-		DDCardFace.draw(self, String(h[dragging]), r2, a)
-	if compact:
-		return
-	# full hand: the leftmost card is about to be discarded on the next draw
-	if arena.hands[player].size() >= arena.HAND_MAX:
-		_draw_discard_warning(font, h)
-	# buttons
 	toggle_rect = Rect2()
+	if compact:
+		# the opponent column is nothing but cards: their nodes draw themselves
+		return
+	draw_string(font, Vector2(20, 152), "PLAYER %d" % (player + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
+		accent.lightened(0.3))
+	_draw_next(font)
+	# full hand: the leftmost card is about to be discarded on the next draw
+	if hand().size() >= arena.HAND_MAX:
+		_draw_discard_warning(font)
+
+
+## NEXT slot at the right end of the strip; the draw timer is the edge trace.
+func _draw_next(font: Font) -> void:
+	if arena.queues[player].is_empty():
+		return
+	var r := next_rect()
+	draw_string(font, Vector2(r.position.x, 90.0), "NEXT", HORIZONTAL_ALIGNMENT_CENTER, NEXT_W, 11,
+		Color(0.62, 0.64, 0.74))
+	DDCardFace.draw(self, String(arena.queues[player][0]), r, 0.9)
+	var frac: float = 1.0 - clampf(float(arena.draw_timer[player]) / float(arena.DRAW_INTERVAL), 0.0, 1.0)
+	# the edge trace is the draw timer: no bar underneath it any more
+	_next_progress_line(frac, hand().size() >= arena.HAND_MAX)
+
+
+## A line tracing the NEXT card's edge, starting and ending at its top-left
+## corner, drawn up to the draw timer. It is your colour normally and the
+## opponent's once the hand is full — the next draw throws a card away.
+func _next_progress_line(frac: float, full: bool) -> void:
+	var r := next_rect()
+	var col: Color = arena.team_color(1 - player) if full else accent_color()
+	var corners := [
+		Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y), r.position,
+	]
+	var left: float = clampf(frac, 0.0, 1.0) * 2.0 * (r.size.x + r.size.y)
+	var pts := PackedVector2Array([r.position])
+	var prev: Vector2 = r.position
+	for c in corners:
+		if left <= 0.0:
+			break
+		var seg: float = prev.distance_to(c)
+		if left >= seg:
+			pts.append(c)
+			left -= seg
+		else:
+			pts.append(prev.lerp(c, left / seg))
+			left = 0.0
+		prev = c
+	if pts.size() < 2:
+		return
+	draw_polyline(pts, Color(0.05, 0.05, 0.07, 0.55), 5.0, true)
+	draw_polyline(pts, col, 2.5, true)
+
+
+## Red arrow pointing at the card that a draw would throw away.
+func _draw_discard_warning(font: Font) -> void:
+	var r := card_rect(0)
+	var y := r.position.y + r.size.y * 0.5
+	var pulse := 0.55 + 0.45 * absf(sin(clock * 5.0))
+	var col := Color(1.0, 0.3, 0.3, 0.5 + 0.5 * pulse)
+	# arrow points left, away from the card: triangle head on the far left,
+	# dark grey body carrying the word
+	var head := Vector2(r.position.x - 118.0, y)
+	draw_colored_polygon(PackedVector2Array([
+		head, head + Vector2(22.0, -16.0), head + Vector2(22.0, 16.0),
+	]), col)
+	var body := Rect2(head + Vector2(20.0, -9.0), Vector2(92.0, 18.0))
+	draw_rect(body, Color(0.18, 0.18, 0.22, 0.95), true)
+	draw_rect(body, Color(1.0, 0.35, 0.35, 0.9), false, 1.5)
+	draw_string(font, body.position + Vector2(0, 14), "DISCARD", HORIZONTAL_ALIGNMENT_CENTER, body.size.x, 13,
+		Color(0.82, 0.82, 0.86, 0.75 + 0.25 * pulse))
 
 
 ## The opponent does not show a hand: their gold reads as ten coins instead.
@@ -176,62 +336,6 @@ func _draw_gold_pips(font: Font) -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.98, 0.85, 0.45))
 
 
-## Red arrow pointing at the card that a draw would throw away.
-func _draw_discard_warning(font: Font, h: Array) -> void:
-	var r := card_rect(0)
-	var y := r.position.y + r.size.y * 0.5
-	var pulse := 0.55 + 0.45 * absf(sin(clock * 5.0))
-	var col := Color(1.0, 0.3, 0.3, 0.5 + 0.5 * pulse)
-	# arrow points left, away from the card: triangle head on the far left,
-	# dark grey body carrying the word
-	var head := Vector2(r.position.x - 118.0, y)
-	draw_colored_polygon(PackedVector2Array([
-		head, head + Vector2(22.0, -16.0), head + Vector2(22.0, 16.0),
-	]), col)
-	var body := Rect2(head + Vector2(20.0, -9.0), Vector2(92.0, 18.0))
-	draw_rect(body, Color(0.18, 0.18, 0.22, 0.95), true)
-	draw_rect(body, Color(1.0, 0.35, 0.35, 0.9), false, 1.5)
-	draw_string(font, body.position + Vector2(0, 14), "DISCARD", HORIZONTAL_ALIGNMENT_CENTER, body.size.x, 13,
-		Color(0.82, 0.82, 0.86, 0.75 + 0.25 * pulse))
-
-
-## Opponent hand: faces when revealed by TAB, ornate backs when hidden. The
-## formation is the same either way — two columns once they hold six or more.
-func _draw_opponent(font: Font) -> void:
-	var h: Array = hand()
-	var n := h.size()
-	var cols := 2 if n >= 6 else 1
-	var gap := 6.0
-	var cw := (size.x - 16.0 - float(cols - 1) * gap) / float(cols)
-	var ch := cw * 1.45
-	for i in n:
-		var col: int = i % cols
-		var row: int = i / cols
-		var r := Rect2(8.0 + float(col) * (cw + gap), 34.0 + float(row) * (ch + gap), cw, ch)
-		if r.end.y > size.y:
-			break
-		if arena.view_mode == 1:
-			DDCardFace.draw(self, String(h[i]), r, 0.94)
-		else:
-			_draw_card_back(r)
-
-
-func _draw_card_back(r: Rect2) -> void:
-	draw_rect(r, Color(0.1, 0.08, 0.09))
-	draw_rect(r.grow(-3.0), Color(0.92, 0.74, 0.2), false, 2.0)
-	draw_rect(r.grow(-7.0), Color(0.85, 0.15, 0.15), false, 1.5)
-	for i in 5:
-		var y := r.position.y + r.size.y * (0.16 + float(i) * 0.14)
-		var col := Color(0.9, 0.72, 0.18) if i % 2 == 0 else Color(0.12, 0.1, 0.1)
-		draw_rect(Rect2(r.position.x + r.size.x * 0.16, y, r.size.x * 0.68, r.size.y * 0.07), col)
-	var c := r.get_center()
-	draw_circle(c, r.size.x * 0.24, Color(0.12, 0.1, 0.1))
-	draw_circle(c, r.size.x * 0.24, Color(0.92, 0.74, 0.2), false, 2.0)
-	for i in 8:
-		var ang := TAU * float(i) / 8.0
-		draw_line(c, c + Vector2(cos(ang), sin(ang)) * r.size.x * 0.2, Color(0.85, 0.15, 0.15), 2.0, true)
-
-
 func _draw_ability(font: Font) -> void:
 	var label: String = arena.ability_name(player)
 	var ready: bool = arena.ability_ready(player)
@@ -245,20 +349,23 @@ func _draw_ability(font: Font) -> void:
 		ability_rect.size.x - 20.0, 12, Color(0.7, 0.85, 0.72) if ready else Color(0.7, 0.7, 0.8))
 	if not ready:
 		var f := clampf(cd / arena.ABILITY_COOLDOWN, 0.0, 1.0)
-		draw_rect(Rect2(ability_rect.position + Vector2(2, ability_rect.size.y - 8), 
+		draw_rect(Rect2(ability_rect.position + Vector2(2, ability_rect.size.y - 8),
 			Vector2((ability_rect.size.x - 4.0) * (1.0 - f), 6.0)), Color(0.45, 0.8, 1.0, 0.8), true)
 
 
-## Releases are handled globally: once the drag leaves the strip the panel no
-## longer receives mouse events, but the drop still has to land.
+# ---------------------------------------------------------------------- input
+
+## Releases are handled globally: once the lifted card leaves the strip the panel
+## no longer receives mouse events, but the drop still has to land. A release
+## that is not over the board leaves the card lifted and armed, which is what
+## makes a plain click keep following the cursor just like a held drag.
 func _input(event: InputEvent) -> void:
-	if arena == null or dragging < 0:
+	if arena == null or drag_card == null:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		var m := get_global_mouse_position()
-		if arena.board_rect().has_point(m):
-			arena.try_deploy_at(m)
-		dragging = -1
+		var world := get_global_mouse_position()
+		if arena.board_rect().has_point(world):
+			arena.try_deploy_at(world)
 		get_viewport().set_input_as_handled()
 
 
@@ -267,77 +374,136 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			dragging = -1
-			arena.clear_selection()
+			cancel_drag()
 			accept_event()
 			return
 		if event.button_index != MOUSE_BUTTON_LEFT:
 			return
-		var p: Vector2 = event.position
 		if event.pressed:
 			if shelf_mode():
-				var idx := _shelf_hit(p)
-				if idx >= 0:
-					arena.pick_debug_card(String(DDCard.ORDER[idx]))
+				# the all-cards grid owns that overlay; keep the strip inert
 				accept_event()
 				return
-			if toggle_rect.has_point(p):
-				arena.set_view_mode(1 - arena.view_mode)
+			if toggle_rect.has_point(event.position):
+				arena.set_view_mode(1 - int(arena.view_mode))
 				accept_event()
 				return
-			if ability_rect.has_point(p):
+			if ability_rect.has_point(event.position):
 				arena.use_ability(player)
 				accept_event()
 				return
-			var i := hit_card(p)
+			var i := hit_card(event.position)
 			if i >= 0:
-				dragging = i
-				drag_pos = get_local_mouse_position()
-				arena.pick_card(player, i)
+				_press_card(i)
 				accept_event()
 				return
 			arena.clear_selection()
 			accept_event()
 		else:
-			if dragging >= 0:
-				var over_board: bool = arena.board_rect().has_point(get_global_mouse_position())
-				if over_board:
-					arena.try_deploy_at(get_global_mouse_position())
-				dragging = -1
-				accept_event()
+			accept_event()
 	elif event is InputEventMouseMotion:
-		drag_pos = get_local_mouse_position()
-		if shelf_mode():
-			shelf_hover = _shelf_hit(get_local_mouse_position())
+		pass
 
 
-# ---------------------------------------------------------------- debug shelf
+## A press lifts the card whether or not the player can pay for it — a card you
+## cannot afford can still be picked up, it just cannot be carried into the arena.
+## Pressing the card that is already out puts it back, and because the lift is
+## driven by the lifted card rather than by the mouse button, holding the press
+## and releasing it change nothing: a click followed by a move is a drag.
+func _press_card(i: int) -> void:
+	if arena.match_over:
+		return
+	var h: Array = hand()
+	if i < 0 or i >= h.size():
+		return
+	var kind := String(h[i])
+	if drag_card != null and String(drag_card.kind) == kind:
+		arena.clear_selection()
+		_end_drag()
+		return
+	arena.clear_selection()
+	arena.pick_card(player, i)
+	_begin_drag(i)
 
-const SHELF_COLS := 4
-const SHELF_TOP := 12.0
-const SHELF_H := 96.0
+
+func _begin_drag(i: int) -> void:
+	_end_drag()
+	for c in cards:
+		if c.index == i and c.visible:
+			drag_card = c
+			c.begin_drag()
+			return
 
 
-func _shelf_cell(i: int) -> Rect2:
-	var w := (size.x - SIDE * 2.0) / float(SHELF_COLS)
-	var col := i % SHELF_COLS
-	var row := i / SHELF_COLS
-	return Rect2(SIDE + float(col) * w, SHELF_TOP + float(row) * SHELF_H, w - 8.0, SHELF_H - 8.0)
+## Keep the lifted card honest: it heads home when the arena drops the selection
+## (deploy, Esc, right click, an empty click) and when it is carried back off the
+## board. A card the player cannot pay for is still held and still aimed — the
+## arena decides what a placement costs at the moment it would land.
+func _sync_drag() -> void:
+	if drag_card == null:
+		return
+	if not _armed(drag_card):
+		_end_drag()
+		return
+	if is_over_board(get_local_mouse_position()):
+		drag_card.on_board = true
+	elif drag_card.on_board:
+		cancel_drag()
 
 
-func _shelf_hit(p: Vector2) -> int:
-	for i in DDCard.ORDER.size():
-		if _shelf_cell(i).has_point(p):
-			return i
-	return -1
+## Throw the armed card away; it flies back into the hand.
+func cancel_drag() -> void:
+	arena.clear_selection()
+	_end_drag()
 
 
-func _draw_shelf(font: Font) -> void:
-	var kinds: Array = DDCard.ORDER
-	draw_string(font, Vector2(SIDE, 30), "DEBUG — ALL CARDS", HORIZONTAL_ALIGNMENT_LEFT, -1, 16,
-		Color(0.9, 0.92, 1.0))
-	for i in kinds.size():
-		var r := _shelf_cell(i)
-		DDCardFace.draw(self, String(kinds[i]), r, 1.0 if shelf_hover == i else 0.92)
-		if arena.debug_kind == String(kinds[i]):
-			draw_rect(r, Color(1, 1, 1, 0.85), false, 3.0)
+## The card is done with the cursor; it flies into whatever slot it has now.
+func _end_drag() -> void:
+	if drag_card == null:
+		return
+	drag_card.end_drag()
+	drag_card = null
+
+
+## Selection is tracked by card kind, not by slot index: the cards in a hand are
+## unique, and a discard can shuffle the slots under the player's feet.
+func _armed(card: DDHandCard) -> bool:
+	if arena.debug_kind != "" or arena.selected_player != player:
+		return false
+	return String(arena.selection_kind()) == String(card.kind)
+
+
+## True while this slot's cost should be flashing (the player just tried to place
+## something they cannot pay for).
+## Casts left on this card (2 for a fresh Firebolt, 1 after the first throw).
+func charges_left(kind: String) -> int:
+	return arena.charges_of(player, kind) if arena != null else 1
+
+
+func is_rejected(i: int) -> bool:
+	if arena == null:
+		return false
+	if int(arena.reject["player"]) != player or int(arena.reject["index"]) != i:
+		return false
+	return float(arena.reject["timer"]) > 0.0
+
+
+# (the debug shelf is a DDCardGrid overlay owned by the arena)
+
+
+# ------------------------------------------------------------ card arrivals
+
+## Cards that have to fly into the hand rather than simply appearing (Pen, when
+## Penny is played). Keyed by kind, consumed by the next layout pass.
+var pending_arrivals := {}
+
+
+func note_arrival(kind: String, world: Vector2) -> void:
+	pending_arrivals[kind] = world
+	# the card being replaced does not fly home as well
+	if drag_card != null:
+		drag_card.retire_play()
+		drag_card = null
+	for c in cards:
+		if String(c.kind) == kind and c.state == DDHandCard.S.RETURN:
+			c.retire_play()
