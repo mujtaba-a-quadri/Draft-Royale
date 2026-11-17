@@ -39,6 +39,11 @@ var burn := 0.0
 var burn_ticks := 4
 ## Seconds of paralysis applied to whatever this hits (Pen's blowgun).
 var stun := 0.0
+## Poison counters added to whatever this hits (the ballista spider's spit).
+var poison := 0.0
+## A splash shot may follow a unit: its landing point tracks this node while it
+## lives, so the burst arrives where the target is, not where it was.
+var seek: Node = null
 ## Shotgun pellet: the first body it crosses takes it, and then it is spent. No
 ## pierce, and it does not need a locked target.
 var first_hit := false
@@ -54,6 +59,8 @@ func setup(a: Node2D, f: Vector2, t: Vector2, tm: int, dm: float, sp: float, k: 
 	burn = float(payload.get("burn", 0.0))
 	burn_ticks = int(payload.get("burn_ticks", 4))
 	stun = float(payload.get("stun", 0.0))
+	poison = float(payload.get("poison", 0.0))
+	seek = payload.get("seek", null)
 	first_hit = bool(payload.get("first_hit", false))
 	knock_tiles = float(payload.get("knock", 0.0))
 	tower_mult = float(payload.get("tower_mult", 1.0))
@@ -103,6 +110,8 @@ func _physics_process(delta: float) -> void:
 
 func _travel_out(delta: float) -> void:
 	travel += speed_px * delta
+	if seek != null and is_instance_valid(seek) and seek.get("dead") != true:
+		to = seek.position
 	var f := clampf(travel / leg, 0.0, 1.0)
 	position = from.lerp(to, f)
 	# a shotgun pellet: whichever body it reaches first eats it, then it is done
@@ -136,6 +145,8 @@ func _travel_out(delta: float) -> void:
 					target_node.stunned = maxf(float(target_node.stunned), stun)
 				if burn > 0.0 and target_node.has_method("apply_burn"):
 					target_node.apply_burn(burn, burn_ticks)
+				if poison > 0.0 and target_node.has_method("add_poison"):
+					target_node.add_poison(poison)
 				_finish_out()
 				return
 	elif pierce:
@@ -197,9 +208,18 @@ func _impact() -> void:
 		area.spell_blast(to, splash, dmg, team, tower_mult, burn, knock_tiles, kind, burn_ticks)
 		return
 	if splash > 0.0:
+		# every splash shows its reach: a light ring in the attacker's colour
+		area.spawn_splash_ring(to, splash, team)
 		area.damage_at_point(to, splash, dmg, team, tower_mult)
 		if burn > 0.0:
 			area.apply_burn_at(to, splash, burn, team)
+		if poison > 0.0:
+			# same reach rule as the damage: the edge of a body counts
+			for e in area.enemy_entities(team):
+				if not is_instance_valid(e) or not e.has_method("add_poison"):
+					continue
+				if area.tiles_between(to, e.position) <= splash + float(e.get_radius_t()) * 0.5:
+					e.add_poison(poison)
 	else:
 		area.damage_at_point(to, 0.0, dmg, team, tower_mult)
 		if burn > 0.0:
@@ -233,6 +253,12 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, ang, Vector2.ONE)
 		DDArt.standard(self, Vector2(-34, 0), Vector2(12, 0), DDArt.banner_color(area.team_color(team)), clock, 1.0, 1.0)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	if kind == "venom":
+		var wob: float = 1.0 + 0.2 * sin(clock * 26.0)
+		draw_circle(Vector2.ZERO, 6.5 * wob, Color(0.55, 0.25, 0.75, 0.55))
+		draw_circle(Vector2.ZERO, 4.0, Color(0.62, 0.9, 0.3))
+		draw_circle(Vector2(-1.5, -1.5), 1.5, Color(0.9, 1.0, 0.7))
 		return
 	if kind == "rifle":
 		draw_line(Vector2(-9, 0), Vector2(3, 0), Color(1.0, 0.86, 0.5, 0.9), 2.0, true)

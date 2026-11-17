@@ -61,9 +61,15 @@ func tiles_rolled() -> float:
 	return travelled / float(area.TILE)
 
 
-## One tile at birth, one more for every two tiles of travel.
+## One tile at birth, growing smoothly: one more for every two tiles of travel.
+## This is its size, and so the lane it flattens.
 func current_height() -> float:
-	return 1.0 + floorf(tiles_rolled() / GROWTH_TILES)
+	return 1.0 + tiles_rolled() / GROWTH_TILES
+
+
+## What its damage and shove count: whole tiles of height only.
+func whole_height() -> float:
+	return floorf(height_t)
 
 
 func _lane_half() -> float:
@@ -116,9 +122,9 @@ func _sweep() -> void:
 		if hit.has(key):
 			continue
 		hit[key] = true
-		u.take_damage(roll_dmg * height_t, position, self)
+		u.take_damage(roll_dmg * whole_height(), position, self)
 		if u.has_method("apply_impulse"):
-			u.apply_impulse(Vector2(dir, 0.0), push_t * height_t, 0.3)
+			u.apply_impulse(Vector2(dir, 0.0), push_t * whole_height(), 0.3)
 
 
 func _should_burst() -> bool:

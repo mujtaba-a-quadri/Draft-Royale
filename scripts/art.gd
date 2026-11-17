@@ -79,12 +79,25 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			_penny(ci, r, t, facing)
 		"pen":
 			_pen(ci, r, t, facing)
+		"troll":
+			troll(ci, r, facing, t, 0.45, ink_col)
 		"laniakea":
 			laniakea(ci, r, facing, t, 0, ink_col)
 		"femme":
 			femme(ci, r, facing, t, 0, ink_col)
 		"shiesty":
 			shiesty(ci, r, facing, t, ink_col)
+		"spiderling":
+			_spiderling(ci, r, t, facing)
+		"spideregg":
+			_spideregg(ci, r, t)
+		"spider":
+			spider_boss(ci, r, t, {}, ink_col)
+		"kraken":
+			kraken_head(ci, r * 0.7, t, {"mouth": 0.4}, ink_col)
+		"krakenarm":
+			kraken_arm(ci, Vector2(-r * 0.3, r * 0.8), Vector2(r * 0.3, r * 0.6), r * 1.1, r * 0.7,
+				Vector2(0.8, 0.6), r * 1.5, Color(0.2, 0.36, 0.78), t, 0.0, 1.0, ink_col)
 		"aphid":
 			_aphid(ci, r, t, facing)
 		"lizard":
@@ -632,6 +645,267 @@ static func _goblin_commander(ci: CanvasItem, r: float, t: float, ready: bool, t
 	ink = keep
 
 
+## The purple poison marker on a unit or tower: the counter, with a ring that
+## empties as the next tick approaches (left is 1 just after a tick, 0 at it).
+static func poison_badge(ci: CanvasItem, at: Vector2, amount: float, left: float) -> void:
+	var purple := Color(0.62, 0.3, 0.85)
+	ci.draw_circle(at, 8.0, Color(0.12, 0.08, 0.16, 0.9))
+	ci.draw_arc(at, 8.0, -PI * 0.5, -PI * 0.5 + TAU * clampf(1.0 - left, 0.0, 1.0), 20, purple, 2.2, true)
+	ci.draw_string(ThemeDB.fallback_font, at + Vector2(-8.0, 4.0), "%d" % int(amount),
+		HORIZONTAL_ALIGNMENT_CENTER, 16.0, 10, Color(0.86, 0.7, 1.0))
+
+
+const KRAKEN_PURPLE := Color(0.72, 0.3, 0.95)
+const KRAKEN_PINK := Color(1.0, 0.45, 0.85)
+
+
+## One kraken tentacle, rising out of the ground and arching over to its head.
+##   base    where it leaves the ground
+##   ground  the point on the ground under its head
+##   lift    how high the head is held, arch  how high the middle bows (px)
+##   aim     unit vector the horn points along
+##   sway    sideways wobble (px), out  0..1 how much of it is above ground
+static func kraken_arm(ci: CanvasItem, base: Vector2, ground: Vector2, lift: float, arch: float, aim: Vector2,
+		tile: float, col: Color, t: float, sway: float = 0.0, out: float = 1.0, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	# the hole it lives in
+	ci.draw_set_transform(base, 0.0, Vector2(1.0, 0.5))
+	ci.draw_circle(Vector2.ZERO, tile * 0.5, Color(0.05, 0.04, 0.1, 0.55))
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if out <= 0.02:
+		ink = keep
+		return
+	var g1 := base.lerp(ground, out)
+	var along := g1 - base
+	var side := Vector2(-along.y, along.x).normalized() if along.length() > 1.0 else Vector2.RIGHT
+	var n := 12
+	var pts := PackedVector2Array()
+	var widths: Array = []
+	for i in n + 1:
+		var f := float(i) / float(n)
+		var h: float = (sin(PI * pow(f, 0.85)) * arch + f * lift) * out
+		var wob: float = sin(t * 2.2 + f * 3.0) * tile * 0.06 * f
+		pts.append(base.lerp(g1, f * f * (3.0 - 2.0 * f)) + Vector2(wob, -h) + side * sway * sin(PI * f))
+		widths.append(tile * (0.66 - 0.3 * f) * (0.55 + 0.45 * out))
+	for i in n:
+		ci.draw_line(pts[i], pts[i + 1], ink, float(widths[i]) + 5.0, true)
+		ci.draw_circle(pts[i + 1], (float(widths[i + 1]) + 5.0) * 0.5, ink)
+	for i in n:
+		ci.draw_line(pts[i], pts[i + 1], col, float(widths[i]), true)
+		ci.draw_circle(pts[i + 1], float(widths[i + 1]) * 0.5, col)
+	# paler underside and a few suckers
+	var pale := col.lightened(0.4)
+	for i in n:
+		var off := Vector2(0.0, float(widths[i]) * 0.2)
+		ci.draw_line(pts[i] + off, pts[i + 1] + off, pale, float(widths[i]) * 0.34, true)
+	for i in range(2, n - 1, 2):
+		ci.draw_circle(pts[i] + Vector2(0.0, -float(widths[i]) * 0.2), tile * 0.045, col.darkened(0.3))
+	# head, eye and horn
+	var head: Vector2 = pts[n]
+	var hr: float = tile * 0.3 * (0.55 + 0.45 * out)
+	var hb := head + aim * hr * 0.6
+	var tip := head + aim * (hr + tile * 0.8)
+	var nrm := Vector2(-aim.y, aim.x) * tile * 0.15
+	var mid := hb.lerp(tip, 0.38)
+	poly(ci, PackedVector2Array([hb + nrm, tip, hb - nrm]), Color(0.97, 0.96, 0.92), 2.0)
+	poly(ci, PackedVector2Array([hb + nrm, mid + nrm * 0.62, mid - nrm * 0.62, hb - nrm]), KRAKEN_PURPLE, 0.0)
+	circle(ci, head, hr, col.lightened(0.12), 2.2)
+	ci.draw_circle(head + Vector2(0.0, -hr * 0.25), hr * 0.34, Color(0.8, 0.92, 0.35))
+	ci.draw_circle(head + Vector2(0.0, -hr * 0.25) + aim * hr * 0.1, hr * 0.16, Color(0.06, 0.05, 0.08))
+	ink = keep
+
+
+## A sunk tentacle: only the horn is left sticking out of its hole.
+static func kraken_stub(ci: CanvasItem, base: Vector2, tile: float) -> void:
+	ci.draw_set_transform(base, 0.0, Vector2(1.0, 0.5))
+	ci.draw_circle(Vector2.ZERO, tile * 0.5, Color(0.05, 0.04, 0.1, 0.55))
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var w: float = tile * 0.15
+	var top := base + Vector2(tile * 0.08, -tile * 0.7)
+	var a := base + Vector2(-w, 0.0)
+	var b := base + Vector2(w, 0.0)
+	poly(ci, PackedVector2Array([a, top, b]), Color(0.97, 0.96, 0.92), 2.0)
+	poly(ci, PackedVector2Array([a, a.lerp(top, 0.38), b.lerp(top, 0.38), b]), KRAKEN_PURPLE, 0.0)
+
+
+## The kraken's head, seen from above, drawn facing +x in a whirlpool (the caller
+## rotates it to face the player's board). pose: "rise" 0..1 how far it is out
+## of the water, "mouth" 0..1 how wide the jaws are.
+static func kraken_head(ci: CanvasItem, r: float, t: float, pose: Dictionary = {}, ink_col: Color = OUTLINE,
+		col: Color = Color(0.2, 0.36, 0.78)) -> void:
+	var keep := ink
+	ink = ink_col
+	var rise: float = clampf(float(pose.get("rise", 1.0)), 0.0, 1.0)
+	var mouth: float = clampf(float(pose.get("mouth", 0.0)), 0.0, 1.0)
+	# the whirlpool
+	ci.draw_circle(Vector2.ZERO, r * 1.55, Color(0.05, 0.08, 0.2, 0.45))
+	for i in 4:
+		var rr: float = r * (0.7 + 0.28 * float(i))
+		var a0: float = t * (1.6 - 0.25 * float(i)) + float(i) * 1.9
+		ci.draw_arc(Vector2.ZERO, rr, a0, a0 + 2.2, 20, Color(0.6, 0.75, 1.0, 0.4), 2.0, true)
+		ci.draw_arc(Vector2.ZERO, rr, a0 + PI, a0 + PI + 1.6, 16, Color(0.6, 0.75, 1.0, 0.25), 2.0, true)
+	if rise <= 0.02:
+		ink = keep
+		return
+	var R: float = r * rise
+	var dark := col.darkened(0.45)
+	var magenta := Color(0.86, 0.16, 0.52)
+	# the crown of spines, fanned out behind the head
+	for i in 7:
+		var a: float = deg_to_rad(105.0 + 25.0 * float(i)) + sin(t * 1.3 + float(i)) * 0.04
+		var d := Vector2(cos(a), sin(a))
+		var n := Vector2(-d.y, d.x) * R * 0.17
+		var c := Vector2(-R * 0.1, 0.0)
+		poly(ci, PackedVector2Array([c + d * R * 0.5 + n, c + d * R * (1.3 + 0.12 * float(i % 2)), c + d * R * 0.5 - n]), dark, 2.0)
+	ellipse(ci, Vector2(-R * 0.15, 0.0), R * 0.82, R * 0.74, magenta, 2.4)
+	ellipse(ci, Vector2(-R * 0.3, 0.0), R * 0.55, R * 0.5, col.darkened(0.2), 0.0)
+	# the two long horns sweeping forward
+	for s in [-1.0, 1.0]:
+		poly(ci, PackedVector2Array([Vector2(R * 0.25, s * R * 0.32), Vector2(R * 0.3, s * R * 1.0),
+			Vector2(R * 1.2, s * R * 1.15), Vector2(R * 0.55, s * R * 0.7), Vector2(R * 0.5, s * R * 0.3)]), dark, 2.0)
+	ellipse(ci, Vector2(R * 0.3, 0.0), R * 0.52, R * 0.44, col, 2.4)
+	# the mouth: magenta gums, a dark throat and a ring of fangs
+	var mc := Vector2(R * 0.72, 0.0)
+	var mx: float = R * (0.2 + 0.1 * mouth)
+	var my: float = R * (0.24 + 0.1 * mouth)
+	ellipse(ci, mc, mx + R * 0.06, my + R * 0.06, magenta, 2.2)
+	ellipse(ci, mc, mx * 0.7, my * 0.7, Color(0.12, 0.03, 0.1), 0.0)
+	for i in 8:
+		var a: float = TAU * (float(i) + 0.5) / 8.0
+		var rim := mc + Vector2(cos(a) * mx, sin(a) * my)
+		var tn := Vector2(-sin(a), cos(a)) * R * 0.06
+		poly(ci, PackedVector2Array([rim + tn, mc + (rim - mc) * 0.45, rim - tn]), Color(0.98, 0.97, 0.93), 1.0)
+	for s in [-1.0, 1.0]:
+		ci.draw_circle(Vector2(R * 0.36, s * R * 0.25), R * 0.09, Color(1.0, 0.2, 0.2, 0.35))
+		ci.draw_circle(Vector2(R * 0.36, s * R * 0.25), R * 0.05, Color(1.0, 0.25, 0.2))
+	ink = keep
+
+
+## The ballista spider, seen from above and drawn facing +x (the caller rotates
+## it to face the player's board). r is the body scale; the legs reach about 2r.
+## pose: "move" 0..1 how hard the legs are working, "strike" 0..1 progress of a
+## front-leg stab, "side" which front leg (+1 / -1), "reach" how far the stab
+## goes (in r), "aim" its angle off straight ahead.
+static func spider_boss(ci: CanvasItem, r: float, t: float, pose: Dictionary = {}, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var move: float = float(pose.get("move", 0.0))
+	var strike: float = float(pose.get("strike", 0.0))
+	var strike_side: float = float(pose.get("side", 1.0))
+	var strike_reach: float = float(pose.get("reach", 2.4))
+	var strike_aim: float = float(pose.get("aim", 0.0))
+	var leg := Color(0.92, 0.48, 0.16)
+	var leg_dark := Color(0.62, 0.26, 0.1)
+	var gait: float = 3.0 + 17.0 * move
+	var swing: float = 0.05 + 0.2 * move
+	# --- eight legs: hip on the thorax, knee out and up, foot far out
+	var angles: Array = [32.0, 68.0, 108.0, 144.0]
+	for s in [-1.0, 1.0]:
+		for i in 4:
+			var a: float = deg_to_rad(float(angles[i])) + sin(t * gait + float(i) * 1.7 + (0.0 if s > 0.0 else PI)) * swing
+			var hip := Vector2(r * (0.28 - 0.14 * float(i)), s * r * 0.2)
+			var out := Vector2(cos(a), s * sin(a))
+			var knee := hip + out * r * 0.95
+			var foot := hip + out * r * (2.05 - 0.12 * float(i))
+			if i == 0 and strike > 0.0 and is_equal_approx(s, strike_side):
+				# the stab: knee cocks back, then the foot snaps out along the aim
+				var jab: float = sin(clampf(strike, 0.0, 1.0) * PI)
+				var aim := Vector2(cos(strike_aim), sin(strike_aim))
+				knee = knee.lerp(hip + Vector2(r * 0.5, s * r * 0.75), jab)
+				foot = foot.lerp(aim * r * strike_reach, jab)
+			ci.draw_line(hip, knee, ink, r * 0.17, true)
+			ci.draw_line(hip, knee, leg, r * 0.11, true)
+			ci.draw_line(knee, foot, ink, r * 0.12, true)
+			ci.draw_line(knee, foot, leg.lightened(0.1), r * 0.07, true)
+			ci.draw_circle(knee, r * 0.085, leg_dark)
+			ci.draw_circle(foot, r * 0.05, leg_dark)
+	# --- abdomen: pale yellow-green with a darker saddle and chevrons
+	var belly := Vector2(-r * 0.82, 0)
+	ellipse(ci, belly, r * 0.82, r * 0.64, Color(0.8, 0.8, 0.32), 2.6)
+	ellipse(ci, belly + Vector2(-r * 0.08, 0), r * 0.5, r * 0.34, Color(0.62, 0.66, 0.22), 0.0)
+	for i in 3:
+		var cx: float = -r * (0.45 + 0.3 * float(i))
+		ci.draw_polyline(PackedVector2Array([Vector2(cx, -r * 0.3), Vector2(cx - r * 0.12, 0), Vector2(cx, r * 0.3)]),
+			Color(0.97, 0.96, 0.8), r * 0.05, true)
+	circle(ci, Vector2(-r * 1.62, 0), r * 0.1, leg_dark, 1.4)
+	# --- thorax and head
+	ellipse(ci, Vector2(r * 0.08, 0), r * 0.46, r * 0.38, leg.darkened(0.12), 2.4)
+	circle(ci, Vector2(r * 0.52, 0), r * 0.26, leg, 2.2)
+	# fangs
+	for s in [-1.0, 1.0]:
+		poly(ci, PackedVector2Array([Vector2(r * 0.68, s * r * 0.08), Vector2(r * 0.98, s * r * 0.12),
+			Vector2(r * 0.72, s * r * 0.2)]), Color(0.22, 0.12, 0.1), 1.2)
+	# eyes: two big, two small, each with a glint
+	for s in [-1.0, 1.0]:
+		ci.draw_circle(Vector2(r * 0.6, s * r * 0.1), r * 0.065, Color(0.06, 0.05, 0.08))
+		ci.draw_circle(Vector2(r * 0.62, s * r * 0.085), r * 0.02, Color(1, 1, 1))
+		ci.draw_circle(Vector2(r * 0.48, s * r * 0.19), r * 0.04, Color(0.06, 0.05, 0.08))
+	ink = keep
+
+
+## A spiderling: the same animal at pocket size, legs going like mad.
+static func _spiderling(ci: CanvasItem, r: float, t: float, facing: float) -> void:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var body := Color(0.9, 0.5, 0.18)
+	for s in [-1.0, 1.0]:
+		for i in 4:
+			var a: float = deg_to_rad(35.0 + 36.0 * float(i)) + sin(t * 22.0 + float(i) * 1.6 + (0.0 if s > 0.0 else PI)) * 0.25
+			var out := Vector2(cos(a) * f, s * sin(a))
+			ci.draw_line(Vector2.ZERO, out * r * 0.9, ink, r * 0.16, true)
+			ci.draw_line(out * r * 0.9, out * r * 1.5 + Vector2(0, r * 0.15), ink, r * 0.11, true)
+	ellipse(ci, Vector2(-r * 0.45 * f, 0), r * 0.62, r * 0.5, Color(0.8, 0.8, 0.32), 1.8)
+	circle(ci, Vector2(r * 0.25 * f, 0), r * 0.38, body, 1.8)
+	ci.draw_circle(Vector2(r * 0.42 * f, -r * 0.13), r * 0.09, Color(0.06, 0.05, 0.08))
+	ci.draw_circle(Vector2(r * 0.42 * f, r * 0.13), r * 0.09, Color(0.06, 0.05, 0.08))
+
+
+## A spider egg: a pale silk sac that twitches now and then, anchored by threads.
+static func _spideregg(ci: CanvasItem, r: float, t: float) -> void:
+	var twitch := sin(t * 3.0) * r * 0.03 + (sin(t * 23.0) * r * 0.03 if fmod(t, 2.4) < 0.3 else 0.0)
+	for i in 6:
+		var a := TAU * float(i) / 6.0 + 0.3
+		ci.draw_line(Vector2(cos(a), sin(a)) * r * 0.7, Vector2(cos(a), sin(a)) * r * 1.5, Color(1, 1, 1, 0.55), 1.4, true)
+	ellipse(ci, Vector2(twitch, 0), r * 0.82, r * 1.0, Color(0.95, 0.94, 0.86), 2.2)
+	ellipse(ci, Vector2(-r * 0.2 + twitch, -r * 0.3), r * 0.3, r * 0.4, Color(1, 1, 1, 0.7), 0.0)
+	for i in 4:
+		var p := Vector2(cos(float(i) * 2.3) * r * 0.4 + twitch, sin(float(i) * 1.9 + 0.6) * r * 0.55)
+		ci.draw_circle(p, r * 0.09, Color(0.55, 0.42, 0.3, 0.55))
+
+
+## One tile of webbing: spokes and two rings of silk across the tile's rect.
+static func web_tile(ci: CanvasItem, rect: Rect2) -> void:
+	var c := rect.get_center()
+	var h := rect.size * 0.5
+	var silk := Color(1.0, 1.0, 1.0, 0.62)
+	ci.draw_rect(rect, Color(1.0, 1.0, 1.0, 0.1), true)
+	for i in 8:
+		var a := TAU * float(i) / 8.0
+		var d := Vector2(cos(a), sin(a))
+		var edge: float = minf(h.x / maxf(absf(d.x), 0.001), h.y / maxf(absf(d.y), 0.001))
+		ci.draw_line(c, c + d * edge, silk, 1.2, true)
+	for ring in [0.42, 0.8]:
+		var pts := PackedVector2Array()
+		for i in 9:
+			var a2 := TAU * float(i) / 8.0
+			pts.append(c + Vector2(cos(a2), sin(a2)) * h.x * float(ring))
+		ci.draw_polyline(pts, silk, 1.2, true)
+
+
+## A ballista trap on a bridge: a silk sling drawn taut between four pegs, with
+## a pulsing pad in the middle. Whatever steps on it leaves by air.
+static func ballista_trap(ci: CanvasItem, at: Vector2, tile: float, t: float) -> void:
+	var pulse := 0.5 + 0.5 * sin(t * 5.0)
+	var peg := tile * 0.62
+	for s in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var corner: Vector2 = at + Vector2(s.x, s.y) * peg
+		ci.draw_line(corner, at, Color(1.0, 1.0, 1.0, 0.75), 2.0, true)
+		ci.draw_circle(corner, tile * 0.09, Color(0.42, 0.28, 0.18))
+	ci.draw_circle(at, tile * (0.3 + 0.04 * pulse), Color(0.62, 0.3, 0.85, 0.35 + 0.25 * pulse))
+	ci.draw_arc(at, tile * (0.3 + 0.04 * pulse), 0.0, TAU, 20, Color(0.95, 0.9, 1.0, 0.9), 2.0, true)
+	ci.draw_arc(at, tile * 0.55, 0.0, TAU, 24, Color(1.0, 1.0, 1.0, 0.35), 1.2, true)
+
+
 ## Shiesty: a small goblin swallowed by a ragged hood, ears out the sides, eyes
 ## glinting in the shadow, the loot sack over his shoulder.
 static func shiesty(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Color = OUTLINE) -> void:
@@ -790,30 +1064,395 @@ static func _aphid(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(r * 0.82 * f, r * 0.12), Vector2(r * 1.34 * f, r * 0.18), Color(0.28, 0.2, 0.15), r * 0.18, true)
 	ci.draw_circle(Vector2(r * 1.34 * f, r * 0.18), r * 0.1, Color(0.96, 0.86, 0.52))
 
-## Penny: a small calico cat — white base, orange and black patches, green eyes.
+## Penny for the card and the deploy ghost: the plain trot.
 static func _penny(ci: CanvasItem, r: float, t: float, facing: float) -> void:
+	penny(ci, r, facing, t, 0, 0.0, ink)
+
+
+## Penny: a scrappy calico cat on all fours. White fur with orange and charcoal
+## patches, gold eyes under a wicked brow, a fanged grin, a ringed ear, a red
+## collar and a band on her foreleg in her team's colour (band_col).
+## pose: 0 trot, 1 the startled hop back, 2 the arched, stiff-legged sideways run
+## (the quarter circle; the tail swaps between a puffed brush held up and a hook
+## hanging down), 3 the leap with both forepaws reaching out. pf is the 0..1
+## progress through poses 1-3. Everything is laid out facing right, then mirrored
+## by facing and tilted about the body centre (_pp).
+static func penny(ci: CanvasItem, r: float, facing: float, t: float, pose: int = 0, pf: float = 0.0, ink_col: Color = OUTLINE, band_col: Color = Color(0.8, 0.14, 0.13)) -> void:
+	ink = ink_col
 	var f := facing if absf(facing) > 0.01 else 1.0
-	var wag := sin(t * 7.0) * 0.35
-	# tail
-	ci.draw_line(Vector2(-r * 1.0 * f, r * 0.5), Vector2(-r * 1.7 * f, r * 0.1 + r * wag), ink, r * 0.26, true)
-	ci.draw_circle(Vector2(-r * 1.7 * f, r * 0.1 + r * wag), r * 0.17, Color(0.94, 0.55, 0.22))
-	# body and haunches
-	ellipse(ci, Vector2(-r * 0.2 * f, r * 0.45), r * 0.95, r * 0.68, Color(0.97, 0.95, 0.9))
-	ellipse(ci, Vector2(-r * 0.55 * f, r * 0.25), r * 0.42, r * 0.38, Color(0.94, 0.55, 0.22), 0.0)
-	ellipse(ci, Vector2(r * 0.3 * f, r * 0.72), r * 0.4, r * 0.28, Color(0.28, 0.24, 0.26), 0.0)
+	var white := Color(0.97, 0.94, 0.88)
+	var orange := Color(0.93, 0.5, 0.18)
+	var coal := Color(0.27, 0.23, 0.28)
+	var far_fur := Color(0.78, 0.72, 0.68)
+	var red := Color(0.8, 0.14, 0.13)
+	var g := t * 9.0
+	var arch := 0.0      # how far the spine humps up, in r
+	var tilt := 0.0      # nose up (+) / down (-), radians
+	var stretch := 1.0   # body length in the leap
+	var raise := 0.0     # stiff legs lift the body, in r
+	var scare := 0.0     # ears back, fur up, hissing
+	var wide := 0.0      # round pupils
+	var bob := 0.0
+	# foot positions: far hind, far front, near hind, near front
+	var feet: Array[Vector2] = []
+	match pose:
+		1:
+			# straight up and back off the ground: legs stiff, spine humping
+			arch = 0.2 + 0.2 * pf
+			raise = 0.08 + 0.08 * pf
+			scare = 0.6 + 0.4 * pf
+			wide = 1.0
+			tilt = 0.2 * sin(pf * PI)
+			feet = [Vector2(-0.62, 1.0), Vector2(0.4, 1.0), Vector2(-0.72, 1.02), Vector2(0.52, 1.02)]
+		2:
+			# the Halloween crab run: full arch, stiff legs stepping on tiptoe in
+			# diagonal pairs, the body rocking a little over each step
+			arch = 0.42
+			raise = 0.1
+			scare = 1.0
+			wide = 1.0
+			var gs := pf * TAU * 2.5
+			tilt = sin(gs) * 0.04
+			bob = -absf(sin(gs)) * 0.03
+			for leg in 4:
+				var sx: float = [-0.68, 0.44, -0.8, 0.6][leg]
+				var sp: float = [0.0, PI, PI, 0.0][leg]
+				feet.append(Vector2(sx + sin(gs + sp) * 0.16, 1.04 - maxf(0.0, cos(gs + sp)) * 0.12))
+		3:
+			# the leap: long body, forepaws reaching out together, hind legs trailing
+			stretch = 1.18
+			tilt = lerpf(0.24, -0.2, pf)
+			wide = 1.0
+			feet = [Vector2(-1.18, 0.66), Vector2(1.22, 0.46), Vector2(-1.3, 0.54), Vector2(1.38, 0.36)]
+		_:
+			bob = -absf(sin(g)) * 0.05
+			for leg in 4:
+				var hx: float = [-0.55, 0.4, -0.55, 0.4][leg]
+				# diagonal pairs move together: near front with far hind
+				var ph: float = [0.0, PI, PI, 0.0][leg]
+				feet.append(Vector2(hx + sin(g + ph) * 0.22, 1.02 - maxf(0.0, cos(g + ph)) * 0.14))
+	var bc := Vector2(-0.12, 0.28 - raise + bob) * r
+	var brx := 0.8 * stretch * r
+	var bry := 0.42 * r
+	var piv := bc
+	# the spine bends up in the middle; anything sitting on the body bends with it
+	var bend := func(p: Vector2) -> Vector2:
+		var u := clampf((p.x - bc.x) / brx, -1.0, 1.0)
+		return Vector2(p.x, p.y - arch * r * (1.0 - u * u))
+	var P := func(p: Vector2) -> Vector2:
+		return _pp(p, f, piv, tilt)
+	var hind_hip: Vector2 = bend.call(bc + Vector2(-0.5 * stretch * r, 0.16 * r))
+	var front_hip: Vector2 = bend.call(bc + Vector2(0.46 * stretch * r, 0.16 * r))
+	var leg_w := r * 0.24
+	# far legs, behind everything
+	_penny_leg(ci, P.call(hind_hip + Vector2(0.06 * r, 0.0)), P.call(feet[0] * r), leg_w, coal.darkened(0.25), coal.darkened(0.25), false)
+	_penny_leg(ci, P.call(front_hip + Vector2(-0.06 * r, 0.0)), P.call(feet[1] * r), leg_w, far_fur, far_fur, pose >= 2)
+	# tail: confident curl when trotting, a bottle brush when scared, a rudder in the leap
+	var tb: Vector2 = bend.call(bc + Vector2(-0.7 * stretch * r, -0.06 * r))
+	var sway := sin(t * 3.0) * 0.12
+	var tail_raw: Array[Vector2] = []
+	# 0 = brush held straight up, 1 = hanging hook; the crab run swaps between them
+	var droop := 0.0
+	if pose == 2:
+		droop = 0.5 - 0.5 * cos(pf * TAU * 1.5)
+	if pose == 3:
+		tail_raw = [Vector2(0, 0), Vector2(-0.24, -0.02), Vector2(-0.48, -0.06), Vector2(-0.72, -0.1),
+			Vector2(-0.96, -0.1), Vector2(-1.2, -0.06)]
+	elif scare > 0.0:
+		var wob := sin(t * 14.0) * 0.04 * (1.0 - droop)
+		var up: Array[Vector2] = [Vector2(0, 0), Vector2(-0.12, -0.22), Vector2(-0.16, -0.46), Vector2(-0.12 + wob, -0.7),
+			Vector2(-0.06 + wob, -0.96), Vector2(0.04 + wob * 1.5, -1.2)]
+		var down: Array[Vector2] = [Vector2(0, 0), Vector2(-0.2, -0.26), Vector2(-0.42, -0.34), Vector2(-0.58, -0.16),
+			Vector2(-0.64, 0.14), Vector2(-0.58, 0.44)]
+		for i in up.size():
+			tail_raw.append(up[i].lerp(down[i], droop))
+	else:
+		tail_raw = [Vector2(0, 0), Vector2(-0.28, -0.04), Vector2(-0.48, -0.22), Vector2(-0.56 + sway, -0.48),
+			Vector2(-0.48 + sway * 1.3, -0.74), Vector2(-0.3 + sway * 1.6, -0.9)]
+	var tail := PackedVector2Array()
+	for p in tail_raw:
+		tail.append(P.call(tb + p * r))
+	# the fur only stands up while the tail does
+	var poof := scare * (1.0 - 0.75 * droop)
+	var tw := r * (0.24 + 0.16 * poof)
+	ci.draw_polyline(tail, ink, tw + OUTLINE_W * 2.0, true)
+	for i in tail.size():
+		ci.draw_circle(tail[i], (tw + OUTLINE_W * 2.0) * 0.5, ink)
+	# orange root, white middle, charcoal tip
+	for i in tail.size() - 1:
+		var tf := float(i + 1) / float(tail.size() - 1)
+		var tc := orange if tf < 0.5 else (white if tf < 0.85 else coal)
+		ci.draw_line(tail[i], tail[i + 1], tc, tw, true)
+		ci.draw_circle(tail[i + 1], tw * 0.5, tc)
+	if poof > 0.3:
+		# bristles all down the brush
+		for i in range(1, tail.size()):
+			var d: Vector2 = (tail[i] - tail[i - 1]).normalized()
+			var n := Vector2(-d.y, d.x)
+			for s in [-1.0, 1.0]:
+				var root: Vector2 = tail[i] - d * tw * 0.4
+				ci.draw_line(root + n * s * tw * 0.4, root + n * s * tw * (0.5 + 0.35 * poof) - d * tw * 0.3, ink, 1.4, true)
+	# hackles: a ridge of spikes along the arched spine, under the body fill
+	if scare > 0.0:
+		for i in 7:
+			var x := lerpf(-0.62, 0.38, float(i) / 6.0) * brx
+			var u := x / brx
+			var top: Vector2 = bend.call(bc + Vector2(x, -bry * sqrt(maxf(0.0, 1.0 - u * u))))
+			var hgt := r * 0.2 * scare
+			poly(ci, PackedVector2Array([P.call(top + Vector2(-0.09 * r, 0.06 * r)),
+				P.call(top + Vector2(-0.03 * r, -hgt)), P.call(top + Vector2(0.07 * r, 0.06 * r))]),
+				orange if i < 4 else white, 1.6)
+	# body with its patches, outlined last so the patches sit inside it
+	var body := _penny_blob(bc, brx, bry, bend, P)
+	ci.draw_colored_polygon(body, white)
+	ci.draw_colored_polygon(_penny_blob(bc + Vector2(-0.3 * brx, -0.1 * r), 0.42 * r * stretch, 0.24 * r, bend, P), orange)
+	ci.draw_colored_polygon(_penny_blob(bc + Vector2(0.14 * brx, -0.16 * r), 0.24 * r * stretch, 0.15 * r, bend, P), coal)
+	ci.draw_colored_polygon(_penny_blob(bc + Vector2(-0.72 * brx, 0.08 * r), 0.2 * r, 0.2 * r, bend, P), coal)
+	var loop := body.duplicate()
+	loop.append(body[0])
+	ci.draw_polyline(loop, ink, OUTLINE_W, true)
+	# near legs
+	_penny_leg(ci, P.call(hind_hip), P.call(feet[2] * r), leg_w * 1.08, coal, white, false)
+	var nf_hip: Vector2 = P.call(front_hip)
+	var nf_paw: Vector2 = P.call(feet[3] * r)
+	_penny_leg(ci, nf_hip, nf_paw, leg_w * 1.08, white, white, pose >= 2)
+	# team-coloured band above the paw
+	ci.draw_line(nf_hip.lerp(nf_paw, 0.6), nf_hip.lerp(nf_paw, 0.8), ink, leg_w * 1.08 + OUTLINE_W * 2.0, true)
+	ci.draw_line(nf_hip.lerp(nf_paw, 0.6), nf_hip.lerp(nf_paw, 0.8), band_col, leg_w * 1.08, true)
 	# head
-	ellipse(ci, Vector2(r * 0.62 * f, -r * 0.3), r * 0.6, r * 0.52, Color(0.97, 0.95, 0.9))
-	poly(ci, PackedVector2Array([Vector2(r * 0.25 * f, -r * 0.68), Vector2(r * 0.42 * f, -r * 1.28),
-		Vector2(r * 0.78 * f, -r * 0.78)]), Color(0.97, 0.95, 0.9), r * 0.12)
-	poly(ci, PackedVector2Array([Vector2(r * 0.82 * f, -r * 0.78), Vector2(r * 1.06 * f, -r * 1.24),
-		Vector2(r * 1.18 * f, -r * 0.55)]), Color(0.28, 0.24, 0.26), r * 0.12)
-	# eyes and nose
-	ci.draw_circle(Vector2(r * 0.52 * f, -r * 0.34), r * 0.11, Color(0.3, 0.8, 0.45))
-	ci.draw_circle(Vector2(r * 0.88 * f, -r * 0.3), r * 0.11, Color(0.3, 0.8, 0.45))
-	ci.draw_circle(Vector2(r * 0.7 * f, -r * 0.06), r * 0.08, Color(0.95, 0.6, 0.65))
-	# whiskers
-	ci.draw_line(Vector2(r * 0.6 * f, -r * 0.1), Vector2(r * 1.25 * f, -r * 0.22), ink, 1.2, true)
-	ci.draw_line(Vector2(r * 0.6 * f, -r * 0.04), Vector2(r * 1.25 * f, r * 0.1), ink, 1.2, true)
+	var hc := Vector2((-0.12 + 0.88 * stretch) * r, (-0.25 - raise + 0.12 * scare) * r) + Vector2(0.0, bob * r)
+	if pose == 3:
+		hc += Vector2(0.06, 0.04) * r
+	# collar
+	var neck_a: Vector2 = hc + Vector2(-0.3, -0.12) * r
+	var neck_b: Vector2 = hc + Vector2(-0.14, 0.4) * r
+	ci.draw_line(P.call(neck_a), P.call(neck_b), ink, r * 0.12 + OUTLINE_W * 2.0, true)
+	ci.draw_line(P.call(neck_a), P.call(neck_b), red, r * 0.12, true)
+	# far ear
+	var far_tip: Vector2 = Vector2(0.3, -0.86).lerp(Vector2(-0.3, -0.6), scare)
+	poly(ci, PackedVector2Array([P.call(hc + Vector2(0.06, -0.34) * r), P.call(hc + far_tip * r),
+		P.call(hc + Vector2(0.34, -0.24) * r)]), coal, 1.8)
+	# cheek ruff
+	for i in 3:
+		var y := (-0.02 + 0.16 * float(i)) * r
+		poly(ci, PackedVector2Array([P.call(hc + Vector2(-0.36 * r, y - 0.08 * r)),
+			P.call(hc + Vector2(-0.62 * r, y + 0.02 * r + 0.06 * r * scare)), P.call(hc + Vector2(-0.34 * r, y + 0.08 * r))]), white, 1.6)
+	# head: white, orange cap, a charcoal patch around the eye
+	var no_bend := func(p: Vector2) -> Vector2:
+		return p
+	var head := _penny_blob(hc, 0.48 * r, 0.42 * r, no_bend, P)
+	ci.draw_colored_polygon(head, white)
+	ci.draw_colored_polygon(_penny_blob(hc + Vector2(-0.12, -0.16) * r, 0.32 * r, 0.21 * r, no_bend, P), orange)
+	ci.draw_colored_polygon(_penny_blob(hc + Vector2(0.14, -0.1) * r, 0.17 * r, 0.15 * r, no_bend, P), coal)
+	ci.draw_colored_polygon(_penny_blob(hc + Vector2(0.33, 0.12) * r, 0.17 * r, 0.12 * r, no_bend, P), white)
+	var hloop := head.duplicate()
+	hloop.append(head[0])
+	ci.draw_polyline(hloop, ink, OUTLINE_W, true)
+	# near ear: orange with a pink inside and a gold ring through it
+	var near_tip: Vector2 = Vector2(-0.2, -0.92).lerp(Vector2(-0.74, -0.42), scare)
+	var ea := hc + Vector2(-0.34, -0.2) * r
+	var eb := hc + Vector2(0.02, -0.36) * r
+	var et := hc + near_tip * r
+	poly(ci, PackedVector2Array([P.call(ea), P.call(et), P.call(eb)]), orange, 1.8)
+	ci.draw_colored_polygon(PackedVector2Array([P.call(ea.lerp(eb, 0.3).lerp(et, 0.15)),
+		P.call(et.lerp(ea.lerp(eb, 0.5), 0.25)), P.call(ea.lerp(eb, 0.75).lerp(et, 0.1))]), Color(0.93, 0.62, 0.62))
+	ci.draw_arc(P.call(eb.lerp(et, 0.22)), r * 0.08, 0.0, TAU, 12, Color(0.96, 0.78, 0.28), 1.6, true)
+	# eye: gold almond, slit pupil (round and huge when startled or pouncing)
+	var eye := hc + Vector2(0.18, -0.1) * r
+	ci.draw_colored_polygon(_penny_blob(eye, 0.13 * r, (0.08 + 0.04 * wide) * r, no_bend, P), Color(0.98, 0.84, 0.18))
+	var pupil: Vector2 = P.call(eye + Vector2(0.03, 0.0) * r)
+	ellipse(ci, pupil, r * lerpf(0.025, 0.07, wide), r * lerpf(0.08, 0.075, wide), Color(0.1, 0.08, 0.1), 0.0)
+	ci.draw_circle(pupil + Vector2(-0.03 * f, -0.03) * r, r * 0.025, Color(1, 1, 1))
+	# the wicked brow (raised in surprise when scared)
+	ci.draw_line(P.call(hc + Vector2(0.02, -0.24 - 0.08 * scare) * r), P.call(hc + Vector2(0.32, -0.16 - 0.1 * scare) * r), ink, r * 0.06, true)
+	# nose
+	poly(ci, PackedVector2Array([P.call(hc + Vector2(0.42, -0.02) * r), P.call(hc + Vector2(0.52, -0.02) * r),
+		P.call(hc + Vector2(0.48, 0.05) * r)]), Color(0.55, 0.25, 0.3), 1.0)
+	if scare > 0.3:
+		# hissing: mouth open, both fangs out
+		var m0: Vector2 = P.call(hc + Vector2(0.46, 0.08) * r)
+		var m1: Vector2 = P.call(hc + Vector2(0.16, 0.14) * r)
+		var m2: Vector2 = P.call(hc + Vector2(0.36, 0.34) * r)
+		poly(ci, PackedVector2Array([m0, m1, m2]), Color(0.5, 0.1, 0.14), 1.6)
+		for fx in [0.24, 0.4]:
+			poly(ci, PackedVector2Array([P.call(hc + Vector2(fx - 0.03, 0.12) * r), P.call(hc + Vector2(fx + 0.03, 0.1) * r),
+				P.call(hc + Vector2(fx, 0.2) * r)]), white, 1.0)
+	else:
+		# the grin, one fang hanging over the lip
+		ci.draw_polyline(PackedVector2Array([P.call(hc + Vector2(0.47, 0.05) * r), P.call(hc + Vector2(0.42, 0.16) * r),
+			P.call(hc + Vector2(0.26, 0.2) * r), P.call(hc + Vector2(0.12, 0.12) * r)]), ink, r * 0.05, true)
+		poly(ci, PackedVector2Array([P.call(hc + Vector2(0.33, 0.18) * r), P.call(hc + Vector2(0.39, 0.18) * r),
+			P.call(hc + Vector2(0.36, 0.29) * r)]), white, 1.0)
+	# whiskers, swept back when scared
+	for wy in [-0.04, 0.12]:
+		ci.draw_line(P.call(hc + Vector2(0.38, 0.06) * r), P.call(hc + Vector2(0.86 - 0.3 * scare, wy - 0.1 * scare) * r), ink, 1.1, true)
+
+
+## Penny's layout point → screen: mirror by facing, then tilt about the body centre.
+static func _pp(p: Vector2, f: float, piv: Vector2, tilt: float) -> Vector2:
+	var q := Vector2(p.x * f, p.y)
+	var c := Vector2(piv.x * f, piv.y)
+	return c + (q - c).rotated(-tilt * f)
+
+
+## An ellipse in Penny's layout space, bent with her spine and mapped to screen.
+static func _penny_blob(c: Vector2, rx: float, ry: float, bend: Callable, to_screen: Callable) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in 28:
+		var a := TAU * float(i) / 28.0
+		pts.append(to_screen.call(bend.call(c + Vector2(cos(a) * rx, sin(a) * ry))))
+	return pts
+
+
+## One of Penny's legs, hip to paw (screen space). Claws out when she means it.
+static func _penny_leg(ci: CanvasItem, hip: Vector2, paw: Vector2, w: float, col: Color, paw_col: Color, claws: bool) -> void:
+	ci.draw_line(hip, paw, ink, w + OUTLINE_W * 2.0, true)
+	ci.draw_line(hip, paw, col, w, true)
+	if claws:
+		var d := (paw - hip).normalized()
+		for s in [-0.6, 0.0, 0.6]:
+			var c := d.rotated(s)
+			ci.draw_line(paw + c * w * 0.45, paw + c * w * 0.95, Color(0.12, 0.1, 0.12), 1.4, true)
+	circle(ci, paw, w * 0.62, paw_col, 1.6)
+
+
+## Troll: a hunched, pot-bellied swamp troll. Khaki warty skin, moss hanging off
+## his head, shoulders and hips, twigs in his hair, huge red-rimmed yellow eyes, a
+## long drooping nose, an underbite, and a tufted tail. He holds a whole tree
+## near the middle of the trunk, roots behind his hands and the crown in front.
+## club: 0 = just struck (crown down in front), 1 = raised over his head; ~0.45 is
+## the walking carry.
+static func troll(ci: CanvasItem, r: float, facing: float, t: float, club: float = 0.45, ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var skin := Color(0.74, 0.68, 0.47)
+	var skin_dark := Color(0.6, 0.54, 0.36)
+	var belly := Color(0.82, 0.77, 0.58)
+	var moss := Color(0.45, 0.53, 0.2)
+	var moss_dark := Color(0.32, 0.4, 0.14)
+	var bark := Color(0.42, 0.29, 0.18)
+	var bark_dark := Color(0.3, 0.2, 0.12)
+	var leaf := Color(0.36, 0.56, 0.22)
+	var sway := sin(t * 2.2) * r * 0.03
+	var X := func(x: float, y: float) -> Vector2:
+		return Vector2(x * f * r, y * r + sway)
+	# tail, curling down behind him with a grassy tuft
+	var tw := sin(t * 2.6) * 0.08
+	var tail := PackedVector2Array([X.call(-0.5, 0.5), X.call(-0.95, 0.85), X.call(-1.3, 0.78 + tw), X.call(-1.45, 0.45 + tw)])
+	ci.draw_polyline(tail, ink, r * 0.12 + OUTLINE_W * 2.0, true)
+	ci.draw_polyline(tail, skin_dark, r * 0.12, true)
+	for k in 4:
+		var a := -PI * 0.5 + (float(k) - 1.5) * 0.35
+		ci.draw_line(tail[3], tail[3] + Vector2(cos(a) * 0.9 * f, sin(a)) * r * 0.32, moss_dark, r * 0.08, true)
+	# back leg and foot
+	ci.draw_line(X.call(-0.28, 0.5), X.call(-0.32, 0.98), ink, r * 0.36 + OUTLINE_W * 2.0, true)
+	ci.draw_line(X.call(-0.28, 0.5), X.call(-0.32, 0.98), skin_dark, r * 0.36, true)
+	ellipse(ci, X.call(-0.2, 1.04), r * 0.32, r * 0.13, skin_dark)
+	# the tree: grip near the middle of the trunk, swung from in front up over his head
+	var ang := lerpf(0.35, -2.3, clampf(club, 0.0, 1.0))
+	var d := Vector2(cos(ang) * f, sin(ang))
+	var grip: Vector2 = X.call(0.45, 0.12).lerp(X.call(0.05, -0.75), clampf(club, 0.0, 1.0))
+	var root_end := grip - d * r * 1.15
+	var top := grip + d * r * 2.7
+	var n := Vector2(-d.y, d.x)
+	# far arm, behind the body, to the back hand on the trunk
+	var back_hand := grip - d * r * 0.3
+	ci.draw_line(X.call(-0.32, -0.32), back_hand, ink, r * 0.26 + OUTLINE_W * 2.0, true)
+	ci.draw_line(X.call(-0.32, -0.32), back_hand, skin_dark, r * 0.26, true)
+	# body: a pear with a pot belly
+	ellipse(ci, X.call(0.0, 0.12), r * 0.74, r * 0.72, skin)
+	ellipse(ci, X.call(0.2, 0.3), r * 0.46, r * 0.44, belly, 0.0)
+	for w in [[0.3, 0.18, 0.05], [0.1, 0.42, 0.04], [-0.35, 0.0, 0.05], [0.42, 0.45, 0.035]]:
+		ci.draw_circle(X.call(float(w[0]), float(w[1])), r * float(w[2]), skin_dark)
+	# moss skirt
+	var skirt := PackedVector2Array()
+	for i in 11:
+		var x := lerpf(-0.72, 0.68, float(i) / 10.0)
+		skirt.append(X.call(x, 0.42 + (0.28 if i % 2 == 0 else 0.16) + 0.05 * sin(float(i) * 1.7)))
+	skirt.append(X.call(0.62, 0.36))
+	skirt.append(X.call(-0.66, 0.34))
+	poly(ci, skirt, moss, 1.8)
+	# front leg and the big flat foot
+	ci.draw_line(X.call(0.22, 0.55), X.call(0.28, 0.98), ink, r * 0.4 + OUTLINE_W * 2.0, true)
+	ci.draw_line(X.call(0.22, 0.55), X.call(0.28, 0.98), skin, r * 0.4, true)
+	ellipse(ci, X.call(0.42, 1.05), r * 0.38, r * 0.15, skin)
+	for k in 3:
+		ci.draw_circle(X.call(0.58 + 0.1 * float(k), 1.02), r * 0.045, Color(0.88, 0.78, 0.66))
+	# moss cloak over the shoulders and back, ragged at the hem
+	var cloak := PackedVector2Array([X.call(-0.78, -0.3), X.call(-0.5, -0.64), X.call(-0.05, -0.76), X.call(0.34, -0.62)])
+	for i in 9:
+		var x := lerpf(0.34, -0.8, float(i) / 8.0)
+		cloak.append(X.call(x, -0.22 + (0.22 if i % 2 == 0 else 0.06) + 0.14 * absf(x)))
+	poly(ci, cloak, moss, 1.8)
+	for k in 4:
+		var x := -0.6 + 0.22 * float(k)
+		ci.draw_line(X.call(x, -0.5), X.call(x - 0.04, -0.12 + 0.1 * absf(x)), moss_dark, 1.6, true)
+	# the tree trunk, tapering toward the crown
+	var trunk := PackedVector2Array([root_end + n * r * 0.17, top + n * r * 0.1, top - n * r * 0.1, root_end - n * r * 0.17])
+	poly(ci, trunk, bark, 2.0)
+	ci.draw_line(root_end.lerp(top, 0.15) + n * r * 0.04, root_end.lerp(top, 0.7) + n * r * 0.03, bark_dark, 1.6, true)
+	# roots splaying out of the back end
+	for s in [-1.0, 0.0, 1.0]:
+		var rd: Vector2 = (-d).rotated(float(s) * 0.6)
+		ci.draw_line(root_end, root_end + rd * r * 0.32, ink, r * 0.07 + OUTLINE_W * 1.6, true)
+		ci.draw_line(root_end, root_end + rd * r * 0.32, bark, r * 0.07, true)
+	# crown: snapped branches with clumps of leaves
+	for s in [-1.0, 1.0]:
+		var bfrom := root_end.lerp(top, 0.82)
+		var bto: Vector2 = bfrom + d.rotated(float(s) * 0.7) * r * 0.65
+		ci.draw_line(bfrom, bto, ink, r * 0.08 + OUTLINE_W * 1.6, true)
+		ci.draw_line(bfrom, bto, bark, r * 0.08, true)
+		circle(ci, bto, r * 0.2, leaf, 1.8)
+	circle(ci, top + d * r * 0.12, r * 0.28, leaf, 2.0)
+	circle(ci, top + d * r * 0.05 + n * r * 0.2, r * 0.17, leaf.lightened(0.12), 1.6)
+	# hands: back one first, front one over the trunk
+	circle(ci, back_hand, r * 0.17, skin_dark, 1.8)
+	var front_hand := grip + d * r * 0.12
+	ci.draw_line(X.call(0.3, -0.3), front_hand, ink, r * 0.28 + OUTLINE_W * 2.0, true)
+	ci.draw_line(X.call(0.3, -0.3), front_hand, skin, r * 0.28, true)
+	circle(ci, front_hand, r * 0.19, skin, 1.8)
+	for k in 3:
+		var nail := front_hand + n * r * (0.1 * (float(k) - 1.0)) + d * r * 0.16
+		ci.draw_circle(nail, r * 0.04, Color(0.9, 0.8, 0.66))
+	# head, hunched forward and low
+	var hc: Vector2 = X.call(0.42, -0.62)
+	# droopy ear at the back of the head
+	poly(ci, PackedVector2Array([hc + Vector2(-0.12 * f, -0.12) * r, hc + Vector2(-0.6 * f, -0.3) * r,
+		hc + Vector2(-0.18 * f, 0.08) * r]), skin, 1.8)
+	ellipse(ci, hc, r * 0.46, r * 0.42, skin)
+	# mossy hair with twigs poking out
+	var hair := PackedVector2Array([hc + Vector2(-0.44 * f, 0.02) * r])
+	for i in 7:
+		var a := lerpf(PI, PI * 1.85, float(i) / 6.0)
+		var rad := 0.46 if i % 2 == 0 else 0.6
+		hair.append(hc + Vector2(cos(a) * 0.45 * f * (1.0 if i % 2 == 0 else 1.15), sin(a) * rad) * r + Vector2(-0.04 * f, -0.06) * r)
+	hair.append(hc + Vector2(0.22 * f, -0.26) * r)
+	poly(ci, hair, moss, 1.8)
+	for tw2 in [[-0.2, -0.5, -0.4, -0.92], [0.05, -0.55, 0.12, -0.98]]:
+		var ta: Vector2 = hc + Vector2(float(tw2[0]) * f, float(tw2[1])) * r
+		var tb: Vector2 = hc + Vector2(float(tw2[2]) * f, float(tw2[3])) * r
+		ci.draw_line(ta, tb, bark, r * 0.05, true)
+		ci.draw_line(ta.lerp(tb, 0.55), ta.lerp(tb, 0.55) + Vector2(0.14 * f, -0.08) * r, bark, r * 0.04, true)
+	# eyes: huge, yellow, red-rimmed and bloodshot
+	for e in [[0.08, -0.08, 0.15], [0.32, -0.1, 0.12]]:
+		var ec: Vector2 = hc + Vector2(float(e[0]) * f, float(e[1])) * r
+		circle(ci, ec, r * (float(e[2]) + 0.03), Color(0.85, 0.5, 0.45), 1.6)
+		ci.draw_circle(ec, r * float(e[2]), Color(0.98, 0.84, 0.3))
+		ci.draw_circle(ec + Vector2(0.03 * f, 0.0) * r, r * float(e[2]) * 0.45, Color(0.12, 0.08, 0.06))
+		ci.draw_circle(ec + Vector2(-0.02 * f, -0.04) * r, r * 0.03, Color(1, 1, 1))
+	# long drooping nose
+	var nose_a: Vector2 = hc + Vector2(0.22 * f, -0.02) * r
+	var nose_b: Vector2 = hc + Vector2(0.5 * f, 0.24) * r
+	ci.draw_line(nose_a, nose_b, ink, r * 0.2 + OUTLINE_W * 2.0, true)
+	ci.draw_circle(nose_b, r * 0.15 + OUTLINE_W, ink)
+	ci.draw_line(nose_a, nose_b, skin, r * 0.2, true)
+	ci.draw_circle(nose_b, r * 0.15, skin)
+	ci.draw_circle(nose_b + Vector2(-0.04 * f, 0.03) * r, r * 0.035, skin_dark)
+	# lip and underbite teeth
+	ellipse(ci, hc + Vector2(0.18 * f, 0.3) * r, r * 0.2, r * 0.07, Color(0.72, 0.45, 0.42), 1.6)
+	for tx in [0.08, 0.24]:
+		poly(ci, PackedVector2Array([hc + Vector2((float(tx) - 0.04) * f, 0.26) * r, hc + Vector2((float(tx) + 0.04) * f, 0.26) * r,
+			hc + Vector2(float(tx) * f, 0.16) * r]), Color(0.96, 0.93, 0.8), 1.2)
 
 
 ## Pen: Penny's other half. Tall, purple-eared, wrapped in a yellow toga, with a
@@ -900,12 +1539,14 @@ static func laniakea(ci: CanvasItem, r: float, facing: float, t: float, pose: in
 	elif pose == 1:
 		hand = Vector2(r * 0.1 * f, -r * 1.25 + bob)
 	ci.draw_line(Vector2(r * 0.3 * f, -r * 0.05 + bob), hand, plate_dark, r * 0.16, true)
-	# the crown: five jagged horns fanned over the mask, the middle one tallest
+	# the crown: jagged horns swept up and back to one side like windblown
+	# hair, the biggest one leaning well past the back of the mask
 	var head := Vector2(r * 0.08 * f, -r * 0.62 + bob)
-	var tall: Array = [0.95, 1.2, 1.45, 1.15, 0.9]
-	for i in 5:
-		var a := deg_to_rad(-150.0 + 30.0 * float(i)) + 0.12 * f
-		var out := Vector2(cos(a), sin(a))
+	var tall: Array = [0.85, 1.2, 1.6, 1.4, 1.05, 0.75]
+	var lean: Array = [-205.0, -178.0, -150.0, -124.0, -98.0, -66.0]
+	for i in 6:
+		var a := deg_to_rad(float(lean[i]))
+		var out := Vector2(cos(a) * f, sin(a))
 		var side := out.orthogonal() * r * 0.16
 		poly(ci, PackedVector2Array([head + out * r * 0.3 + side, head + out * r * float(tall[i]),
 			head + out * r * 0.3 - side]), mask, 1.6)
@@ -1162,10 +1803,25 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			creature(ci, "penny", r, 1.0, t)
 		"pen":
 			creature(ci, "pen", r, 1.0, t)
+		"troll":
+			# the tree reaches well past him: shrink so the crown stays on the card
+			creature(ci, "troll", r * 0.55, 1.0, t)
 		"laniakea":
 			creature(ci, "laniakea", r, 1.0, t)
 		"femme":
 			creature(ci, "femme", r, 1.0, t)
+		"shiesty":
+			creature(ci, "shiesty", r, 1.0, t)
+		"spiderling":
+			creature(ci, "spiderling", r, 1.0, t)
+		"spideregg":
+			creature(ci, "spideregg", r, 1.0, t)
+		"spider":
+			creature(ci, "spider", r * 0.45, 1.0, t)
+		"kraken":
+			creature(ci, "kraken", r * 0.8, 1.0, t)
+		"krakenarm":
+			creature(ci, "krakenarm", r * 0.7, 1.0, t)
 		"aphid":
 			creature(ci, "aphid", r, 1.0, t)
 		"lizard":

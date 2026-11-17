@@ -164,6 +164,16 @@ var burn_ticks := 0
 var burn_max_ticks := 4
 var burn_timer := 0.0
 var burn_pulse := 0.0
+## Poison is not a status: it is a counter that only ever goes up and never wears
+## off. Every POISON_PERIOD seconds it deals POISON_MULT x the counter.
+const POISON_PERIOD := 5.0
+const POISON_MULT := 2.0
+## buildings and towers take half of every poison tick
+const POISON_BUILDING := 0.5
+var poison := 0.0
+var poison_timer := 0.0
+## poison this unit's own melee hit adds (the spiderling's bite)
+var poison_hit := 0.0
 var boom_cfg: Dictionary = {}
 var throw_cd := 0.0
 var throw_dist := 0.0
@@ -225,6 +235,7 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	dodge_cfg = d.get("dodge", {})
 	sword_cfg = d.get("greatsword", {})
 	needle_cfg = d.get("needle", {})
+	poison_hit = float(d.get("poison", 0.0))
 	footprint = d.get("footprint", [1, 1])
 	is_b = String(d.get("type", "troop")) == "building"
 	ground_speed = speed
@@ -310,6 +321,16 @@ func apply_burn(amount: float, max_ticks: int = 4) -> void:
 	burn_max_ticks = maxi(max_ticks, 1)
 
 
+## Poison stacks without limit and is never cleared. The first dose starts the
+## five second clock; later doses just raise what the next tick will cost.
+func add_poison(amount: float) -> void:
+	if dead or amount <= 0.0:
+		return
+	if poison <= 0.0:
+		poison_timer = POISON_PERIOD
+	poison += amount
+
+
 func catch_projectile() -> void:
 	has_projectile = false
 	atk_cd = 0.0
@@ -328,6 +349,13 @@ func _physics_process(delta: float) -> void:
 	if attack_stretch > 0.0:
 		attack_stretch = maxf(0.0, attack_stretch - delta)
 	flash = maxf(0.0, flash - delta * 5.0)
+	if poison > 0.0:
+		poison_timer -= delta
+		if poison_timer <= 0.0:
+			poison_timer += POISON_PERIOD
+			take_damage(poison * POISON_MULT * (POISON_BUILDING if is_building() else 1.0), position)
+			if dead:
+				return
 	swing_t = maxf(0.0, swing_t - delta)
 	slam_t = maxf(0.0, slam_t - delta)
 	needle_t = maxf(0.0, needle_t - delta)
@@ -374,6 +402,11 @@ func _physics_process(delta: float) -> void:
 
 	if stunned > 0.0:
 		stunned = maxf(0.0, stunned - delta)
+		# a stun breaks Slate's charge: he starts again from a standstill
+		if not roll_cfg.is_empty() and (roll_level > 0 or roll_timer > 0.0):
+			roll_level = 0
+			roll_timer = 0.0
+			speed = ground_speed
 		# a stunned unit can still be carried by an impulse (boulder knockback)
 		if knock_time > 0.0:
 			knock_time = maxf(0.0, knock_time - delta)
@@ -598,6 +631,8 @@ func _attack() -> void:
 			arena.reserve_damage(get_instance_id(), target, hit_dmg)
 			target.take_damage(hit_dmg, position, self)
 			arena.release_reservation(get_instance_id())
+			if poison_hit > 0.0 and is_instance_valid(target) and target.has_method("add_poison"):
+				target.add_poison(poison_hit)
 	if not dodge_cfg.is_empty() and not dodging:
 		swipes += 1
 		if swipes >= int(dodge_cfg["after_hits"]):
@@ -663,6 +698,16 @@ func _tick_dodge(delta: float) -> void:
 			facing = signf(dir.x)
 	if dodge_t >= total:
 		_begin_jump()
+
+
+## Drawn height of Penny during the dodge (picture only): one big startled hop on
+## the back-off; the quarter circle is run on the ground (DDArt.penny pose 2).
+func _penny_hop() -> float:
+	var total: float = maxf(0.1, float(dodge_cfg["time"]))
+	var back_time: float = total * 0.3
+	if dodge_t <= back_time:
+		return sin(dodge_t / back_time * PI) * float(arena.TILE) * 0.5
+	return 0.0
 
 
 ## End of the leap: back to ordinary swipes.
@@ -789,6 +834,8 @@ func _nearest_on_layer(air: bool) -> Node:
 ##   ground body inside swing range                  -> stand and cleave
 ##   flyer inside the leap window, nothing on the
 ##   ground closer than it                           -> stand and leap
+##   ground troop inside the leap window, no flyer
+##   closer, swing off cooldown                      -> leap
 ##   otherwise walk: at the flyer if it is the closest thing and still too far to
 ##   leap at, else at the nearest ground body or tower. A flyer that is already
 ##   inside the window's near edge cannot be hit at all — that is the card.
@@ -807,6 +854,14 @@ func _tick_greatsword(delta: float) -> void:
 			state = S.ATTACK
 			if atk_cd <= 0.0:
 				_cleave()
+			return
+		# a ground troop in the leap window with nothing nearer gets the jump too.
+		# Only when the swing is ready: otherwise he keeps walking in.
+		if atk_cd <= 0.0 and not ground.is_building() and (air == null or gd <= arena.tiles_between(position, air.position)) \
+				and gd >= float(sword_cfg["leap_min"]) and gd <= float(sword_cfg["leap_max"]):
+			target = ground
+			state = S.ATTACK
+			_begin_leap()
 			return
 	if air != null:
 		ad = arena.tiles_between(position, air.position)
@@ -1530,6 +1585,13 @@ func _die() -> void:
 	if not da.is_empty():
 		arena.death_aoe(position, float(da["radius"]), float(da["dmg"]),
 			float(da["slow"]), float(da["slow_time"]), team)
+	# an egg hatches where it stood, however it went (timer or damage)
+	var hatch_kind := String(DDCard.get_card(kind).get("hatch", ""))
+	if hatch_kind != "":
+		var born = arena.spawn_troop(hatch_kind, team, position, true)
+		if born != null and is_instance_valid(born):
+			born.position = position
+			born.deploy_timer = 0.0
 	# a hatchery gives up one last unit as it goes, however it went
 	if bool(summon_cfg.get("on_death", false)):
 		arena.spawn_troop(String(summon_cfg["unit"]), team, _hatch_spot(), true)
@@ -1575,6 +1637,12 @@ func _draw() -> void:
 		lift = sin(jf * PI) * float(arena.TILE) * 1.1
 		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
 		draw_circle(Vector2.ZERO, px * (0.9 - 0.4 * sin(jf * PI)), Color(0.05, 0.06, 0.1, 0.3))
+	elif dodging:
+		# Penny's spooked hop back, then the stiff-legged bounces of the crab run
+		lift = _penny_hop()
+		var hf: float = lift / float(arena.TILE)
+		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
+		draw_circle(Vector2.ZERO, px * (0.9 - 0.5 * hf), Color(0.05, 0.06, 0.1, 0.3))
 	elif leaping:
 		# Laniakea going up to meet a flyer: an arc that ends at flying height
 		var lf: float = clampf(leap_t / maxf(0.1, float(sword_cfg["leap_time"])), 0.0, 1.0)
@@ -1634,6 +1702,34 @@ func _draw() -> void:
 		elif dash_phase == 2 or needle_t > 0.0:
 			fpose = 2
 		DDArt.femme(self, px, facing, clock, fpose, ink)
+	elif kind == "troll":
+		# picture only: the tree climbs over his head as the next swing comes due,
+		# and is down in front of him the moment it lands
+		var club := 0.45
+		if state == S.ATTACK and interval > 0.0:
+			club = clampf(1.0 - atk_cd / interval, 0.0, 1.0)
+		DDArt.troll(self, px, facing, clock, club, ink)
+	elif kind == "penny":
+		var ppose := 0
+		var ppf := 0.0
+		var look := facing
+		if jumping:
+			ppose = 3
+			ppf = clampf(jump_t / maxf(0.1, float(dodge_cfg.get("jump_time", 0.35))), 0.0, 1.0)
+		elif dodging:
+			var ptotal: float = maxf(0.1, float(dodge_cfg["time"]))
+			var pback: float = ptotal * 0.3
+			if dodge_t <= pback:
+				ppose = 1
+				ppf = dodge_t / pback
+			else:
+				ppose = 2
+				ppf = clampf((dodge_t - pback) / (ptotal - pback), 0.0, 1.0)
+			# eyes stay on whoever she just hit, so the circle is run sideways
+			# (picture only: the real facing is left alone)
+			if absf(dodge_center.x - position.x) > 1.0:
+				look = signf(dodge_center.x - position.x)
+		DDArt.penny(self, px, look, clock, ppose, ppf, ink, arena.team_color(int(team)))
 	else:
 		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2, ink, flying)
 	if status == Status.SLOW:
@@ -1648,6 +1744,8 @@ func _draw() -> void:
 	if hurt_frames > 0:
 		draw_circle(Vector2.ZERO, px * 1.0, Color(1.0, 0.55, 0.72, 0.62))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if poison > 0.0:
+		DDArt.poison_badge(self, Vector2(-px - 4.0, -px - 4.0 - lift), poison, poison_timer / POISON_PERIOD)
 	if swing_t > 0.0:
 		# the cleave: the blade sweeps the arc and leaves a fading wake behind it
 		var sf: float = 1.0 - swing_t / SWING_SHOW

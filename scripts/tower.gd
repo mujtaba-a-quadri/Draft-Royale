@@ -23,6 +23,10 @@ var burn_ticks := 0
 var burn_max_ticks := 4
 var burn_timer := 0.0
 var burn_pulse := 0.0
+## Poison (spiderling bites): a counter that never wears off, ticking for twice
+## its value every five seconds. Same rule as DDUnit.
+var poison := 0.0
+var poison_timer := 0.0
 ## Cosmetic clocks for the goblin commander: seconds since his spear left his
 ## hand and since he scooped Shiesty up. Nothing in the simulation reads them.
 var throw_t := 9.0
@@ -83,6 +87,13 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 		return
 	atk_cd = maxf(0.0, atk_cd - delta)
+	if poison > 0.0:
+		poison_timer -= delta
+		if poison_timer <= 0.0:
+			poison_timer += DDUnit.POISON_PERIOD
+			take_damage(poison * DDUnit.POISON_MULT * DDUnit.POISON_BUILDING, position)
+			if dead:
+				return
 	# burn: towers take 20 % of the stack per tick instead of a troop's 40 %
 	if burn_pulse > 0.0:
 		burn_pulse = maxf(0.0, burn_pulse - delta * 1.7)
@@ -143,6 +154,14 @@ func _acquire() -> Node:
 	return best
 
 
+func add_poison(amount: float) -> void:
+	if dead or amount <= 0.0:
+		return
+	if poison <= 0.0:
+		poison_timer = DDUnit.POISON_PERIOD
+	poison += amount
+
+
 func apply_burn(amount: float, max_ticks: int = 4) -> void:
 	if dead or amount <= 0.0:
 		return
@@ -197,6 +216,8 @@ func _draw() -> void:
 		var a := 0.18 + 0.42 * burn_pulse
 		draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, a), true)
 		draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, 0.8), false, 2.0)
+	if poison > 0.0:
+		DDArt.poison_badge(self, Vector2(-w * 0.62, -h * 0.5 - 18.0), poison, poison_timer / DDUnit.POISON_PERIOD)
 	var bw := w * 1.05
 	var by := -h * 0.5 - 22.0
 	draw_rect(Rect2(-bw * 0.5, by, bw, 7.0), Color(0.08, 0.07, 0.1, 0.85), true)

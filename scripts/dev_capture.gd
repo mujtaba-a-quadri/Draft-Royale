@@ -154,8 +154,8 @@ func _ready() -> void:
 		shot_times = []
 		run_time = 3.0
 	elif scenario == "laniakea":
-		shot_times = []
-		run_time = 7.0
+		shot_times = [7.1]
+		run_time = 8.2
 	elif scenario == "femme":
 		shot_times = []
 		run_time = 9.5
@@ -168,6 +168,12 @@ func _ready() -> void:
 	elif scenario == "deal":
 		shot_times = [0.12, 0.7, 2.6]
 		run_time = 3.2
+	elif scenario == "spider":
+		shot_times = [8.4, 12.3, 13.0]
+		run_time = 16.5
+	elif scenario == "kraken":
+		shot_times = [2.9, 4.8, 11.6, 12.75]
+		run_time = 18.0
 	elif scenario == "pennygif" or scenario == "pairgif":
 		shot_times = []
 		run_time = 6.0
@@ -332,6 +338,10 @@ func _process(delta: float) -> void:
 		_ovo_steps()
 	elif scenario == "deal":
 		_deal_steps()
+	elif scenario == "spider":
+		_spider_steps()
+	elif scenario == "kraken":
+		_kraken_steps()
 	elif scenario == "pennygif" or scenario == "pairgif":
 		_pennygif_steps()
 	elif scenario == "flash":
@@ -689,6 +699,12 @@ func _roll_steps() -> void:
 		print("[roll] t1.5 speed=%.2f level=%d timer=%.2f" % [alch.speed, alch.roll_level, alch.roll_timer])
 	if _at(3.6):
 		print("[roll] t3.6 speed=%.2f level=%d" % [alch.speed, alch.roll_level])
+	if _at(4.0):
+		print("[roll] t4.0 level=%d before a 0.5 s stun" % alch.roll_level)
+		alch.stunned = 0.5
+	if _at(4.6):
+		print("[roll] t4.6 after the stun: level=%d speed=%.2f timer=%.2f (expect 0 / base / ~0)" % [
+			alch.roll_level, alch.speed, alch.roll_timer])
 	if _at(6.5):
 		var trails := 0
 		for c in arena.get_children():
@@ -1043,6 +1059,19 @@ func _laniakea_steps() -> void:
 		print("[laniakea] flyer hp=%d (expect 110) leaping=%s target_is_tower=%s" % [
 			int(lani_marks[0].hp), str(probe.leaping),
 			str(tg != null and is_instance_valid(tg) and tg.is_tower())])
+	if _at(7.0):
+		_lani_clear()
+		probe = arena.spawn_troop("laniakea", 0, arena.tile_center(9.5, 20.5), true)
+		probe.deploy_timer = 0.0
+		var p4: Vector2 = probe.position
+		var fwd4: Vector2 = (arena.tile_center(9.5, 19.5) - p4).normalized()
+		lani_marks = [_lani_dummy("hero", p4 + fwd4 * 3.0 * t)]
+		print("[laniakea] ground leap: hero at 3.0")
+	if _at(7.2):
+		print("[laniakea] leaping=%s (expect true)" % str(probe.leaping))
+	if _at(7.8):
+		print("[laniakea] hero hp=%d (expect 100: 150 - 50) stunned=%s" % [
+			int(lani_marks[0].hp), str(lani_marks[0].stunned > 0.0)])
 
 
 ## Femme Fatale: the dash (4.0 tiles: wind-up, lunge to 1.5, 25 on the tip), then
@@ -1143,6 +1172,144 @@ func _deal_steps() -> void:
 			print("[deal] t%.1f held back: own=%d opponent=%d | own next=%s" % [t,
 				arena.panels[0].deal_hidden.size(), arena.panels[1].deal_hidden.size(),
 				str(arena.panels[0].deal_hidden)])
+
+
+## The spider encounter, driven by hand so it fits in 20 s (run with --bots=off):
+## the swap, a bridge trap, a web, venom + poison ticks, a leg stab, a skitter
+## with its egg, and the egg hatching.
+var spider_slowed := false
+var spider_walker: Node = null
+func _spider_steps() -> void:
+	var sp: Node = arena.spider
+	if _at(0.3):
+		arena.start_spider_encounter()
+		sp = arena.spider
+		var enemy_towers: int = arena.towers.filter(func(t): return int(t.team) == 1).size()
+		print("[spider] enemy 'towers'=%d (expect 1, the spider) hp=%d crown=%s hand1=%d" % [
+			enemy_towers, int(sp.hp), str(sp.crown), arena.hands[1].size()])
+		sp.lay_trap()
+		probe = arena.spawn_troop("hero", 0, arena.tile_center(5.5, 17.5), true)
+		probe.deploy_timer = 0.0
+		print("[spider] trap laid on bridge A (traps=%d); hero walking at it" % sp.traps.size())
+	if _at(3.2):
+		print("[spider] t3.2 hero on the board=%s traps=%d (expect false / 0: launched)" % [
+			str(is_instance_valid(probe) and not probe.dead and arena.units.has(probe)), sp.traps.size()])
+		spider_walker = arena.spawn_troop("hero", 0, arena.tile_center(9.5, 12.5), true)
+		spider_walker.deploy_timer = 0.0
+		sp.lay_web_ahead_of(spider_walker)
+		print("[spider] web laid ahead of a hero: %d tiles" % sp.webs.size())
+	if is_instance_valid(spider_walker) and not spider_walker.dead and int(spider_walker.status) == 1:
+		spider_slowed = true
+	if _at(6.0):
+		print("[spider] t6.0 web tiles left=%d slowed at some point=%s | hero hp=%d poison=%d" % [
+			sp.webs.size(), str(spider_slowed), int(spider_walker.hp), int(spider_walker.poison)])
+		# cut the wait at the back short; a 4 s wait means a 6 s stay forward
+		sp.back_wait = 4.0
+		sp.skitter_clock = 4.0
+	if _at(7.0):
+		print("[spider] t7.0 skittered %.1f tiles forward (expect 3-6) state=%d stay=%.1f (expect 6.0 = 10 - 4)" % [
+			arena.tiles_between(sp.position, sp.home), sp.state, sp.stay_time])
+	for tt in [8.0, 9.0, 10.0, 11.0, 11.4, 12.0, 12.4]:
+		if _at(tt):
+			print("[spider] t%.1f state=%d glint=%s walker poison=%d" % [tt, sp.state, str(sp.glint),
+				int(spider_walker.poison) if is_instance_valid(spider_walker) and not spider_walker.dead else -1])
+	if _at(13.5):
+		print("[spider] t13.5 home=%s next wait at the back=%.2f s (expect 3-7)" % [
+			str(sp.position.is_equal_approx(sp.home)), sp.back_wait])
+	if _at(14.5):
+		var eggs: Array = arena.units.filter(func(u): return is_instance_valid(u) and String(u.kind) == "spideregg")
+		print("[spider] t14.5 back home=%s eggs=%d webs=%d hero alive=%s hp=%d poison=%d" % [
+			str(sp.position.is_equal_approx(sp.home)), eggs.size(), sp.webs.size(),
+			str(is_instance_valid(spider_walker) and not spider_walker.dead),
+			int(spider_walker.hp) if is_instance_valid(spider_walker) else -1,
+			int(spider_walker.poison) if is_instance_valid(spider_walker) else -1])
+		var tower_poison: Array = arena.towers.filter(func(t): return int(t.team) == 0).map(func(t): return int(t.poison))
+		print("[spider] t14.5 poison on my towers=%s (the parting spit lands on the nearest one)" % str(tower_poison))
+		for e in eggs:
+			e.take_damage(9999.0, e.position)
+	if _at(15.0):
+		var lings: int = arena.units.filter(func(u): return is_instance_valid(u) and String(u.kind) == "spiderling").size()
+		print("[spider] t15.0 spiderlings=%d (expect 1, hatched from the egg)" % lings)
+		sp.take_damage(sp.hp - 1.0, sp.position)
+	if _at(15.5):
+		sp.take_damage(5.0, sp.position)
+		print("[spider] killed: dead=%s match_over=%s winner=%d webs=%d" % [
+			str(sp.dead), str(arena.match_over), arena.winner, sp.webs.size()])
+
+
+## The kraken encounter by hand (run with --bots=off): arrows with nobody near,
+## a slam, a low-health spin, the phase change, orbs splitting, a burrow, the win.
+var kraken_spun := false
+var kraken_small := 0
+var kraken_big := 0
+var kraken_away := false
+var kraken_held := false
+var kraken_hero: Node = null
+func _kraken_steps() -> void:
+	var kr: Node = arena.kraken
+	if _at(0.3):
+		arena.start_kraken_encounter()
+		kr = arena.kraken
+		var mine: Array = arena.towers.filter(func(t): return int(t.team) == 1)
+		print("[kraken] enemy towers=%d (expect 5 tentacles) crown=%s arrow timers=%s (furthest first)" % [
+			mine.size(), str(arena.crown_tower(1) != null), str(kr.arms.map(func(a): return a.arrow_cd))])
+	if kr == null:
+		return
+	for a in kr.arms:
+		if a.state == 3 or a.state == 4:
+			kraken_spun = true
+		if a.state == 10:
+			kraken_away = true
+	for o in kr.orbs:
+		if bool(o["big"]):
+			kraken_big = maxi(kraken_big, kr.orbs.filter(func(x): return bool(x["big"])).size())
+		else:
+			kraken_small = maxi(kraken_small, kr.orbs.filter(func(x): return not bool(x["big"])).size())
+	if is_instance_valid(kraken_hero) and not kraken_hero.dead and float(kraken_hero.stunned) > 1.0:
+		kraken_held = true
+	if _at(3.0):
+		print("[kraken] t3.0 arrows in flight=%d (expect 1: the furthest fired at 2.6) states=%s" % [
+			kr.arrows.size(), str(kr.arms.map(func(a): return a.state))])
+	if _at(4.0):
+		probe = arena.spawn_troop("hero", 0, arena.tile_center(5.5, 14.5), true)
+		probe.deploy_timer = 0.0
+		probe.position = arena.tile_center(5.5, 14.5)
+		print("[kraken] hero 3 tiles from tentacle 3, hp=%d" % int(probe.hp))
+	if _at(5.2):
+		print("[kraken] t5.2 hero hp=%d (expect 30 less: slammed) tentacle 3 state=%d lean=%.2f tiles" % [
+			int(probe.hp) if is_instance_valid(probe) else -1, kr.arms[3].state,
+			arena.tiles_between(kr.arms[3].position, kr.arms[3].base)])
+	if _at(6.0):
+		kr.arms[3].hp = kr.arms[3].max_hp * 0.25
+		if is_instance_valid(probe) and not probe.dead:
+			probe.hp = 300.0
+			probe.position = kr.arms[3].position + Vector2(0.0, 40.0)
+		print("[kraken] tentacle 3 cut to 25%% hp, hero put next to it")
+	if _at(9.5):
+		print("[kraken] t9.5 spin seen=%s tower hp=%s (arrows land on towers)" % [str(kraken_spun),
+			str(arena.towers.filter(func(t): return int(t.team) == 0).map(func(t): return int(t.hp)))])
+		if is_instance_valid(probe) and not probe.dead:
+			probe.take_damage(9999.0, probe.position)
+	if _at(10.0):
+		for a in kr.arms:
+			a.take_damage(9999.0, a.position)
+		print("[kraken] all tentacles killed: phase=%d body in towers=%s crown=%s arm hp=%s slow=%s" % [
+			kr.phase, str(arena.towers.has(kr)), str(arena.crown_tower(1) == kr),
+			str(kr.arms.map(func(a): return int(a.hp))), str(kr.arms[0].slow)])
+		kraken_hero = arena.spawn_troop("hero", 0, arena.tile_center(9.5, 20.5), true)
+		kraken_hero.deploy_timer = 0.0
+	if _at(12.0):
+		print("[kraken] t12.0 big orbs seen=%d (expect 3) body hp=%d" % [kraken_big, int(kr.hp)])
+		kr.burrow_clock = 0.0
+	if _at(13.6):
+		var grabs: int = arena.units.filter(func(u): return is_instance_valid(u) and String(u.kind) == "tentacle" and int(u.team) == 1).size()
+		print("[kraken] t13.6 a tentacle went under=%s grabbing tentacles=%d hero held=%s hero hp=%d" % [
+			str(kraken_away), grabs, str(kraken_held), int(kraken_hero.hp) if is_instance_valid(kraken_hero) else -1])
+	if _at(17.0):
+		print("[kraken] t17.0 small orbs seen at once=%d (expect 3-5 per big orb)" % kraken_small)
+		kr.take_damage(kr.hp + 1.0, kr.position)
+		print("[kraken] killed: dead=%s match_over=%s winner=%d tentacles down=%s" % [
+			str(kr.dead), str(arena.match_over), arena.winner, str(kr.arms.map(func(a): return a.down))])
 
 
 func _burn_steps() -> void:

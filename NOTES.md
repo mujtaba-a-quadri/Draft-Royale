@@ -67,7 +67,7 @@ extraction candidate.**
 7. **`README.md`**: a row in the card table, and bump the deck-count line.
 
 Hand slots are bound **by card kind**, so a deck must not contain duplicates. That
-matters when adding cards: `ORDER` is per-player deck size (currently 21, hand 4,
+matters when adding cards: `ORDER` is per-player deck size (currently 22, hand 4,
 `HAND_MAX` 8, draw every 8 s).
 
 ---
@@ -105,9 +105,16 @@ Score by remaining tower HP + who won, not by vibes. Last full measurement was
    descent over `ANSWER` using the harness is cheap and safe.
 4. **No opponent-gold tracking, no card-count reading** — it cannot know when the
    enemy is over-committed.
-5. **Side asymmetry is unexplained**: with the *same* bot, one half of the board plays
-   ~3× more cards and ends ~138 HP worse. That is an arena or anchor bug, and it
-   pollutes every A/B unless sides are balanced (they are — keep it that way).
+5. **Side asymmetry — partly explained (2026-11-16).** Until then every `--botsim`
+   run had an **extra, uncounted v1 bot on team 1**: the arena's own `_ready`
+   builds the default bot (`bot_players` starts `[false, true]`), and the
+   harness's second `_setup_bots()` dropped it from `bots` without freeing it.
+   So v2-on-team-1 seeds were really v2 + v1, and team 1's `plays` showed only
+   one of its two bots (v2 often read 0). `_setup_bots` now frees what it
+   replaces, and play counts come out even (~21–27 a side). **Every BOTSIM number
+   recorded before this fix — including the 5W-3L above — is contaminated; re-run
+   baselines.** First controls after the fix (v1 vs v1, seeds 101–102) both went
+   to team 0, so check with more seeds whether a real side bias remains.
 
 **Tuning discipline.** Change one thing, run the same seeds, compare the result
 lines. The one time this was skipped the bot got *worse* (a tempo bonus: 2W-2L,
@@ -205,7 +212,13 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   never touches air and the slam's strip hits ground and air alike. All his ranges
   live in the `greatsword` block and are centre distances, not the edge-to-edge
   `reach` the other units use (`reach` 1.5 is only there for the card face and
-  the bot's melee role). Scenario: `--scenario=laniakea --log`.
+  the bot's melee role). He also leaps at a ground *troop* (never a building or
+  tower) in the same window when no flyer is closer and `atk_cd` is 0; with the
+  swing on cooldown he walks in instead of standing and waiting.
+  Scenario: `--scenario=laniakea --log`.
+* **The snowball's size is continuous, its damage is not.** `height_t` grows
+  smoothly (drawn size and lane width); roll damage and shove use
+  `whole_height()`, so the numbers on the card are still whole tiles.
 * **The goblin commander's animations are picture only.** His tower shot is the
   same aimed bolt as every tower's, drawn as his standard (projectile kind
   `spear`); `throw_t` / `toss_t` on `DDTower` are cosmetic clocks. When Shiesty is
@@ -230,6 +243,13 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   unit within 2.5 tiles (else the closest body), lands 2× damage and stays
   untargetable through the whole thing. Both the swipes and the leaping blow do not
   touch buildings.
+* **Penny's dodge animation is picture only.** `DDArt.penny(pose, pf)`: 0 trot,
+  1 the startled hop back, 2 the arched, stiff-legged sideways run through the
+  quarter circle (walked on the ground, tail swapping between a puffed brush held
+  up and a hook hanging down), 3 the leap with both forepaws out. Her foreleg band
+  is the team colour. The hop height comes from `unit._penny_hop()`, and during the dodge she is *drawn* facing the target
+  (so the circle is run sideways) while the real `facing` is untouched. Stills:
+  `docs/penny.gif` via `--scenario=pennygif`.
 
 ---
 
@@ -242,6 +262,99 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
    booleans instead of images in the conversation.
 5. Run layer: §8 is the design. Nothing of it is built except the sample map
    printer.
+
+6. Elite encounters: §9 and §10 are built and startable from the debug view.
+
+---
+
+## 9. Elite encounter: the Momma Ballista Spider (built)
+
+Start it with **Tab, then S** (`arena.start_spider_encounter()`), or
+`--scenario=spider --log --bots=off --shots=<abs dir>` for the scripted check.
+
+* **`scripts/spider.gd` is a tower by duck typing, not a `DDUnit`.** It sits in
+  `arena.towers` with `crown = true`, so every existing rule applies unchanged:
+  troops target and hit it as a tower, spells use `tower_mult`, killing it ends
+  the match, and the clock compares its HP with the player's tower HP. It has
+  **no `class_name`** and is loaded with `preload()` in `arena.gd`, so a headless
+  run never depends on the editor rescanning global classes (§5).
+* **The swap** removes the enemy's towers and troops, empties their hand and
+  queue, disables their bot and parks their ability cooldown. Nothing puts them
+  back; restart the match to leave the encounter.
+* **Numbers live in `card_db.gd`** (`spider` with its `boss` block, `spideregg`,
+  `spiderling`), none of them in `ORDER`.
+* **Her dice are a seeded `RandomNumberGenerator`** (skitter distance only), so
+  the encounter is reproducible like the rest of combat.
+* **Eggs and spiderlings are ordinary `DDUnit`s.** The egg is a 2×2 building
+  with a card key `hatch`; `DDUnit._die` spawns the hatchling on any death.
+  The spiderling's card key `poison` adds counters on each melee hit.
+* **Poison is a counter, not a status** (`DDUnit.poison`, `DDTower.poison`):
+  never cleared, never replaced by burn or slow, ticks 2× the counter every 5 s.
+  Projectiles carry it as payload key `poison`.
+* **Webs and traps are state on the spider** (`webs`, `traps`), drawn by two
+  child canvas items (`floor_layer` under the board's units, `sky_layer` above).
+  A web tile slows through the normal `slow()`, so it replaces a burn like any
+  slow does. A trap **removes** a `DDUnit` without calling `_die`, on purpose.
+* **Her cycle**: a random 3 – 7 s at the back (`back_min` / `back_max`, seeded
+  RNG), then forward for `cycle` (10) minus that wait. `back_wait` / `stay_time`
+  on the node hold the current cycle's values.
+* **The venom is tied to the skitter**, not on a cooldown: one glob at the
+  closest enemy unit as she sets off, one every `forward_spit_every` (1.2 s)
+  at the closest unit while forward, one at the nearest tower or building as
+  she backs up, all at any range. `glint` is set by the last forward spit that
+  fits before she leaves and cleared when she backs up.
+* **Poison ticks are halved on buildings and towers** (`DDUnit.POISON_BUILDING`). The projectile carries payload key `seek`
+  (its landing point follows that node) and bursts through the normal splash
+  path, which now also applies `poison` in the splash.
+* **Splash rings** (`arena.spawn_splash_ring`): any projectile splash flashes a
+  light circle in the attacker's colour for 12 physics frames. Picture only.
+* **She is stretched 1.5× both ways** (`WIDE`, `TALL` in `spider.gd`); the hitbox
+  (`radius` on the card) did not change.
+* **Design choices that were mine, not specified:** all the numbers; eggs
+  hatching on the timer as well as on damage; traps taking giants too (a dragon
+  on foot is launched).
+
+---
+
+## 10. Elite encounter: the South Sea Kraken (built)
+
+Start it with **Tab, then K** (`arena.start_kraken_encounter()`), or
+`--scenario=kraken --log --bots=off --shots=<abs dir>` for the scripted check.
+
+* **Two scripts, neither with a `class_name`.** `scripts/kraken.gd` (body, phase
+  change, every projectile of the fight) preloads `scripts/kraken_arm.gd` (one
+  tentacle). Both duck-type towers like the spider (§9).
+* **Phase 1 has no crown tower on the enemy side.** The five arms are in
+  `arena.towers` (`crown = false`); the body is not, so nothing can target it.
+  `crown_tower(1)` / `_king_of(1)` return null until phase 2; every caller
+  already handles that. On the clock only the arms' HP counts in phase 1.
+* **Phase 2** starts inside the killing blow on the last arm
+  (`kraken.on_arm_down` → `_surface`): the body appends itself to `towers` as
+  the crown, and each arm is `revive()`d (half `max_hp`, `slow` = 2 on the slam
+  interval and the arrow timer). Arms killed again in phase 2 stay down; the
+  win is the body.
+* **`dead` vs `down` on an arm.** `dead` only means "not targetable now" (sunk,
+  or away burrowing); `down` means killed. The phase check reads `down`.
+* **An arm's `position` is its body, not its root.** `base` is the fixed tile;
+  `offset` leans toward the nearest enemy unit, clamped to `lean` tiles per axis
+  (so the body stays in the 3×3 around the root). Ranges are measured from the
+  body.
+* **Attack priority when idle and off cooldown**: spin (own HP ≤ `spin_hp`, enemy
+  inside `spin_radius`) → slam (enemy within `reach`) → arrow (own timer, and
+  every enemy *unit* at least `arrow_min` away). The slam hits a rectangle
+  around the impact in the aim's frame: `wave_len` ahead and to each side,
+  `wave_back` behind.
+* **Arrows and orbs are plain dictionaries on the kraken**, not `DDProjectile`s,
+  because both need to strike towers as well as units on contact. Arrows never
+  turn; the first enemy body within 0.3 tiles of its edge takes it.
+* **Burrow reuses `DDTentacle`** (the hero ability) on team 1 with the arena's
+  `TENTACLE_*` constants. Its `draw_card(1)` is a no-op on the empty queue. The
+  mark is fixed where the troop stood when the arm went under.
+* **Seeded RNG** only for the orb split count and the split's starting angle.
+* **Design choices that were mine, not specified:** all the numbers and the
+  five root tiles; "low health" for the spin is the tentacle's own HP; the slam
+  hits air; revived tentacles need not be killed again; the burrow's mark stays
+  on the ground instead of following the troop; the art.
 
 ---
 

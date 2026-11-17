@@ -11,6 +11,8 @@ const ATTACK_NAMES := {
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
 	"ovomachine": "Hatch", "laniakea": "Greatsword", "femme": "Needle",
+	"kraken": "Red Orbs", "krakenarm": "Tentacle Slam",
+	"spider": "Front Legs","spideregg": "—", "spiderling": "Venom Bite", "troll": "Tree Club",
 	"fireball": "Fireball", "firebolt": "Firebolt", "snowball": "Snowball",
 }
 

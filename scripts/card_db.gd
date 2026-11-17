@@ -97,7 +97,7 @@ const CARDS := {
 		"hits_air": true,
 		"burn": 5.0,
 		"chicken": {"hits_to_fly": 3, "fire_speed": 620.0, "burst_reach": 0.3},
-		"kamikaze": {"radius": 1.4, "dmg": 30.0, "speed_mult": 2.0},
+		"kamikaze": {"radius": 1.4, "dmg": 30.0, "speed_mult": 2.0},  
 		"accent": Color(1.0, 0.55, 0.2),
 	},
 	"penny": {
@@ -300,8 +300,123 @@ const CARDS := {
 		},
 		"accent": Color(0.5, 0.3, 0.3),
 	},
+	"troll": {
+		"name": "Troll",
+		"cost": 5,
+		"type": "troop",
+		"blurb": "A mossy old swamp troll dragging a whole tree. Slow, enormous, and only interested in knocking buildings down. He chokes up on the trunk, so the club reaches less far than it looks.",
+		"hp": 330.0, "dmg": 40.0, "speed": 0.5, "reach": 1.7, "interval": 1.8,
+		"radius": 0.75, "splash": 0.0, "aggro": 4.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": true,
+		"giant": true,
+		"accent": Color(0.56, 0.62, 0.3),
+	},
 	# Not in ORDER: entities that never appear in a deck but still need a real
 	# identity for the hover inspector and any card lookup.
+	# --- the first elite encounter (NOTES §9). The boss is not a DDUnit: it is
+	# scripts/spider.gd standing in for all three enemy towers. Its numbers live
+	# here anyway so this stays the one balance surface.
+	"spider": {
+		"name": "Momma Ballista Spider",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Elite. Takes the place of all three towers. Skitters forward to lay eggs, spits venom, stabs with her front legs, webs the ground ahead of your troops and arms the bridges.",
+		"hp": 900.0, "dmg": 35.0, "speed": 0.0, "reach": 4.0, "interval": 1.6,
+		"radius": 1.5, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"boss": {
+			# every skitter_every seconds: skitter_min..max tiles toward the player,
+			# hold for stay seconds, lay an egg, go back
+			# a cycle: wait back_min..back_max s at the back (random), run forward,
+			# stay there for cycle - that wait, run home
+			"back_min": 3.0, "back_max": 7.0, "cycle": 10.0,
+			"skitter_min": 3, "skitter_max": 6, "skitter_time": 0.55,
+			# spits reach anywhere: one setting off and one every forward_spit_every
+			# while forward (closest unit), one backing up (nearest tower / building)
+			"spit_dmg": 6.0, "spit_poison": 10.0, "spit_splash": 0.5, "spit_speed": 700.0,
+			"forward_spit_every": 1.2,
+			# front legs use the card's dmg / reach / interval above
+			"web_every": 5.0, "web_ahead": 2.5, "web_slow": 0.5, "web_slow_time": 2.0,
+			"trap_every": 20.0, "trap_radius": 0.7,
+		},
+		"accent": Color(0.8, 0.78, 0.3),
+	},
+	"spideregg": {
+		"name": "Spider Egg",
+		"cost": 0,
+		"type": "building",
+		"blurb": "Laid by the ballista spider on a patch of web. However it goes, timer or blade, a spiderling climbs out.",
+		"hp": 60.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 30.0,
+		"buildings_only": false,
+		"footprint": [2, 2],
+		"hatch": "spiderling",
+		"accent": Color(0.93, 0.92, 0.85),
+	},
+	"spiderling": {
+		"name": "Spiderling",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Small, fast, and every bite leaves poison that never wears off.",
+		"hp": 40.0, "dmg": 6.0, "speed": 1.6, "reach": 0.4, "interval": 0.8,
+		"radius": 0.3, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"poison": 5.0,
+		"accent": Color(0.85, 0.5, 0.2),
+	},
+	# --- the second elite encounter (NOTES §10). scripts/kraken.gd is the body
+	# and scripts/kraken_arm.gd one tentacle; neither is a DDUnit.
+	"kraken": {
+		"name": "South Sea Kraken",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Elite. Five tentacles first. Sink them all and the Kraken itself surfaces, raises them again at half strength and spews homing orbs.",
+		"hp": 500.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 1.5, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"boss": {
+			# where the body surfaces, and the tile each tentacle is rooted in
+			"center": [9.0, 7.0],
+			"arm_tiles": [[8, 3], [2, 6], [15, 6], [5, 11], [13, 11]],
+			"emerge_time": 1.0,
+			# revived tentacles: this share of their HP, attacks this much slower
+			"revive_hp": 0.5, "revive_slow": 2.0,
+			# red orbs: orb_count big ones every orb_every s
+			"orb_every": 25.0, "orb_count": 3,
+			"orb_speed": 1.6, "orb_turn": 1.6, "orb_life": 6.0, "orb_dmg": 30.0, "orb_splash": 1.2,
+			"orb_split_min": 3, "orb_split_max": 5,
+			"small_speed": 2.6, "small_turn": 3.0, "small_life": 1.5, "small_dmg": 12.0, "small_splash": 0.7,
+			# one revived tentacle burrows every burrow_every s
+			"burrow_every": 8.0,
+		},
+		"accent": Color(0.85, 0.2, 0.55),
+	},
+	"krakenarm": {
+		"name": "Kraken Tentacle",
+		"cost": 0,
+		"type": "building",
+		"blurb": "Rooted to one tile, leaning up to a tile any way. Slams, spins when it is nearly dead, and shoots a slow purple arrow when nothing is near.",
+		# dmg / reach / interval are the slam
+		"hp": 150.0, "dmg": 30.0, "speed": 0.0, "reach": 3.5, "interval": 2.5,
+		"radius": 0.7, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"arm": {
+			# the head leans toward the nearest enemy, at most `lean` tiles per axis
+			"lean": 1.0, "lean_speed": 0.5, "lean_sight": 7.0,
+			# slam: lands up to slam_reach tiles out, then waves run wave_len tiles
+			# ahead and to both sides; nothing further back than wave_back
+			"slam_windup": 0.65, "slam_reach": 2.5, "wave_len": 1.5, "wave_back": 0.6, "wave_time": 0.4,
+			# spin: only at or under spin_hp of its HP, enemy inside spin_radius
+			"spin_hp": 0.3, "spin_radius": 2.0, "spin_dmg": 25.0, "spin_windup": 0.5, "spin_time": 0.5,
+			# arrow: only if every enemy unit is arrow_min tiles away or more
+			"arrow_every": 10.0, "arrow_stagger": 2.0, "arrow_min": 6.0, "arrow_windup": 0.6,
+			"arrow_dmg": 40.0, "arrow_speed": 5.0,
+			# burrow (revived only): warning, then it bursts where the troop stood
+			"burrow_sink": 0.35, "burrow_warn": 0.5, "burrow_catch": 0.8,
+			"recover": 0.4, "rise_time": 0.6,
+		},
+		"accent": Color(0.75, 0.35, 0.9),
+	},
 	"shiesty": {
 		"name": "Shiesty",
 		"cost": 2,
@@ -334,7 +449,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll"]
 
 
 ## Every card in the game. Pen is not in the deck — he only arrives when Penny is

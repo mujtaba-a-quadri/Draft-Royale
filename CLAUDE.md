@@ -53,6 +53,8 @@ Live evals run through the `addons/godot_ai` editor plugin (enabled in `project.
 
 **Hero abilities.** `tentacle.gd` and `shiesty.gd` are the two abilities, each player gets one per match, and both pay a card draw only when their payload lands. The bot's trigger for them is the known weak spot in `NOTES.md` §3.
 
+**Elite encounter.** `spider.gd` (no `class_name`, preloaded by `arena.gd`) is a boss that duck-types a crown tower and replaces the whole enemy side; start it with Tab then S. Poison (a counter on units and towers, never cleared) came in with it. Details: `NOTES.md` §9. `kraken.gd` + `kraken_arm.gd` (same pattern, Tab then K) are the second: five tentacle "towers", then the body surfaces as the crown. Details: `NOTES.md` §10.
+
 **Dev-only code.** `dev_capture.gd` is about 1150 lines of scenarios and GIF capture. It is never instantiated in normal play. `*_mock.gd` / `layout_mock.gd` / `card_mock.gd` / `iso_mock.gd` / `landscape_mock.gd` are preview scenes, not game code.
 
 **Rules that look like bugs but are not.** `NOTES.md` §6 lists design intent that must not be "fixed" (hedgehog has no jab, Penny ignores buildings, the dragon's breath burns friendly troops, Pen never reverts to Penny, the commander tower is the only win besides the clock). Check there before changing a card's behaviour.

@@ -31,6 +31,7 @@ godot --path .                 # play
 | 1 / 2 / 3 (**Tab / debug view only**) | Debug gold: +1 to player 1 / both players / player 2 |
 | Tab (dual view) | Shows floating **damage numbers** on troops: white under 20, amber 20+, red on a killing hit |
 | A (**Tab / debug view only**) | Toggle the **all-cards overlay**: a scrolling grid of every card, 8 per row, with **BUILDINGS / TROOPS / SPELLS** filter buttons above it (click to filter, click again to clear, several at once allowed — the header says what is showing). Click a card to arm and place it for free. Placing on the **top half** deploys it for the opponent; on **purple (both-controlled)** tiles the side is random |
+| S (**Tab / debug view only**) | Start the **elite encounter**: the opponent and all three of their towers are replaced by the **Momma Ballista Spider** (see below). There is no run map yet, so this is the only way in |
 | R | Restart after a match ends |
 
 Both hands are live at once: the left panel is Player 1 (blue, bottom half),
@@ -70,7 +71,7 @@ is the same size, shrunk so the whole column fits the panel.
   closing window: **double gold**, **half ability cooldowns**, and card draws **one second faster**.
   If the clock runs out, the match goes to whoever has **more tower HP left** (all three towers
   summed, not the tower count) — an exact tie is a draw.
-* **22 cards in the game, 21 in each deck** — Pen is not dealt out, he only arrives when Penny is
+* **23 cards in the game, 22 in each deck** — Pen is not dealt out, he only arrives when Penny is
   played. 4 cards in hand, 1 "next", cycling exactly like
   Clash Royale: play a card and it goes to the back of the queue. Both decks are
   **shuffled fresh every match**, independently of each other.
@@ -97,11 +98,12 @@ footprint) rather than squeezing it into the HP ribbon.
 | Hero | 3 | 150 | 25 / 1.0 s | Very high HP for the cost. Also rides down an airborne dragon |
 | Snowman | 2 | 90 | – | Stationary decoy, **60 s lifetime**, draws attention (7.5 tile lure). **On death: 3-tile blast for 30 damage and a 3 s / 30 % slow** (troops only, dark blue tint) |
 | Slate | 3 | **200** | 12 / 1.6 s | Slow tank that ignores every moving troop — only structures and towers |
+| Troll | 5 | **330** | 40 / 1.8 s, **1.7 tile tree club** | The tank: a mossy swamp troll who walks slowly at **buildings and towers only** and ignores troops. He swings a whole tree, but holds it near the middle of the trunk, so its reach is **1.7 tiles** — shorter than the tree looks. **Giant**: Penny cannot carry him off in her leap |
 | The Chained Dragon | 9 | **420** | claw 45 / 1.4 s → **25 fire per second** | A green brute with his **wings** chained (the hands are free — it can still claw). At half HP the chains burst, he takes the sky and **breathes straight down** in **your team's colour**: a **2 tile burning patch** under and just ahead of him doing **25 damage a second**. It **burns friend and foe alike** — anything on the ground under him, your own troops included — but flyers are above it. He flies until the fire is landing on his target, so **the tower he is attacking burns too**, and he hovers there pouring it on |
 | Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges the nearest **tower or building** at high speed and detonates for 100. After turning it ignores troops entirely |
 | Fireball | 5 | – | 40 splash + **60 burn**, shoves loose units 1.2 tiles out | Fired from your **king tower**; `tower_mult` cuts tower damage |
 | Firebolt | 2 | – | **No damage — 40 burn** | An arrow of fire from your **nearest tower**. The only card that **locks onto a troop**: while you hold it, hovering an enemy troop pins the preview to that troop and follows it smoothly instead of snapping to a tile  **Two casts**: after the first throw the card stays in your hand and stays armed, so clicking again throws again — right click (or picking another card) puts it back with one charge left, shaded over the spent half (the triangle below the bottom-left → top-right diagonal). Only the **second** cast consumes it |
-| Snowball | 4 | – | **10 × height** while rolling, **30** on the burst | You pick a tile; it is **thrown in an arc** from your **nearest tower** onto it, lands as **one tile of snow**, then rolls forward in a straight line along that row, gaining **a tile of height for every two tiles it covers**. That means it can be cast **on their side** — it simply starts rolling where it lands. Rolling strikes deal **10 per tile of current height** and shove things back that many tiles; at the **river** (or the back of the board) it bursts for **30** and a **3.5 s slow**. Troops only |
+| Snowball | 4 | – | **10 × height** while rolling, **30** on the burst | You pick a tile; it is **thrown in an arc** from your **nearest tower** onto it, lands as **one tile of snow**, then rolls forward in a straight line along that row, growing **smoothly, a tile of height for every two tiles it covers** (its size and the lane it flattens grow continuously; damage and shove count whole tiles of height). That means it can be cast **on their side** — it simply starts rolling where it lands. Rolling strikes deal **10 per tile of current height** and shove things back that many tiles; at the **river** (or the back of the board) it bursts for **30** and a **3.5 s slow**. Troops only |
 | Golden Idol | 4 | 35 | – | Stationary, taunts, **10 s lifetime**. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
 | Hedgehog | 3 | 60 each | 12 curl / 8 thorns | Two burrowers with **no jab at all**. They walk to their melee reach and **ball up**: 12 damage plus a shove of about half a tile, always short enough that nothing leaves quill reach. Balled up they take **45 % damage**, and anything striking the ball from within **1.5 tiles gets 8 back — melee or ranged**, since projectiles are credited to their shooter. They hold while the quills can reach something and **walk again once nothing is in reach**  **Air is invisible to them**: they never pick a flying target and their burst skips flyers. But a **melee flyer that dives on one** makes it ball up on the spot — the dive itself is not repaid, and **every hit after it takes 8 thorns**. They stay rolled up until nothing is in quill reach, then walk again |
 | Zombie Horde | 6 | 111 each | 15 / 1.0 s each | Six melee bruisers in a 2x3 block. **Anything a zombie kills rises as a full-HP zombie on the killer's side — troops only, buildings stay dead** |
@@ -114,10 +116,61 @@ footprint) rather than squeezing it into the HP ribbon.
 | Pen | 2 | 100 | 10 / 1.8 s, **5 tile blowgun** | Penny's other half: slow, calm, wrapped in a yellow toga. Every **dart paralyses** whatever it hits for **0.5 s** (units only — towers have nothing to paralyse). A perfectly ordinary card otherwise: he can be played or discarded like any other, and he does **not** turn back into Penny (so the deck never grows a second one)  **Hits air** — a dart to a honeycreeper paralyses it mid-dive |
 | Primal Aphid | 3 | 110 | **5 × 8** in a 45° cone, every 2 s | A flyer that **hovers in to 2 tiles and stops** — it never closes. From there it spits a **five pellet shotgun** across a 45° cone aimed at its target. Each pellet flies **3.5 tiles**, so it reaches a full tile and a half past the aphid's own stance, and it can hit **ground or air**. Pellets **do not pierce**: the first body a pellet crosses eats it and the pellet is spent |
 | Boomerang-Fu | 4 | 90 | 30 boomerang / 18 jab + 26 kick (never on air — he throws at flyers even point blank) | Throws a 2 tiles/s boomerang that hurts everything it crosses and turns around at the target; stands still until it is caught. Melee combo (2 jabs) ends in a kick that shoves the enemy 3 tiles and Fu 2.2 tiles back |
-| Laniakea | 4 | 100 | **25 cleave** / **50 leaping slam**, one swing every 2.0 s | A slow bug with a sword bigger than he is, and the only **melee unit that hits air**. He goes for whatever is closest, and the swing depends on what that is (all distances centre to centre). **Ground, within 1.5 tiles: the cleave** — a **140° arc** centred on the target, swept from the inside of the arena to the outside with a **2.2 tile** blade; every ground body in it takes 25 and is **shoved 0.5 tiles** away from him. **Air, 2.5 – 3.5 tiles away with nothing on the ground closer: the leap** — he jumps to the flyer and brings the sword down for **50** on it and on everything, ground or air, in a strip **2.5 tiles behind it**, **stunning units for 0.5 s**. A ground body closer than the flyer keeps him walking to melee instead, and a flyer that gets **inside 2.5 tiles is out of his reach entirely** |
+| Laniakea | 4 | 100 | **25 cleave** / **50 leaping slam**, one swing every 2.0 s | A slow bug with a sword bigger than he is, and the only **melee unit that hits air**. He goes for whatever is closest, and the swing depends on what that is (all distances centre to centre). **Ground, within 1.5 tiles: the cleave** — a **140° arc** centred on the target, swept from the inside of the arena to the outside with a **2.2 tile** blade; every ground body in it takes 25 and is **shoved 0.5 tiles** away from him. **Air, 2.5 – 3.5 tiles away with nothing on the ground closer: the leap** — he jumps to the flyer and brings the sword down for **50** on it and on everything, ground or air, in a strip **2.5 tiles behind it**, **stunning units for 0.5 s**. **He leaps at ground troops too**: a ground troop (not a building or tower) in the same 2.5 – 3.5 window with no flyer closer gets the jump, as long as his swing is off cooldown — otherwise he keeps walking in to cleave. A ground body closer than the flyer keeps him from leaping at the flyer, and a flyer that gets **inside 2.5 tiles is out of his reach entirely** |
 | Femme Fatale | 2 | 60 | **12** per combo hit / 1.2 s, **25 dash** | Hooded, with a needle longer than she is. Ground only, and she always goes for the nearest ground body (all distances centre to centre). **Dash:** when that body is **3.5 – 4.5 tiles** away with a straight walk to it (never across the river), she raises the needle, the tip glints for **0.45 s**, and she lunges until she is **1.5 tiles** away, landing **25** with the tip (1.6 reach). A stun or a shove during the wind-up or the lunge cancels it. **Combo, within 1.5 tiles:** a 15° flick in from the inside of the arena (drawn only — single target), a stab, then a stab whose recoil **carries her 0.5 tiles back**; then it repeats. A new target restarts the combo |
 
 Tower fire: 12 damage / 1.0 s, 6 tile range.
+
+## Elite encounter: the Momma Ballista Spider
+
+Press **S in the debug view** (Tab). The opponent's towers, troops, hand and bot
+are removed and one giant spider, drawn from above, sits where their commander
+was. She counts as a tower: troops walk at her and hit her like one, and
+**killing her wins the match**. On the clock it is her HP against the sum of
+your towers. All numbers are in the `spider`, `spideregg` and `spiderling` cards.
+
+| What | Numbers | How it works |
+| --- | --- | --- |
+| Body | **900 HP** | Always faces your board; never turns around |
+| Skitter | waits **3 – 7 s** at the back (random), **3 – 6 tiles** forward, stays **10 s minus that wait** | Runs toward you, stays, lays an egg, backs up to where she started. The longer she sat at the back, the shorter she stays forward. She keeps attacking the whole time |
+| Egg | **60 HP** building, **30 s** lifetime | Laid centred on a **2 × 2 patch of web**. When it dies — timer or damage — a **Spiderling** climbs out |
+| Spiderling | 40 HP, **6 + 5 poison** per bite / 0.8 s, fast | An ordinary enemy troop: walks at your troops and towers |
+| Venom spit | **6 + 10 poison**, **0.5 tile splash**, any distance | Tied to the skitter. **Setting off:** one at your closest unit. **Forward:** one every **1.2 s** at your closest unit. **Backing up:** one at your nearest tower or building. Her **eye glints** from the last forward spit until she leaves — that is the warning for the building shot. The glob follows its target and bursts on arrival, hitting everything of yours in the splash |
+| Front legs | **35** / 1.6 s, **4 tiles** | A stab at the nearest of your units in reach |
+| Webbing | a **2 × 2 patch** every **5 s** | Laid 2.5 tiles ahead of your nearest ground troop, along the way it is walking. Stepping on a web tile **slows 50 % for 2 s** and **destroys that one tile** |
+| Ballista trap | one every **20 s**, alternating bridges | The first of your ground troops to step on it is **launched out of the arena**: removed, not killed, so nothing that happens on death fires. Flyers pass over it. A bridge that is still armed is not re-armed |
+
+She is drawn stretched **1.5 × both ways** (along the lane and across it); her
+hitbox is unchanged.
+
+**Splash attacks show their reach**: every splash that lands from a projectile
+(the venom, the Alchemist's potion) flashes a **light circle in the attacker's
+colour for 12 frames** at the size of the splash. Spells keep their own blast.
+
+**Poison** is new and is not a status like burn or slow: it is a counter that
+**only goes up and never wears off**. Every **5 s** it deals **2 × the counter**
+(**half that to buildings and towers**).
+A purple badge on the unit (or tower) shows the counter and a ring that fills
+toward the next tick.
+
+## Elite encounter: the South Sea Kraken
+
+Press **K in the debug view** (Tab). The same swap as the spider, but what takes
+the opponent's place is **five tentacles**. Each is rooted in one tile; its body
+and head (the part your troops hit) lean slowly toward your nearest unit, never
+more than a tile from the root either way. They count as towers. The Kraken
+itself is under water and cannot be hit until all five are down. All numbers are
+in the `kraken` and `krakenarm` cards.
+
+| What | Numbers | How it works |
+| --- | --- | --- |
+| Tentacle | **150 HP** each | Killed, it pulls back into the ground and only the horn shows |
+| Slam | **30**, enemy within **3.5 tiles**, every 2.5 s | Sways for 0.65 s, smashes down up to 2.5 tiles out, and purple waves run **1.5 tiles ahead and to both sides** of the impact. Hits ground and air. **Behind the tentacle is safe** |
+| Spin | **25**, **2 tile** radius | Only at **30 % HP or less** with an enemy inside 2 tiles: coils back for 0.5 s, then one full turn with a pink trail |
+| Purple arrow | **40**, every **10 s** | Only when **every one of your units is 6+ tiles from that tentacle**. Flattens and points for 0.6 s, then shoots a slow (5 tiles/s) straight arrow at your nearest unit, building or tower. It never turns, and **the first of your bodies in its path takes it**. Timers start 2 s apart, the furthest tentacle first |
+| Phase 2 | body **500 HP** | When all five are down the Kraken surfaces in the middle of its side. **Killing it wins.** Every tentacle comes back with **half HP and half attack speed** |
+| Red orbs | 3 big orbs every **25 s**: **30** in 1.2 tiles | Slow, with a limited turn rate, chasing your nearest body. On touch or after 6 s each bursts and **splits into 3 – 5 small orbs** (12 in 0.7 tiles) that chase for 1.5 s and burst too |
+| Burrow | every **8 s**, one revived tentacle | It sinks through its root, a **red circle marks the spot** where one of your ground troops is standing, and 0.5 s later it bursts out there: whoever is still within 0.8 tiles takes **20** and is **held for 4 s by a 20 HP tentacle** (the hero ability) unless it is cut down. The tentacle is untargetable while away |
 
 ## The Chained Dragon vs the Hero
 
@@ -167,6 +220,7 @@ without redoing animation:
 * The next attack deals **+50 % per level** (1.5× at level 1, 2× at level 2), then the roll is
   spent and he is back to a standstill. Stopping (attacking, being stunned, being knocked)
   resets the timer, so the charge has to be built on the move.
+- A **stun wipes the charge**: levels, timer and speed all go back to the start.
 
 ## Troop AI (deterministic)
 

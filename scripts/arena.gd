@@ -57,7 +57,7 @@ const WATER := Color(0.678, 0.332, 0.139, 1.0)
 const WATER_HI := Color(0.176, 0.007, 0.001, 1.0)
 const WOOD := Color(0.62, 0.45, 0.3)
 const Left_Color := Color(0.306, 0.517, 0.151, 1.0)
-const Right_Color := Color(0.575, 0.153, 0.345, 1.0)
+const Right_Color := Color(0.168, 0.578, 0.523, 1.0)
 
 ## Team colours are data, not literals: these two entries are the only reason
 ## you are blue and your opponent is red. Override them from a menu, a relic, a
@@ -75,7 +75,7 @@ const TEAM_INK_DARKEN := 0.45
 
 var towers: Array = []
 var units: Array = []
-var gold := [5.0, 5.0]
+var gold := [4.2, 4.2]
 var gold_max := 10.0
 var gold_rate := 1.0 / 2.4
 ## Remaining casts for cards that carry more than one (player -> kind -> casts). A
@@ -173,6 +173,13 @@ func _ready() -> void:
 
 
 func _setup_bots() -> void:
+	# retire any bots from an earlier call: dropping them from the array alone left
+	# them alive and still playing (the bot sim calls this a second time, which
+	# used to leave team 1 with an extra, uncounted v1 bot)
+	for old in bots:
+		if old != null and is_instance_valid(old):
+			old.enabled = false
+			old.queue_free()
 	bots = [null, null]
 	for p in 2:
 		if not bool(bot_players[p]):
@@ -1077,6 +1084,25 @@ func spawn_splash_burst(center: Vector2, radius_t: float, dmg: float, team: int,
 	add_child(b)
 
 
+## How a splash attack shows where it landed: a light circle in the attacker's
+## colour, on screen for SPLASH_RING_FRAMES physics frames. Picture only.
+const SPLASH_RING_FRAMES := 12
+
+
+func spawn_splash_ring(center: Vector2, radius_t: float, team: int) -> void:
+	var ring := Node2D.new()
+	ring.position = center
+	ring.z_index = 11
+	var col: Color = team_color(team).lightened(0.45)
+	var px: float = radius_t * float(TILE)
+	ring.draw.connect(func() -> void:
+		ring.draw_circle(Vector2.ZERO, px, Color(col.r, col.g, col.b, 0.38))
+		ring.draw_arc(Vector2.ZERO, px, 0.0, TAU, 32, Color(col.r, col.g, col.b, 0.95), 2.0, true))
+	add_child(ring)
+	# counted on physics ticks, so it is the same 12 frames at any frame rate
+	get_tree().create_timer(float(SPLASH_RING_FRAMES) / 60.0, false, true).timeout.connect(ring.queue_free)
+
+
 func damage_at_point(center: Vector2, radius_t: float, dmg: float, team: int, tower_mult: float = 1.0) -> void:
 	for e in enemy_entities(team):
 		if not is_instance_valid(e):
@@ -1569,6 +1595,86 @@ func launch_hero(player: int) -> void:
 	banner_flash("A hero rides out against the dragon!")
 
 
+## The first elite encounter. Until the run map exists it is started from the
+## debug view (Tab, then S): the opponent, their three towers, their troops,
+## their hand and their bot all go, and the ballista spider takes their place as
+## the one "tower" on that side. See scripts/spider.gd and NOTES §9.
+const SPIDER_SCRIPT := preload("res://scripts/spider.gd")
+var spider: Node = null
+
+
+func start_spider_encounter() -> void:
+	if match_over or (spider != null and is_instance_valid(spider)) or (kraken != null and is_instance_valid(kraken)):
+		return
+	var enemy := 1
+	for t in towers.duplicate():
+		if is_instance_valid(t) and int(t.team) == enemy:
+			towers.erase(t)
+			t.queue_free()
+	for u in units.duplicate():
+		if is_instance_valid(u) and int(u.team) == enemy:
+			u.dead = true
+			units.erase(u)
+			u.queue_free()
+	bot_players[enemy] = false
+	if bots[enemy] != null and is_instance_valid(bots[enemy]):
+		bots[enemy].enabled = false
+	if selected_player == enemy:
+		clear_selection()
+	hands[enemy] = []
+	queues[enemy] = []
+	# no opponent left to use it
+	ability_cd[enemy] = 1.0e9
+	var s: Node = SPIDER_SCRIPT.new()
+	s.name = "Spider"
+	s.setup(self, enemy)
+	towers.append(s)
+	add_child(s)
+	spider = s
+	banner_flash("ELITE  —  the Momma Ballista Spider")
+
+
+## The second elite encounter (Tab, then K): the same swap, but what takes the
+## opponent's place is five tentacles, with the body under water until they are
+## all down. See scripts/kraken.gd and NOTES §10.
+const KRAKEN_SCRIPT := preload("res://scripts/kraken.gd")
+var kraken: Node = null
+
+
+func start_kraken_encounter() -> void:
+	if match_over or (kraken != null and is_instance_valid(kraken)) or (spider != null and is_instance_valid(spider)):
+		return
+	var enemy := 1
+	for t in towers.duplicate():
+		if is_instance_valid(t) and int(t.team) == enemy:
+			towers.erase(t)
+			t.queue_free()
+	for u in units.duplicate():
+		if is_instance_valid(u) and int(u.team) == enemy:
+			u.dead = true
+			units.erase(u)
+			u.queue_free()
+	bot_players[enemy] = false
+	if bots[enemy] != null and is_instance_valid(bots[enemy]):
+		bots[enemy].enabled = false
+	if selected_player == enemy:
+		clear_selection()
+	hands[enemy] = []
+	queues[enemy] = []
+	ability_cd[enemy] = 1.0e9
+	var k: Node = KRAKEN_SCRIPT.new()
+	k.name = "Kraken"
+	k.setup(self, enemy)
+	add_child(k)
+	# the body joins `towers` itself when it surfaces; until then the tentacles
+	# are the only things on that side to walk at
+	for arm in k.arms:
+		towers.append(arm)
+		add_child(arm)
+	kraken = k
+	banner_flash("ELITE  —  the South Sea Kraken")
+
+
 func on_tower_destroyed(tower: Node) -> void:
 	banner_flash("A tower falls!")
 	var owner_team := int(tower.team)
@@ -1621,6 +1727,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_3:
 			_debug_gold(1, "+1 gold â†’ PLAYER 2")
+			return
+		if event.keycode == KEY_S:
+			start_spider_encounter()
+			return
+		if event.keycode == KEY_K:
+			start_kraken_encounter()
 			return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_R and match_over:
 		get_tree().reload_current_scene()
