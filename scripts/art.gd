@@ -73,6 +73,20 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			_zombie(ci, r, t, facing)
 		"hedgehog":
 			hedgehog(ci, r, facing, t, false, ink_col)
+		"obsidian":
+			whelp(ci, r, facing, t, false, false, ink_col)
+		"wu":
+			bonobo(ci, r, facing, t, {"staff": 1.0}, ink_col)
+		"magma":
+			whelp(ci, r, facing, t, false, true, ink_col)
+		"neko":
+			nekomancer(ci, r, facing, t, {}, ink_col)
+		"ratbones":
+			ratbones(ci, r, facing, t, ink_col)
+		"gilgamesh":
+			gilgamesh(ci, r, facing, t, {}, ink_col)
+		"enkidu":
+			enkidu(ci, r, facing, t, {}, ink_col)
 		"chicken":
 			_chicken(ci, r, t, facing, fly)
 		"penny":
@@ -1668,6 +1682,697 @@ static func _chicken(ci: CanvasItem, r: float, t: float, facing: float, flying: 
 			ci.draw_line(Vector2(s * r * 0.35, r * 0.72 + bob), Vector2(s * r * 0.6, r * 1.05 + bob), dark, 2.0, true)
 
 
+## The two whelps share one body. molten = false: the Obsidian Whelp, near-black
+## with rows of bone-coloured scale plates down its back and tail; curled, it
+## rolls into a ring biting its own tail, plates out, eye shut. molten = true:
+## the Magma Whelp, smooth and glowing with cracks of light, flapping in the air.
+static func whelp(ci: CanvasItem, r: float, facing: float, t: float, curled: bool, molten: bool,
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var body := Color(0.16, 0.14, 0.2) if not molten else Color(0.95, 0.32, 0.08)
+	var belly := Color(0.3, 0.27, 0.36) if not molten else Color(1.0, 0.72, 0.22)
+	var plate := Color(0.78, 0.7, 0.52)
+	var plate_dark := Color(0.52, 0.46, 0.34)
+	if curled and not molten:
+		_whelp_curled(ci, r, f, body, plate, plate_dark)
+		ink = keep
+		return
+	var bob: float = sin(t * (11.0 if molten else 5.0)) * r * (0.12 if molten else 0.04)
+	var o := Vector2(0.0, bob)
+	if molten:
+		# a wake of embers below and behind
+		for i in 4:
+			var p: float = fmod(t * 1.6 + float(i) * 0.25, 1.0)
+			ci.draw_circle(o + Vector2(-f * r * (0.5 + 0.9 * p), r * (0.3 + 0.5 * p)), r * 0.12 * (1.0 - p),
+				Color(1.0, 0.6, 0.15, 0.7 * (1.0 - p)))
+	# tail: tapering, curling up at the tip
+	var tail := PackedVector2Array()
+	for i in 7:
+		var k: float = float(i) / 6.0
+		tail.append(o + Vector2(-f * r * (0.4 + 0.9 * k), r * (0.25 - 0.55 * k * k) + sin(t * 4.0 + k * 3.0) * r * 0.06 * k))
+	for i in 6:
+		var w: float = r * (0.3 - 0.04 * float(i))
+		ci.draw_line(tail[i], tail[i + 1], ink, w + 4.0, true)
+	for i in 6:
+		var w2: float = r * (0.3 - 0.04 * float(i))
+		ci.draw_line(tail[i], tail[i + 1], body, w2, true)
+	# wing: a bat wing behind the body, flapping hard when airborne
+	var flap: float = sin(t * 14.0) if molten else 0.15
+	var root := o + Vector2(-f * r * 0.05, -r * 0.2)
+	var tip := root + Vector2(-f * r * 0.55, -r * (0.55 + 0.45 * flap))
+	var mid := root + Vector2(-f * r * 0.15, -r * (0.75 + 0.35 * flap))
+	var trail := root + Vector2(-f * r * 0.6, -r * 0.05 * flap)
+	poly(ci, PackedVector2Array([root, mid, tip, trail]),
+		Color(0.28, 0.22, 0.34) if not molten else Color(1.0, 0.55, 0.15), 1.6)
+	# body and belly
+	ellipse(ci, o + Vector2(0.0, r * 0.1), r * 0.52, r * 0.4, body, 2.2)
+	ellipse(ci, o + Vector2(f * r * 0.06, r * 0.24), r * 0.34, r * 0.18, belly, 0.0)
+	# legs
+	if not molten:
+		for lx in [-0.25, 0.22]:
+			ci.draw_line(o + Vector2(f * r * lx, r * 0.36), Vector2(f * r * (lx + 0.04), r * 0.62), body.lightened(0.05), r * 0.14, true)
+	else:
+		for lx in [-0.15, 0.2]:
+			ci.draw_line(o + Vector2(f * r * lx, r * 0.4), o + Vector2(f * r * (lx - 0.1), r * 0.58), body, r * 0.1, true)
+	# neck and head
+	var head_at := o + Vector2(f * r * 0.55, -r * 0.3)
+	ci.draw_line(o + Vector2(f * r * 0.25, -r * 0.02), head_at, ink, r * 0.3 + 4.0, true)
+	ci.draw_line(o + Vector2(f * r * 0.25, -r * 0.02), head_at, body, r * 0.3, true)
+	ellipse(ci, head_at, r * 0.3, r * 0.22, body, 2.0)
+	poly(ci, PackedVector2Array([head_at + Vector2(f * r * 0.12, -r * 0.12), head_at + Vector2(f * r * 0.48, -r * 0.02),
+		head_at + Vector2(f * r * 0.44, r * 0.08), head_at + Vector2(f * r * 0.1, r * 0.14)]), body, 1.8)
+	# two swept-back horns
+	for hy in [-0.16, -0.08]:
+		var hb := head_at + Vector2(-f * r * 0.05, r * hy)
+		poly(ci, PackedVector2Array([hb, hb + Vector2(-f * r * 0.4, -r * 0.18 + r * hy), hb + Vector2(f * r * 0.06, -r * 0.08)]),
+			plate if not molten else Color(1.0, 0.85, 0.4), 1.4)
+	# the eye, open
+	var eye := head_at + Vector2(f * r * 0.12, -r * 0.05)
+	ci.draw_circle(eye, r * 0.07, Color(1.0, 0.35, 0.15) if not molten else Color(1.0, 0.95, 0.6))
+	ci.draw_circle(eye + Vector2(f * r * 0.015, 0.0), r * 0.03, Color(0.05, 0.04, 0.06))
+	if not molten:
+		# rows of scale plates down the back and along the tail
+		for i in 5:
+			var a: float = deg_to_rad(200.0 + 32.0 * float(i))
+			var base := o + Vector2(0.0, r * 0.1) + Vector2(cos(a) * f * r * 0.5, sin(a) * r * 0.38)
+			var out := (base - o - Vector2(0.0, r * 0.1)).normalized()
+			var s := out.orthogonal() * r * 0.13
+			poly(ci, PackedVector2Array([base + s, base + out * r * 0.3, base - s]), plate, 1.3)
+		for i in range(1, 6):
+			var tp: Vector2 = tail[i]
+			var up := Vector2(0.0, -1.0)
+			var s2 := Vector2(f * r * 0.07, 0.0)
+			poly(ci, PackedVector2Array([tp - s2, tp + up * r * (0.22 - 0.03 * float(i)), tp + s2]), plate_dark, 1.1)
+	else:
+		# cracks of light across the molten hide
+		var glow := Color(1.0, 0.92, 0.5)
+		ci.draw_polyline(PackedVector2Array([o + Vector2(-f * r * 0.3, -r * 0.05), o + Vector2(-f * r * 0.05, r * 0.08),
+			o + Vector2(f * r * 0.1, -r * 0.08), o + Vector2(f * r * 0.3, r * 0.04)]), glow, 1.6, true)
+		ci.draw_polyline(PackedVector2Array([o + Vector2(-f * r * 0.2, r * 0.25), o + Vector2(0.0, r * 0.18),
+			o + Vector2(f * r * 0.18, r * 0.28)]), glow, 1.3, true)
+		ci.draw_circle(o + Vector2(0.0, r * 0.1), r * 0.7, Color(1.0, 0.5, 0.1, 0.12))
+	ink = keep
+
+
+const STAFF_WOOD := Color(0.56, 0.35, 0.17)
+const STAFF_GOLD := Color(0.97, 0.78, 0.25)
+
+
+## A wooden staff with gold caps from a to b; w is its thickness.
+static func gold_staff(ci: CanvasItem, a: Vector2, b: Vector2, w: float) -> void:
+	var d := b - a
+	if d.length() < 0.5:
+		return
+	var n := d.normalized()
+	var cap: float = minf(d.length() * 0.14, w * 2.2)
+	ci.draw_line(a, b, ink, w + 3.0, true)
+	ci.draw_line(a, b, STAFF_WOOD, w, true)
+	ci.draw_line(a + n.orthogonal() * w * 0.2, b + n.orthogonal() * w * 0.2, STAFF_WOOD.lightened(0.25), w * 0.25, true)
+	ci.draw_line(a, a + n * cap, STAFF_GOLD, w * 1.25, true)
+	ci.draw_line(b, b - n * cap, STAFF_GOLD, w * 1.25, true)
+
+
+## Wu Cheng'en, a bonobo, side view facing `facing`.
+## pose: "staff" 0..1 how far the staff is out (0 = on all fours, knuckle
+## walking; while it comes out he rises onto his legs and the staff grows from
+## behind his ear into both hands), "walk" true when moving, "swing" true while
+## the unit draws a staff hit itself (the staff is left out of his hands),
+## "rage" true while raging (hair up, red eyes).
+static func bonobo(ci: CanvasItem, r: float, facing: float, t: float, pose: Dictionary = {}, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var s: float = clampf(float(pose.get("staff", 0.0)), 0.0, 1.0)
+	var walk: bool = bool(pose.get("walk", false))
+	var swing: bool = bool(pose.get("swing", false))
+	var rage: bool = bool(pose.get("rage", false))
+	# rising onto the legs happens over the first half of the draw
+	var up: float = clampf(s * 2.0, 0.0, 1.0)
+	var fur := Color(0.17, 0.16, 0.19)
+	var fur_hi := Color(0.3, 0.29, 0.33)
+	var skin := Color(0.24, 0.2, 0.22)
+	var gait: float = sin(t * 9.0) if walk and up < 0.5 else 0.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	# torso: long and sloping on all fours, upright-ish once he stands
+	var hip: Vector2 = P.call(lerpf(-0.42, -0.12, up), lerpf(0.05, 0.05, up))
+	var shoulder: Vector2 = P.call(lerpf(0.32, 0.08, up), lerpf(-0.28, -0.62, up))
+	# back leg (far) and front arm (far) first, darker
+	var knee_far: Vector2 = hip + P.call(0.22 - 0.1 * gait, 0.35)
+	var foot_far: Vector2 = knee_far + P.call(-0.12 - 0.12 * gait, 0.4)
+	ci.draw_line(hip, knee_far, fur.darkened(0.25), r * 0.24, true)
+	ci.draw_line(knee_far, foot_far, fur.darkened(0.25), r * 0.2, true)
+	if up < 0.5:
+		var knuck_far: Vector2 = shoulder + P.call(0.12 + 0.12 * gait, 1.08)
+		ci.draw_line(shoulder, knuck_far, fur.darkened(0.25), r * 0.2, true)
+	# torso
+	var mid := hip.lerp(shoulder, 0.5)
+	var ang: float = (shoulder - hip).angle()
+	ci.draw_set_transform(mid, ang, Vector2.ONE)
+	ellipse(ci, Vector2.ZERO, hip.distance_to(shoulder) * 0.72, r * 0.36, fur, 2.2)
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# near back leg
+	var knee: Vector2 = hip + P.call(0.26 + 0.1 * gait, 0.32)
+	var foot: Vector2 = knee + P.call(-0.1 + 0.12 * gait, 0.42)
+	ci.draw_line(hip, knee, ink, r * 0.3, true)
+	ci.draw_line(hip, knee, fur, r * 0.24, true)
+	ci.draw_line(knee, foot, ink, r * 0.25, true)
+	ci.draw_line(knee, foot, fur, r * 0.19, true)
+	ci.draw_line(foot, foot + P.call(0.18, 0.0), skin, r * 0.12, true)
+	# head: forward of the shoulders, a dark face with pale lips
+	var head: Vector2 = shoulder + P.call(lerpf(0.3, 0.16, up), lerpf(-0.22, -0.3, up))
+	var ear: Vector2 = head + P.call(-0.2, -0.04)
+	# hair standing up in a rage
+	if rage:
+		for i in 5:
+			var a: float = deg_to_rad(-150.0 + 25.0 * float(i))
+			var hd := Vector2(cos(a) * f, sin(a))
+			ci.draw_line(head + hd * r * 0.28, head + hd * r * 0.5, fur_hi, 2.0, true)
+	circle(ci, head, r * 0.3, fur, 2.0)
+	circle(ci, ear, r * 0.09, skin, 1.4)
+	# the centre-parted hair of a bonobo
+	ci.draw_line(head + P.call(0.0, -0.3), head + P.call(-0.05, -0.12), fur_hi, 1.6, true)
+	ellipse(ci, head + P.call(0.12, 0.05), r * 0.19, r * 0.17, skin, 1.6)
+	ci.draw_line(head + P.call(0.18, 0.14), head + P.call(0.3, 0.12), Color(0.86, 0.62, 0.62), r * 0.07, true)
+	var eye: Vector2 = head + P.call(0.14, -0.04)
+	ci.draw_circle(eye, r * 0.055, Color(1.0, 0.25, 0.2) if rage else Color(0.62, 0.45, 0.3))
+	ci.draw_circle(eye + P.call(0.012, 0.0), r * 0.025, Color(0.04, 0.03, 0.04))
+	ci.draw_line(eye + P.call(-0.07, -0.08), eye + P.call(0.07, -0.07), fur_hi, 1.6, true)
+	# near arm and the staff
+	if up < 0.5 and s <= 0.0:
+		var knuck: Vector2 = shoulder + P.call(0.18 - 0.14 * gait, 1.08)
+		ci.draw_line(shoulder, knuck, ink, r * 0.26, true)
+		ci.draw_line(shoulder, knuck, fur, r * 0.2, true)
+		ci.draw_circle(knuck, r * 0.1, skin)
+	else:
+		# the staff: a twig behind the ear that grows as it comes out until it
+		# lies across both hands at chest height
+		var hands: Vector2 = shoulder + P.call(0.28, 0.26)
+		var hold := hands
+		if not swing:
+			var len_px: float = lerpf(r * 0.2, r * 2.4, ease(s, 0.6))
+			var c: Vector2 = ear.lerp(hands, ease(s, 0.5))
+			var dir_s: Vector2 = Vector2(f * cos(lerpf(-1.4, -0.35, s)), sin(lerpf(-1.4, -0.35, s)))
+			gold_staff(ci, c - dir_s * len_px * 0.45, c + dir_s * len_px * 0.55, lerpf(r * 0.06, r * 0.13, s))
+			hold = c
+		ci.draw_line(shoulder, hold, ink, r * 0.26, true)
+		ci.draw_line(shoulder, hold, fur, r * 0.2, true)
+		ci.draw_circle(hold, r * 0.1, skin)
+	ink = keep
+
+
+const NEKO_CLOAK := Color(0.6, 0.82, 0.4)
+const NEKO_CLOAK_DARK := Color(0.44, 0.64, 0.29)
+const NEKO_TUNIC := Color(0.36, 0.43, 0.3)
+const NEKO_HAT := Color(0.15, 0.24, 0.15)
+const NEKO_FUR := Color(0.13, 0.12, 0.15)
+
+
+## Where the gem on the Nekomancer's staff sits (her beam starts there).
+static func neko_staff_tip(r: float, facing: float) -> Vector2:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	return Vector2(0.56 * f * r, -1.52 * r)
+
+
+## The Nekomancer: a black cat in a ragged green hooded cloak and a pointed
+## wizard's hat, a crescent-headed staff in her front paw.
+## pose: "wind" 1..0 what is left of a gust (the cloak streams back and
+## flutters while it lasts), "cast" 1..0 the gem's flash after a beam, "walk".
+## gem is the colour of her beam (her team).
+static func nekomancer(ci: CanvasItem, r: float, facing: float, t: float, pose: Dictionary = {},
+		ink_col: Color = OUTLINE, gem: Color = Color(0.6, 1.0, 0.5)) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var wind: float = clampf(float(pose.get("wind", 0.0)), 0.0, 1.0)
+	var gust: float = sin((1.0 - wind) * PI) if wind > 0.0 else 0.0
+	var cast: float = clampf(float(pose.get("cast", 0.0)), 0.0, 1.0)
+	var walk: bool = bool(pose.get("walk", false))
+	var step: float = sin(t * 8.0) if walk else 0.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	# tail: curls up behind her
+	var sway: float = sin(t * 2.4) * 0.08
+	var tail := PackedVector2Array([P.call(-0.3, 0.55), P.call(-0.7, 0.45), P.call(-0.95, 0.1),
+		P.call(-0.9 + sway, -0.3), P.call(-0.72 + sway, -0.42)])
+	ci.draw_polyline(tail, ink, r * 0.22, true)
+	ci.draw_polyline(tail, NEKO_FUR, r * 0.15, true)
+	# the cloak behind her: hangs from the shoulders, hem ragged; a gust streams
+	# the back of it out and sets the hem flapping
+	var back := PackedVector2Array()
+	back.append(P.call(0.28, -0.5))
+	back.append(P.call(-0.3, -0.52))
+	var hem_n := 7
+	for i in hem_n + 1:
+		var k: float = float(i) / float(hem_n)
+		# k 0 = back corner, 1 = front corner
+		var x: float = lerpf(-0.6, 0.42, k)
+		var y: float = 0.82 + (0.1 if i % 2 == 1 else 0.0)
+		var flap: float = sin(t * 14.0 + float(i) * 1.3) * 0.07 * gust + sin(t * 3.0 + float(i)) * 0.02
+		x -= gust * (0.55 - 0.45 * k)
+		y += flap - gust * (0.3 - 0.25 * k)
+		if i == 0:
+			# the back edge, out behind her
+			back.append(P.call(x - 0.1 * gust, y - 0.5 - 0.2 * gust))
+		back.append(P.call(x, y))
+	poly(ci, back, NEKO_CLOAK_DARK, 2.0)
+	# feet
+	ellipse(ci, P.call(-0.14 - 0.08 * step, 0.86), r * 0.15, r * 0.09, NEKO_FUR, 1.6)
+	ellipse(ci, P.call(0.2 + 0.08 * step, 0.86), r * 0.15, r * 0.09, NEKO_FUR, 1.6)
+	# tunic and belt, between the cloak's edges
+	ellipse(ci, P.call(0.04, 0.28), r * 0.33, r * 0.5, NEKO_TUNIC, 2.0)
+	ci.draw_line(P.call(-0.27, 0.3), P.call(0.35, 0.22), Color(0.45, 0.28, 0.14), r * 0.12, true)
+	ci.draw_rect(Rect2(P.call(0.06, 0.2) - Vector2(r * 0.07, r * 0.06), Vector2(r * 0.14, r * 0.13)), Color(0.95, 0.76, 0.25), true)
+	# the near half of the cloak, falling over her back shoulder
+	var front := PackedVector2Array([P.call(-0.3, -0.52), P.call(-0.05, -0.48), P.call(-0.12, 0.2),
+		P.call(-0.3 - 0.3 * gust, 0.86 - 0.15 * gust), P.call(-0.5 - 0.45 * gust, 0.78 - 0.25 * gust)])
+	poly(ci, front, NEKO_CLOAK, 2.0)
+	# the paw and sleeve on the staff, then the staff itself
+	var tip: Vector2 = neko_staff_tip(r, f)
+	var foot_s: Vector2 = P.call(0.6, 0.86)
+	var crook: Vector2 = tip + P.call(0.0, 0.2)
+	ci.draw_line(foot_s, crook, ink, r * 0.15 + 2.0, true)
+	ci.draw_line(foot_s, crook, STAFF_WOOD.darkened(0.15), r * 0.15, true)
+	# the crescent cupping the gem
+	ci.draw_arc(tip, r * 0.2, PI * 0.15, PI * 0.85, 10, ink, r * 0.12 + 2.0, true)
+	ci.draw_arc(tip, r * 0.2, PI * 0.15, PI * 0.85, 10, STAFF_WOOD.darkened(0.15), r * 0.12, true)
+	ci.draw_line(tip + Vector2(r * 0.18, -r * 0.02), tip + Vector2(r * 0.24, -r * 0.2), ink, r * 0.08, true)
+	ci.draw_line(tip + Vector2(-r * 0.18, -r * 0.02), tip + Vector2(-r * 0.24, -r * 0.2), ink, r * 0.08, true)
+	var glow: float = 0.3 + 0.12 * sin(t * 5.0) + 0.5 * cast
+	ci.draw_circle(tip, r * (0.22 + 0.2 * cast), Color(gem.r, gem.g, gem.b, glow * 0.5))
+	circle(ci, tip, r * 0.11, gem.lightened(0.25 + 0.4 * cast), 1.4)
+	var paw: Vector2 = P.call(0.56, -0.08)
+	ci.draw_line(P.call(0.2, -0.38), paw, ink, r * 0.24, true)
+	ci.draw_line(P.call(0.2, -0.38), paw, NEKO_CLOAK, r * 0.18, true)
+	circle(ci, paw, r * 0.11, NEKO_FUR, 1.4)
+	# head, collar gem, face
+	var head: Vector2 = P.call(0.06, -0.74)
+	circle(ci, head, r * 0.36, NEKO_FUR, 2.0)
+	circle(ci, P.call(0.06, -0.4), r * 0.085, Color(0.85, 0.15, 0.12), 1.4)
+	for side in [-1.0, 1.0]:
+		var eye: Vector2 = head + P.call(0.07 + 0.16 * side, 0.03)
+		ellipse(ci, eye, r * 0.12, r * 0.1, Color(0.9, 0.97, 0.25), 0.0)
+		ci.draw_line(eye + Vector2(0, -r * 0.08), eye + Vector2(0, r * 0.08), Color(0.04, 0.03, 0.04), maxf(1.0, r * 0.05), true)
+		# heavy lids slanting in: she is not pleased
+		# (the inner corner, toward the nose, droops lowest)
+		var y_in: float = -0.01
+		var y_out: float = -0.1
+		poly(ci, PackedVector2Array([eye + P.call(-0.14, -0.12), eye + P.call(0.14, -0.12),
+			eye + P.call(0.14, y_in if side < 0.0 else y_out), eye + P.call(-0.14, y_out if side < 0.0 else y_in)]), NEKO_FUR, 0.0)
+	# the hat: wide brim, ears through it, a cone that bends back at the tip
+	ellipse(ci, head + P.call(0.0, -0.24), r * 0.6, r * 0.13, NEKO_HAT, 2.0)
+	for side in [-1.0, 1.0]:
+		var base: Vector2 = head + P.call(0.33 * side, -0.27)
+		poly(ci, PackedVector2Array([base + P.call(-0.1, 0.0), base + P.call(0.1, 0.0),
+			base + P.call(0.12 * side, -0.24)]), NEKO_FUR, 1.6)
+	var droop: float = sin(t * 2.0) * 0.04 - 0.15 * gust
+	var cone := PackedVector2Array([head + P.call(-0.26, -0.28), head + P.call(0.24, -0.28),
+		head + P.call(0.06, -0.85), head + P.call(-0.3 + droop, -1.12), head + P.call(-0.14, -0.78)])
+	poly(ci, cone, NEKO_HAT, 2.0)
+	ci.draw_line(head + P.call(-0.24, -0.38), head + P.call(0.21, -0.38), NEKO_CLOAK, r * 0.1, true)
+	ci.draw_rect(Rect2(head + P.call(-0.02, -0.38) - Vector2(r * 0.05, r * 0.05), Vector2(r * 0.1, r * 0.1)), Color(0.95, 0.76, 0.25), true)
+	ink = keep
+
+
+const GIL_PLATE := Color(0.16, 0.42, 0.5)
+const GIL_PLATE_DARK := Color(0.1, 0.27, 0.34)
+const GIL_GOLD := Color(0.95, 0.75, 0.28)
+const GIL_SKIN := Color(0.82, 0.6, 0.44)
+const GIL_HAIR := Color(0.2, 0.13, 0.1)
+const LION := Color(0.9, 0.66, 0.28)
+const LION_MANE := Color(0.68, 0.38, 0.14)
+
+
+## A snake as a tapering body along pts (tail first, head last), in col with a
+## pale belly line, head at the end with an eye and a flick of tongue.
+static func snake_body(ci: CanvasItem, pts: PackedVector2Array, w: float, col: Color, t: float) -> void:
+	var n := pts.size()
+	if n < 2:
+		return
+	for i in n - 1:
+		var k: float = float(i) / float(n - 1)
+		var ww: float = w * lerpf(0.35, 1.0, k)
+		ci.draw_line(pts[i], pts[i + 1], ink, ww + 2.2, true)
+	for i in n - 1:
+		var k: float = float(i) / float(n - 1)
+		var ww: float = w * lerpf(0.35, 1.0, k)
+		ci.draw_line(pts[i], pts[i + 1], col, ww, true)
+		if i % 2 == 0:
+			ci.draw_line(pts[i], pts[i + 1], col.lightened(0.45), ww * 0.3, true)
+	var head: Vector2 = pts[n - 1]
+	var dir: Vector2 = (pts[n - 1] - pts[n - 2]).normalized()
+	var side := dir.orthogonal()
+	var tip: Vector2 = head + dir * w * 1.3
+	poly(ci, PackedVector2Array([head - dir * w * 0.3 + side * w * 0.75, tip + side * w * 0.3,
+		tip - side * w * 0.3, head - dir * w * 0.3 - side * w * 0.75]), col, 1.6)
+	ci.draw_circle(head + dir * w * 0.35 + side * w * 0.38, maxf(1.0, w * 0.2), Color(1.0, 0.9, 0.3))
+	if sin(t * 9.0) > 0.0:
+		ci.draw_line(tip, tip + dir * w * 0.9, Color(0.85, 0.15, 0.2), maxf(1.0, w * 0.15), true)
+
+
+## Gilgamesh's lash from `from` toward `to` (local), `ext` 0..1 of the way out:
+## a wave travels down the body so it whips rather than pokes.
+static func snake_lash(ci: CanvasItem, from: Vector2, to: Vector2, ext: float, t: float, w: float,
+		col: Color, ink_col: Color = OUTLINE) -> void:
+	if ext <= 0.01:
+		return
+	var keep := ink
+	ink = ink_col
+	var d: Vector2 = (to - from) * ext
+	var side: Vector2 = d.normalized().orthogonal()
+	var pts := PackedVector2Array()
+	var n := 14
+	for i in n + 1:
+		var k: float = float(i) / float(n)
+		var amp: float = w * 1.8 * sin(k * PI) * (1.2 - ext * 0.5)
+		pts.append(from + d * k + side * amp * sin(k * TAU * 1.5 - t * 24.0))
+	snake_body(ci, pts, w, col, t)
+	ink = keep
+
+
+## Where Gilgamesh's whip hand is, for the lash.
+static func gilgamesh_hand(r: float, facing: float) -> Vector2:
+	var f := facing if absf(facing) > 0.01 else 1.0
+	return Vector2(0.62 * f * r, -0.05 * r)
+
+
+## Gilgamesh, from the palace relief: square-cut beard in rows of ringlets,
+## curled hair under a gold circlet, in teal plate trimmed in gold with a fur
+## collar and a lion's head for the near pauldron. A snake in his team's
+## colour is his whip: coiled on his arm at rest, gone from it mid-lash.
+## pose: "lashing", "walk".
+static func gilgamesh(ci: CanvasItem, r: float, facing: float, t: float, pose: Dictionary = {},
+		ink_col: Color = OUTLINE, snake: Color = Color(0.3, 0.6, 0.9)) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var walk: bool = bool(pose.get("walk", false))
+	var lashing: bool = bool(pose.get("lashing", false))
+	var g: float = sin(t * 8.0) if walk else 0.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	# cape
+	poly(ci, PackedVector2Array([P.call(0.2, -0.55), P.call(-0.42, -0.55), P.call(-0.72 - 0.05 * g, 0.78),
+		P.call(-0.2, 0.86), P.call(0.1, 0.5)]), Color(0.42, 0.12, 0.14), 2.0)
+	# legs: plated greaves
+	for s in [-1.0, 1.0]:
+		var hip: Vector2 = P.call(0.08 * s - 0.02, 0.35)
+		var foot: Vector2 = P.call(0.1 * s + 0.12 * g * s, 0.9)
+		ci.draw_line(hip, foot, ink, r * 0.26, true)
+		ci.draw_line(hip, foot, GIL_PLATE_DARK if s < 0.0 else GIL_PLATE, r * 0.2, true)
+		ellipse(ci, foot + P.call(0.06, 0.02), r * 0.15, r * 0.08, Color(0.3, 0.2, 0.14), 1.4)
+	# plated skirt with a gold hem
+	poly(ci, PackedVector2Array([P.call(-0.36, 0.0), P.call(0.36, 0.0), P.call(0.42, 0.5), P.call(-0.42, 0.5)]),
+		GIL_PLATE_DARK, 2.0)
+	ci.draw_line(P.call(-0.42, 0.48), P.call(0.42, 0.48), GIL_GOLD, r * 0.07, true)
+	ci.draw_line(P.call(0.0, 0.02), P.call(0.0, 0.48), GIL_PLATE, r * 0.05, true)
+	# far pauldron
+	circle(ci, P.call(-0.36, -0.42), r * 0.2, GIL_PLATE_DARK, 1.8)
+	# breastplate: gold trim, red gem, a chain across
+	poly(ci, PackedVector2Array([P.call(-0.38, -0.5), P.call(0.38, -0.5), P.call(0.32, 0.04), P.call(-0.32, 0.04)]),
+		GIL_PLATE, 2.0)
+	ci.draw_line(P.call(-0.3, -0.18), P.call(0.3, -0.18), GIL_GOLD, r * 0.05, true)
+	circle(ci, P.call(0.0, -0.28), r * 0.08, Color(0.85, 0.12, 0.12), 1.2)
+	ci.draw_line(P.call(-0.3, -0.48), P.call(0.25, -0.05), GIL_GOLD.darkened(0.2), r * 0.04, true)
+	# fur collar
+	ellipse(ci, P.call(0.0, -0.52), r * 0.36, r * 0.11, Color(0.86, 0.8, 0.68), 1.6)
+	# the lion's head pauldron on the near shoulder, looking forward; drawn
+	# before the head so the beard falls over its mane
+	var lion: Vector2 = P.call(0.44, -0.34)
+	for i in 10:
+		var a: float = TAU * float(i) / 10.0
+		ci.draw_circle(lion + Vector2(cos(a), sin(a)) * r * 0.17, r * 0.09, LION_MANE)
+	circle(ci, lion, r * 0.17, LION_MANE, 1.6)
+	circle(ci, lion + P.call(0.03, 0.01), r * 0.12, LION, 1.4)
+	ci.draw_circle(lion + P.call(0.07, 0.05), r * 0.05, Color(0.98, 0.84, 0.6))
+	ci.draw_circle(lion + P.call(0.1, 0.02), maxf(1.0, r * 0.028), Color(0.15, 0.08, 0.05))
+	ci.draw_circle(lion + P.call(0.04, -0.04), maxf(1.0, r * 0.026), Color(0.15, 0.08, 0.05))
+	ci.draw_line(lion + P.call(0.05, 0.1), lion + P.call(0.12, 0.09), Color(0.5, 0.12, 0.1), maxf(1.0, r * 0.035), true)
+	# head: curled hair, then the face, then the square beard in ringlet rows
+	var head: Vector2 = P.call(0.02, -0.86)
+	circle(ci, head + P.call(-0.06, -0.02), r * 0.3, GIL_HAIR, 1.8)
+	ellipse(ci, head + P.call(0.04, 0.0), r * 0.2, r * 0.23, GIL_SKIN, 1.6)
+	var beard := PackedVector2Array([head + P.call(-0.14, 0.06), head + P.call(0.22, 0.06),
+		head + P.call(0.2, 0.42), head + P.call(-0.12, 0.42)])
+	poly(ci, beard, GIL_HAIR, 1.6)
+	for row in 4:
+		var y: float = 0.13 + 0.08 * float(row)
+		ci.draw_line(head + P.call(-0.11, y), head + P.call(0.19, y), GIL_HAIR.lightened(0.25), maxf(1.0, r * 0.03), true)
+	for s in [-1.0, 1.0]:
+		ci.draw_circle(head + P.call(0.04 + 0.27 * s, 0.1), r * 0.08, GIL_HAIR.lightened(0.12))
+	ci.draw_circle(head + P.call(0.1, -0.03), maxf(1.0, r * 0.035), Color(0.08, 0.05, 0.04))
+	ci.draw_line(head + P.call(0.03, -0.09), head + P.call(0.16, -0.09), GIL_HAIR, maxf(1.0, r * 0.04), true)
+	ci.draw_line(head + P.call(-0.2, -0.17), head + P.call(0.22, -0.17), GIL_GOLD, r * 0.07, true)
+	# near arm and whip hand
+	var hand: Vector2 = gilgamesh_hand(r, f)
+	# the arm comes out from under the lion
+	var elbow: Vector2 = lion + P.call(0.04, 0.14)
+	ci.draw_line(elbow, hand, ink, r * 0.24, true)
+	ci.draw_line(elbow, hand, GIL_PLATE, r * 0.18, true)
+	ci.draw_line(hand + P.call(-0.12, -0.1), hand + P.call(-0.03, -0.02), GIL_GOLD, r * 0.18, true)
+	circle(ci, hand, r * 0.09, GIL_SKIN, 1.4)
+	if not lashing:
+		# the snake at rest: hangs from his fist, loops, and lifts its head
+		var sw: float = sin(t * 2.5) * 0.06
+		var pts := PackedVector2Array([hand + P.call(-0.05, -0.05), hand + P.call(0.05, 0.2),
+			hand + P.call(0.2, 0.45), hand + P.call(0.08, 0.68), hand + P.call(0.28, 0.8),
+			hand + P.call(0.42 + sw, 0.6), hand + P.call(0.46 + sw, 0.38)])
+		snake_body(ci, pts, r * 0.15, snake, t)
+	ink = keep
+
+
+## The card / deploy-preview picture of the pair, centred on c: Gilgamesh on
+## the left facing in, Enkidu on the right facing him. Sets the transform itself
+## (absolute), so pass the centre in canvas coordinates.
+static func gil_pair(ci: CanvasItem, c: Vector2, r: float, t: float = 0.0) -> void:
+	ci.draw_set_transform(c + Vector2(-r * 0.6, 0.0), 0.0, Vector2.ONE)
+	gilgamesh(ci, r, 1.0, t)
+	ci.draw_set_transform(c + Vector2(r * 0.65, r * 0.05), 0.0, Vector2.ONE)
+	enkidu(ci, r * 0.95, -1.0, t)
+	ci.draw_set_transform(c, 0.0, Vector2.ONE)
+
+
+const ENK_SKIN := Color(0.76, 0.55, 0.38)
+const ENK_FUR := Color(0.45, 0.3, 0.18)
+const ENK_HORN := Color(0.93, 0.88, 0.74)
+const BRONZE := Color(0.82, 0.55, 0.25)
+
+
+## Enkidu's spear from a (butt) to b (point).
+static func enkidu_spear(ci: CanvasItem, a: Vector2, b: Vector2, w: float) -> void:
+	var d := b - a
+	if d.length() < 0.5:
+		return
+	var n := d.normalized()
+	var s := n.orthogonal()
+	ci.draw_line(a, b - n * w * 2.5, ink, w + 2.2, true)
+	ci.draw_line(a, b - n * w * 2.5, STAFF_WOOD, w, true)
+	poly(ci, PackedVector2Array([b, b - n * w * 3.2 + s * w * 1.1, b - n * w * 2.4, b - n * w * 3.2 - s * w * 1.1]),
+		BRONZE, 1.2)
+
+
+## Enkidu, from the cylinder seal: a bull-man with a human chest and bearded
+## face, curved horns and bull's ears, shaggy bull legs on hooves and a tufted
+## tail. pose: "spear" (in hand; otherwise a short bronze sword), "walk",
+## "strike" 1..0 the thrust after a hit.
+static func enkidu(ci: CanvasItem, r: float, facing: float, t: float, pose: Dictionary = {},
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var walk: bool = bool(pose.get("walk", false))
+	var has_spear: bool = bool(pose.get("spear", true))
+	var strike: float = clampf(float(pose.get("strike", 0.0)), 0.0, 1.0)
+	var g: float = sin(t * 9.0) if walk else 0.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	# tail with a tuft
+	var tw: float = sin(t * 3.0) * 0.08
+	var tail := PackedVector2Array([P.call(-0.25, 0.25), P.call(-0.6, 0.35), P.call(-0.72 + tw, 0.65)])
+	ci.draw_polyline(tail, ink, r * 0.09 + 2.0, true)
+	ci.draw_polyline(tail, ENK_FUR, r * 0.09, true)
+	circle(ci, P.call(-0.74 + tw, 0.72), r * 0.09, ENK_FUR.darkened(0.3), 1.2)
+	# bull legs: thigh back, hock, cannon down to a hoof
+	for s in [-1.0, 1.0]:
+		var hip: Vector2 = P.call(-0.04 + 0.1 * s, 0.25)
+		var hock: Vector2 = P.call(-0.14 + 0.1 * s - 0.1 * g * s, 0.6)
+		var hoof: Vector2 = P.call(0.0 + 0.1 * s + 0.12 * g * s, 0.88)
+		var c: Color = ENK_FUR.darkened(0.2) if s < 0.0 else ENK_FUR
+		ci.draw_line(hip, hock, ink, r * 0.3, true)
+		ci.draw_line(hip, hock, c, r * 0.24, true)
+		ci.draw_line(hock, hoof, ink, r * 0.18, true)
+		ci.draw_line(hock, hoof, c, r * 0.13, true)
+		poly(ci, PackedVector2Array([hoof + P.call(-0.08, -0.03), hoof + P.call(0.1, -0.03),
+			hoof + P.call(0.12, 0.06), hoof + P.call(-0.08, 0.06)]), Color(0.18, 0.13, 0.1), 1.2)
+	# shaggy haunches and a loincloth
+	ellipse(ci, P.call(-0.02, 0.22), r * 0.32, r * 0.2, ENK_FUR, 2.0)
+	poly(ci, PackedVector2Array([P.call(-0.2, 0.08), P.call(0.24, 0.08), P.call(0.16, 0.38), P.call(-0.1, 0.38)]),
+		Color(0.86, 0.8, 0.6), 1.4)
+	# far arm
+	ci.draw_line(P.call(-0.2, -0.45), P.call(-0.3, -0.05), ink, r * 0.2, true)
+	ci.draw_line(P.call(-0.2, -0.45), P.call(-0.3, -0.05), ENK_SKIN.darkened(0.2), r * 0.15, true)
+	# bare torso
+	ellipse(ci, P.call(0.02, -0.25), r * 0.3, r * 0.34, ENK_SKIN, 2.0)
+	ci.draw_line(P.call(0.0, -0.4), P.call(0.04, -0.1), ENK_SKIN.darkened(0.18), maxf(1.0, r * 0.03), true)
+	# head: wild hair, horns, bull ears, face, long beard
+	var head: Vector2 = P.call(0.08, -0.72)
+	circle(ci, head + P.call(-0.05, -0.03), r * 0.25, GIL_HAIR.lightened(0.08), 1.8)
+	for s in [-1.0, 1.0]:
+		var base: Vector2 = head + P.call(0.02 + 0.17 * s, -0.17)
+		var horn := PackedVector2Array([base, base + P.call(0.16 * s, -0.12), base + P.call(0.2 * s, -0.3)])
+		ci.draw_polyline(horn, ink, r * 0.11 + 2.0, true)
+		ci.draw_polyline(horn, ENK_HORN, r * 0.11, true)
+		ellipse(ci, head + P.call(0.04 + 0.25 * s, -0.04), r * 0.1, r * 0.05, ENK_SKIN.darkened(0.1), 1.2)
+	ellipse(ci, head + P.call(0.05, 0.0), r * 0.17, r * 0.2, ENK_SKIN, 1.6)
+	poly(ci, PackedVector2Array([head + P.call(-0.1, 0.08), head + P.call(0.2, 0.08), head + P.call(0.12, 0.42),
+		head + P.call(0.02, 0.46), head + P.call(-0.06, 0.4)]), GIL_HAIR.lightened(0.08), 1.6)
+	ci.draw_circle(head + P.call(0.1, -0.03), maxf(1.0, r * 0.035), Color(0.08, 0.05, 0.04))
+	ci.draw_line(head + P.call(0.02, -0.1), head + P.call(0.16, -0.08), GIL_HAIR, maxf(1.0, r * 0.04), true)
+	# near arm and weapon, thrusting forward on a strike
+	var push: float = strike * 0.25
+	var shoulder: Vector2 = P.call(0.2, -0.42)
+	var hand: Vector2 = P.call(0.5 + push, -0.12)
+	ci.draw_line(shoulder, hand, ink, r * 0.22, true)
+	ci.draw_line(shoulder, hand, ENK_SKIN, r * 0.17, true)
+	if has_spear:
+		var along := Vector2(f * 0.94, -0.34).normalized()
+		enkidu_spear(ci, hand - along * r * 1.1, hand + along * r * 1.3, maxf(1.6, r * 0.09))
+	else:
+		# the short sword: a bronze leaf blade, point forward
+		var sd := Vector2(f * 0.9, -0.44).normalized()
+		ci.draw_line(hand - sd * r * 0.12, hand + sd * r * 0.08, Color(0.3, 0.2, 0.12), r * 0.1, true)
+		poly(ci, PackedVector2Array([hand + sd * r * 0.08 + sd.orthogonal() * r * 0.08, hand + sd * r * 0.62,
+			hand + sd * r * 0.08 - sd.orthogonal() * r * 0.08]), BRONZE.lightened(0.15), 1.2)
+	circle(ci, hand, r * 0.09, ENK_SKIN, 1.3)
+	ink = keep
+
+
+## A raised rat skeleton, side view: skull with long incisors, a hunched spine
+## with hanging ribs, thin legs and a long tail of vertebrae.
+static func ratbones(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var bone := Color(0.93, 0.9, 0.8)
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var g: float = sin(t * 14.0)
+	var B := func(a: Vector2, b: Vector2, w: float) -> void:
+		ci.draw_line(a, b, ink, w + 2.0, true)
+		ci.draw_line(a, b, bone, w, true)
+	# tail
+	var tail := PackedVector2Array()
+	for i in 7:
+		var k: float = float(i) / 6.0
+		tail.append(P.call(-0.5 - 0.9 * k, 0.1 + 0.12 * k + sin(t * 6.0 + k * 4.0) * 0.08 * k))
+	ci.draw_polyline(tail, ink, r * 0.1 + 2.0, true)
+	ci.draw_polyline(tail, bone, r * 0.1, true)
+	# far legs
+	B.call(P.call(-0.42, 0.02), P.call(-0.36 - 0.12 * g, 0.55), r * 0.08)
+	B.call(P.call(0.25, -0.08), P.call(0.32 + 0.12 * g, 0.55), r * 0.08)
+	# spine
+	var spine := PackedVector2Array([P.call(-0.48, 0.02), P.call(-0.3, -0.25), P.call(0.0, -0.35),
+		P.call(0.25, -0.25), P.call(0.42, -0.15)])
+	ci.draw_polyline(spine, ink, r * 0.14 + 2.0, true)
+	ci.draw_polyline(spine, bone, r * 0.14, true)
+	# ribs hanging off it
+	for i in 4:
+		var k: float = float(i) / 3.0
+		var top: Vector2 = P.call(lerpf(-0.22, 0.22, k), lerpf(-0.3, -0.3, k) - 0.04 * sin(k * PI))
+		var bot: Vector2 = top + P.call(0.06, 0.32 - 0.06 * absf(k - 0.5))
+		ci.draw_line(top, bot, ink, r * 0.07 + 1.6, true)
+		ci.draw_line(top, bot, bone, r * 0.07, true)
+	# pelvis
+	ellipse(ci, P.call(-0.44, 0.0), r * 0.13, r * 0.1, bone, 1.4)
+	# near legs
+	B.call(P.call(-0.44, 0.04), P.call(-0.3 + 0.12 * g, 0.3), r * 0.09)
+	B.call(P.call(-0.3 + 0.12 * g, 0.3), P.call(-0.4 + 0.12 * g, 0.56), r * 0.08)
+	B.call(P.call(0.28, -0.1), P.call(0.36 - 0.12 * g, 0.56), r * 0.08)
+	# skull: long snout, dark socket with a cold glint, incisors
+	var skull := PackedVector2Array([P.call(0.32, -0.38), P.call(0.6, -0.42), P.call(0.95, -0.2),
+		P.call(0.9, -0.08), P.call(0.55, -0.02), P.call(0.34, -0.1)])
+	poly(ci, skull, bone, 1.6)
+	ci.draw_circle(P.call(0.55, -0.24), r * 0.09, Color(0.08, 0.06, 0.1))
+	ci.draw_circle(P.call(0.56, -0.25), r * 0.035, Color(0.6, 1.0, 0.55))
+	ci.draw_line(P.call(0.88, -0.1), P.call(0.86, 0.04), ink, r * 0.09, true)
+	ci.draw_line(P.call(0.32, -0.36), P.call(0.36, -0.52), bone.darkened(0.15), r * 0.1, true)
+	ink = keep
+
+
+## The Obsidian Whelp rolled up like an armadillo lizard, seen from the side:
+## the body bends round in a near ring, banded plates along the outside of the
+## curve, the head at the front biting the tail tip with its eye shut, the wings
+## folded flat along the top of its back and the little legs tucked in the middle.
+static func _whelp_curled(ci: CanvasItem, r: float, f: float, body: Color, plate: Color, plate_dark: Color) -> void:
+	var c := Vector2(0.0, r * 0.08)
+	var ring: float = r * 0.56
+	var n := 18
+	# the spine: from the neck (upper front) back over the top, down the back,
+	# under the belly and up to the tail tip at the mouth
+	var pts := PackedVector2Array()
+	var dirs: Array = []
+	var widths: Array = []
+	for i in n + 1:
+		var s: float = float(i) / float(n)
+		var a: float = deg_to_rad(-35.0 - 305.0 * s)
+		var d := Vector2(cos(a) * f, sin(a))
+		dirs.append(d)
+		pts.append(c + d * ring)
+		widths.append(r * (0.44 - 0.3 * s))
+	# the hollow of the curl
+	ci.draw_circle(c, ring * 0.48, Color(0.06, 0.05, 0.08, 0.9))
+	# tucked feet with pale claws, inside the curl
+	for k in [-0.35, 0.15]:
+		var foot := c + Vector2(f * r * k, r * 0.12)
+		ci.draw_circle(foot, r * 0.1, body.lightened(0.08))
+		for j in 3:
+			ci.draw_line(foot, foot + Vector2(f * r * (0.06 + 0.05 * float(j)), -r * 0.12), plate, 1.4, true)
+	# the body itself: outline pass, then fill
+	for i in n:
+		ci.draw_line(pts[i], pts[i + 1], ink, float(widths[i]) + 4.0, true)
+		ci.draw_circle(pts[i + 1], (float(widths[i + 1]) + 4.0) * 0.5, ink)
+	for i in n:
+		ci.draw_line(pts[i], pts[i + 1], body, float(widths[i]), true)
+		ci.draw_circle(pts[i + 1], float(widths[i + 1]) * 0.5, body)
+	# a paler belly line on the inside of the curve
+	for i in range(1, n):
+		var inner: Vector2 = pts[i] - dirs[i] * float(widths[i]) * 0.3
+		var inner2: Vector2 = pts[i + 1] - dirs[i + 1] * float(widths[i + 1]) * 0.3
+		ci.draw_line(inner, inner2, Color(0.32, 0.29, 0.38), float(widths[i]) * 0.22, true)
+	# banded plates: one ring of scale per segment, each a flat shield on the
+	# outside of the curve with a short blunt point, not a spike
+	for i in range(1, n + 1):
+		var d: Vector2 = dirs[i]
+		var w: float = float(widths[i])
+		var side := d.orthogonal() * w * 0.42
+		var base: Vector2 = pts[i] + d * w * 0.18
+		poly(ci, PackedVector2Array([base + side, base + d * w * 0.42 + side * 0.7, base + d * w * 0.58,
+			base + d * w * 0.42 - side * 0.7, base - side]), plate, 1.3)
+		ci.draw_line(base + side * 0.8, base - side * 0.8, plate_dark, 1.4, true)
+	# wings folded flat along the top of the back, membrane and a finger bone
+	var w0: Vector2 = c + Vector2(cos(deg_to_rad(-60.0)) * f, sin(deg_to_rad(-60.0))) * ring * 1.15
+	var w1: Vector2 = c + Vector2(cos(deg_to_rad(-150.0)) * f, sin(deg_to_rad(-150.0))) * ring * 1.25
+	var wtip: Vector2 = c + Vector2(cos(deg_to_rad(-170.0)) * f, sin(deg_to_rad(-170.0))) * ring * 1.55
+	var wtop: Vector2 = c + Vector2(cos(deg_to_rad(-100.0)) * f, sin(deg_to_rad(-100.0))) * ring * 1.55
+	var membrane := Color(0.3, 0.22, 0.38)
+	poly(ci, PackedVector2Array([w0, wtop, wtip, w1]), membrane, 1.8)
+	ci.draw_line(w0, wtip, membrane.lightened(0.2), 1.6, true)
+	ci.draw_line(w0.lerp(wtop, 0.5), w1.lerp(wtip, 0.6), membrane.darkened(0.3), 1.2, true)
+	# the head at the front, bowed down over the tail tip, eye shut
+	var head := c + Vector2(cos(deg_to_rad(-12.0)) * f, sin(deg_to_rad(-12.0))) * ring * 1.12
+	var snout: Vector2 = pts[n] + Vector2(f * r * 0.08, -r * 0.04)
+	var face := body.lightened(0.14)
+	poly(ci, PackedVector2Array([head + Vector2(-f * r * 0.12, -r * 0.12), head + Vector2(f * r * 0.24, -r * 0.08),
+		snout + Vector2(f * r * 0.1, 0.0), snout + Vector2(-f * r * 0.06, -r * 0.02)]), face, 1.8)
+	ellipse(ci, head, r * 0.32, r * 0.26, face, 2.0)
+	# scale tiles on the crown of the head
+	for k in 3:
+		ci.draw_arc(head + Vector2(f * r * (0.1 * float(k) - 0.1), -r * 0.04), r * 0.07, PI, TAU, 6, plate_dark, 1.2, true)
+	# plated brow and two swept-back horns
+	for k in 3:
+		var hb := head + Vector2(-f * r * (0.08 * float(k) - 0.06), -r * 0.17)
+		poly(ci, PackedVector2Array([hb + Vector2(-f * r * 0.06, 0.0), hb + Vector2(-f * r * 0.16, -r * (0.12 + 0.05 * float(k))),
+			hb + Vector2(f * r * 0.05, 0.0)]), plate, 1.2)
+	ci.draw_arc(head + Vector2(f * r * 0.04, -r * 0.02), r * 0.08, 0.25, PI - 0.25, 8, Color(0.05, 0.05, 0.07), 2.0, true)
+
+
 static func hedgehog(ci: CanvasItem, r: float, facing: float, t: float, curled: bool, ink_col: Color = OUTLINE) -> void:
 	ink = ink_col
 	var body := Color(0.66, 0.52, 0.38)
@@ -1797,6 +2502,21 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			creature(ci, "zombie", r, 1.0, t)
 		"hedgehog":
 			creature(ci, "hedgehog", r, 1.0, t)
+		"obsidian":
+			creature(ci, "obsidian", r, 1.0, t)
+		"wu":
+			creature(ci, "wu", r, 1.0, t)
+		"magma":
+			creature(ci, "magma", r, 1.0, t)
+		"neko":
+			# the hat and staff stand well above her: shrink to keep them on the card
+			creature(ci, "neko", r * 0.75, 1.0, t)
+		"ratbones":
+			creature(ci, "ratbones", r, 1.0, t)
+		"gilgamesh":
+			gil_pair(ci, c, r * 0.8, t)
+		"enkidu":
+			creature(ci, "enkidu", r, 1.0, t)
 		"chicken":
 			creature(ci, "chicken", r, 1.0, t)
 		"penny":

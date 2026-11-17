@@ -38,6 +38,10 @@ var stunned := 0.0
 var run_clock := 0.0
 ## cosmetic: which way he is drawn facing
 var facing := 1.0
+## the bridge column he runs home over, fixed when he lands
+var bridge_col := 5.0
+## enemy troops able to hit him on each half when he chose [bridge A, bridge B]
+var lane_threat := [0, 0]
 
 
 func setup(a: Node2D, tm: int, tower: Node, home: Node) -> void:
@@ -85,7 +89,7 @@ func _physics_process(delta: float) -> void:
 	var home: Vector2 = from
 	if is_instance_valid(home_tower):
 		home = home_tower.position
-	var wp: Vector2 = arena.route_point(position, home)
+	var wp: Vector2 = _route_home(position, home)
 	var dir: Vector2 = wp - position
 	if dir.length() < 2.0:
 		dir = home - position
@@ -112,7 +116,57 @@ func _land() -> void:
 	untargetable = false
 	phase = P.RETURN
 	clock = 0.0
+	bridge_col = _pick_bridge()
 	queue_redraw()
+
+
+## Chosen once, as he lands: the bridge whose half of the board holds fewer
+## enemy troops that could attack him. Ties go to the nearer bridge. He never
+## changes his mind on the way.
+func _pick_bridge() -> float:
+	var a: float = float(arena.BRIDGE_COL_A)
+	var b: float = float(arena.BRIDGE_COL_B)
+	var split: float = (a + b) * 0.5 + 0.5
+	var threat := [0, 0]
+	for u in arena.units:
+		if not _can_hit_me(u):
+			continue
+		var col: float = float(arena.tile_of(u.position).x) + 0.5
+		threat[0 if col < split else 1] += 1
+	lane_threat = threat
+	if threat[0] != threat[1]:
+		return a if threat[0] < threat[1] else b
+	return arena.nearest_bridge_col(arena.tile_of(position).x)
+
+
+## An enemy troop or building that would pick him as a target.
+func _can_hit_me(u: Node) -> bool:
+	if not (u is DDUnit) or not is_instance_valid(u) or u.dead or int(u.team) == team:
+		return false
+	if (float(u.dmg) <= 0.0 and u.shoot_payload.is_empty()) or u.buildings_only or u.phase2:
+		return false
+	if String(u.kind) == "dragon" and u.flying:
+		return false
+	return true
+
+
+## arena.route_point, but always through the bridge he picked.
+func _route_home(from_p: Vector2, goal: Vector2) -> Vector2:
+	var f: Vector2i = arena.tile_of(from_p)
+	var g: Vector2i = arena.tile_of(goal)
+	var toward_enemy: bool = g.y < arena.RIVER_TOP and f.y >= arena.RIVER_TOP
+	var toward_home: bool = g.y > arena.RIVER_BOTTOM and f.y <= arena.RIVER_BOTTOM
+	if not toward_enemy and not toward_home:
+		return goal
+	var bc: float = bridge_col
+	var top: float = float(arena.RIVER_TOP)
+	var bottom: float = float(arena.RIVER_BOTTOM)
+	var lane: Vector2 = arena.tile_center(bc + 0.5, top + 0.5).lerp(arena.tile_center(bc + 0.5, bottom + 0.5), 0.5)
+	var far_bank: Vector2 = arena.tile_center(bc + 0.5, top - 1.2) if toward_enemy else arena.tile_center(bc + 0.5, bottom + 1.2)
+	var off: float = absf(from_p.y - lane.y) if arena.LANDSCAPE else absf(from_p.x - lane.x)
+	if off > float(arena.TILE) * 0.7:
+		return arena.tile_center(bc + 0.5, bottom + 1.0) if toward_enemy else arena.tile_center(bc + 0.5, top - 1.0)
+	return far_bank
 
 
 func _escape() -> void:

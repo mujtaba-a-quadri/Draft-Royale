@@ -54,7 +54,16 @@ extraction candidate.**
 4. **Behaviour** (only if it is not a plain melee/ranged unit): a data block in
    `card_db.gd` read in `unit.setup()` and a branch in `_attack()` or
    `_physics_process()`. Existing hooks:
-   `boomerang` (Fu), `roll` (Slate), `curl` (hedgehog), `chicken` + `kamikaze` (Hot Chicken,
+   `boomerang` (Fu), `roll` (Slate), `curl` (hedgehog), `guard` (Obsidian Whelp: shares `curled`, opens on
+   `guard_calm`), `becomes` (the card that takes this one's hand slot when played:
+   Penny → Pen, Obsidian → Magma), `staff` (Wu Cheng'en: `_tick_staff`, staff
+   draw-out, poke / sweep combo, rage on `take_damage`), `beam` (Nekomancer: the
+   plain hit, drawn as a beam), `ritual` (Nekomancer: `_tick_ritual` spawns
+   `pentagram.gd` nodes that raise the unit themselves), `partner` (a pair card:
+   `arena.spawn_troop` lands the partner `partner_gap` tiles across the lane;
+   card face shows both HPs, `DDArt.gil_pair` draws both), `whip` (Gilgamesh: the
+   plain hit, drawn as a snake lash), `spear` (Enkidu: `_try_throw` / `_spear_back`
+   swap dmg, reach, interval and `hits_air` while the spear is away), `chicken` + `kamikaze` (Hot Chicken,
    two phases), `spread` (Primal Aphid), `dodge` (Penny), `summon` (warren),
    `death_aoe` (snowman), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
    `stationary`, `lifetime`, `shoots` + `payload`, `greatsword` (Laniakea: owns its
@@ -67,7 +76,7 @@ extraction candidate.**
 7. **`README.md`**: a row in the card table, and bump the deck-count line.
 
 Hand slots are bound **by card kind**, so a deck must not contain duplicates. That
-matters when adding cards: `ORDER` is per-player deck size (currently 22, hand 4,
+matters when adding cards: `ORDER` is per-player deck size (currently 26, hand 4,
 `HAND_MAX` 8, draw every 8 s).
 
 ---
@@ -171,6 +180,47 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 * **The ability card draws are payload-gated**: tentacle on death, and Shiesty on
   *either* outcome — he pays a card when he gets home **and** when he is caught. Only
   the coin depends on delivery (death hands it back to the enemy).
+* **The Obsidian Whelp curls under tower fire.** Any hit (towers included) keeps
+  it shut for `calm` s; the hit that curls it lands in full. Towers then
+  deprioritise it (`DDTower._acquire` takes any uncurled unit first and re-picks
+  every tick while its target is curled; balled-up hedgehogs too), so alone in
+  tower range it sits there soaking shots at 20 % and never bites, and with
+  company the tower turns on the company. Scenario: `--scenario=towerpick`.
+  The melee push is decided by where the hit came from: `from` equal to the
+  attacker's own position (a body blow), never a projectile or a tower.
+  The Magma Whelp has `dmg` 0: `_attack` lets a shooter with a payload fire anyway.
+  Scenario: `--scenario=whelp --log --bots=off`.
+* **Wu Cheng'en's rage is once per life** (`rage_used`), triggers from any
+  damage that takes him under `rage_hp`, and its regen is fixed at the level his
+  banked hits had reached at that moment (`rage_level()`); hits during the rage
+  still bank but change nothing. Rage hits count every enemy struck, so a poke
+  through three bodies banks three. Regen and the rage clock tick before the
+  stun / shove early-outs, so they run through both. The staff stays out within
+  `keep_out` tiles past reach because his own poke pushes the target away.
+  Scenarios: `--scenario=wu --log --bots=off`, close-up `--scenario=wuart`.
+* **The Nekomancer's ritual outlives her.** Each pentagram is its own node on
+  the arena (`scripts/pentagram.gd`, no class_name, preloaded by `unit.gd`), so
+  killing her while it glows does not cancel the rats. The diagonals are the
+  team's forward direction, not her facing. A spot off the board or under a
+  building is pulled back toward her. Rats raised this way climb out of the
+  ground (`rises`) instead of the usual drop. The ritual clock stops while
+  she is stunned or shoved. Scenarios: `--scenario=neko --log --bots=off`,
+  close-up `--scenario=nekoart`.
+* **Enkidu's throw is a scan, not his target.** Any ground troop with its
+  centre 3 – 4.5 tiles away takes the spear, whoever he is walking at; flyers,
+  buildings and towers never do. Anything already inside 3 tiles (that he can
+  hit) means no throw: he fights it hand to hand. The spear returns on a 3.5 s
+  clock, not by fetching it, and is thrown again at once if a troop is still in
+  the band. Gilgamesh's lash is ground only. The pair are two independent units
+  after landing. Scenarios: `--scenario=gil --log --bots=off`, close-up
+  `--scenario=gilart`.
+* **Shiesty commits to one bridge.** `DDShiesty._pick_bridge()` runs once, on
+  landing: it counts enemy `DDUnit`s that could target him (dmg > 0, not
+  `buildings_only`, not a kamikaze Alchemist, not an airborne dragon) on each
+  half of the board, split between the bridges, and takes the bridge with fewer
+  (nearer on a tie). `_route_home` is `arena.route_point` pinned to that
+  `bridge_col`. Troops played afterwards do not change it.
+  Scenario: `--scenario=shiestylane --log --bots=off`.
 * **Towers are only decorative HP sinks** — the commander tower is the only win
   condition besides the clock.
 * **The hedgehog never targets air** (`hits_air` stays off) and its curl burst skips
@@ -185,8 +235,18 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 * **Sound**: `SFX/` holds the Pixabay card sounds (credit in the filename). `DDSfx`
   (`scripts/sfx.gd`) is a child of the arena created in `_build_sfx()`; the opening
   deal slices the eight draws in `opening hand` down to a random four, placement
-  plays `oxidvideos-place cardmp3.mp3` from `deploy()`. Audio is silent under
+  plays `oxidvideos-place cardmp3.mp3` from `deploy()`. Every later draw, either
+  player's (the timer, ability payoffs), goes through `arena.draw_card()`, which
+  calls `DDSfx.take_card()`: one of the three `taking-playing-card` takes at
+  random, and draws within 3 physics frames of each other play once. The opening
+  hand is sliced straight from the deck in `_build_decks`, never through
+  `draw_card()`, so it keeps its own deal sound. Audio is silent under
   `--headless` but the nodes still exist, so bot sims are unaffected.
+* **Burning ground** (`scripts/ground_fire.gd`, no `class_name`, preloaded by
+  `arena.gd`): a spell with a `ground_fire` block in `card_db.gd` (the Fireball)
+  leaves a patch the size of its splash that adds `burn` to every enemy inside it
+  each `every` seconds for `time` seconds. The impact's own burn is not repeated
+  at t = 0, so the Fireball's 4.2 s patch gives four extra doses of 10.
 * **Penny's leap is a grab, not a shove.** She always travels the full
   `jump_reach` (2.5 tiles) and carries the target in front of her the whole way
   (`carrying` / `carry_dir` / `carry_contact` in `_tick_jump`), landing the doubled

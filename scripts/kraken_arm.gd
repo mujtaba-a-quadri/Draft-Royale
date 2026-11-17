@@ -378,11 +378,13 @@ func _burst() -> void:
 	t.hp = float(arena.TENTACLE_HP)
 	t.max_hp = float(arena.TENTACLE_HP)
 	t.life = float(arena.TENTACLE_TIME)
+	t.dmg = float(arena.TENTACLE_DMG)
+	t.interval = float(arena.TENTACLE_INTERVAL)
 	t.setup(arena, team, victim)
 	t.position = victim.position
 	arena.units.append(t)
 	arena.add_child(t)
-	victim.take_damage(float(arena.TENTACLE_DMG), t.position)
+	# the tentacle squeezes on its own clock (first squeeze on the grab)
 	if is_instance_valid(victim) and not victim.dead:
 		victim.stunned = float(arena.TENTACLE_TIME)
 		grab = t

@@ -162,6 +162,39 @@ func _ready() -> void:
 	elif scenario == "toss":
 		shot_times = [0.95, 1.2, 1.45]
 		run_time = 3.0
+	elif scenario == "shiestylane":
+		shot_times = []
+		run_time = 7.5
+	elif scenario == "whelp":
+		shot_times = [1.2, 6.6]
+		run_time = 8.6
+	elif scenario == "coins":
+		shot_times = [1.08]
+		run_time = 1.4
+	elif scenario == "towerpick":
+		shot_times = [1.4]
+		run_time = 6.2
+	elif scenario == "wu":
+		shot_times = [0.6, 2.0, 2.12, 3.42, 8.0]
+		run_time = 10.5
+	elif scenario == "wuart":
+		shot_times = [0.8]
+		run_time = 1.0
+	elif scenario == "neko":
+		shot_times = [1.6, 4.6, 5.45]
+		run_time = 10.0
+	elif scenario == "nekoart":
+		shot_times = [0.8]
+		run_time = 1.0
+	elif scenario == "gil":
+		shot_times = [1.12, 7.0]
+		run_time = 9.0
+	elif scenario == "gilart":
+		shot_times = [0.8]
+		run_time = 1.0
+	elif scenario == "whelpart":
+		shot_times = [0.8]
+		run_time = 1.0
 	elif scenario == "ovo":
 		shot_times = []
 		run_time = 64.0
@@ -334,6 +367,92 @@ func _process(delta: float) -> void:
 		_femme_steps()
 	elif scenario == "toss":
 		_toss_steps()
+	elif scenario == "shiestylane":
+		_shiesty_lane_steps()
+	elif scenario == "whelp":
+		_whelp_steps()
+	elif scenario == "towerpick":
+		_towerpick_steps()
+	elif scenario == "wu":
+		_wu_steps()
+	elif scenario == "neko":
+		_neko_steps()
+	elif scenario == "gil":
+		_gil_steps()
+	elif scenario == "gilart":
+		# 4x close-up: Gilgamesh at rest and mid-lash, Enkidu with spear and sword
+		if _at(0.3):
+			for i in 4:
+				var k := "gilgamesh" if i < 2 else "enkidu"
+				var u = arena.spawn_troop(k, 0, arena.tile_center(9.5, 21.5), true)
+				u.deploy_timer = 0.0
+				u.set_physics_process(false)
+				u.position = arena.tile_center(9.5, 13.5 + 4.5 * float(i))
+				u.scale = Vector2(4.0, 4.0)
+				u.z_index = 30
+				u.facing = 1.0
+				if i == 1:
+					u.whip_t = u.WHIP_SHOW * 0.6
+					u.whip_to = u.position + Vector2(2.5 * float(arena.TILE), 0.0)
+				if i == 3:
+					u.spear_away = 2.0
+				u.queue_redraw()
+	elif scenario == "nekoart":
+		# 4x close-up: idle, mid-gust, casting; a rat skeleton at 5x
+		if _at(0.3):
+			for i in 4:
+				var k := "ratbones" if i == 3 else "neko"
+				var u = arena.spawn_troop(k, 0, arena.tile_center(9.5, 21.5), true)
+				u.deploy_timer = 0.0
+				u.set_physics_process(false)
+				u.position = arena.tile_center(9.5, 13.5 + 4.5 * float(i))
+				u.scale = Vector2(5.0, 5.0) if i == 3 else Vector2(4.0, 4.0)
+				u.z_index = 30
+				u.facing = 1.0
+				if i == 1:
+					u.cloak_t = u.CLOAK_WIND * 0.5
+				if i == 2:
+					u.beam_t = u.BEAM_SHOW * 0.9
+				u.queue_redraw()
+	elif scenario == "wuart":
+		# 4x close-up: knuckle-walking, staff half out, staff out, raging
+		if _at(0.3):
+			var outs := [0.0, 0.5, 1.0, 1.0]
+			for i in 4:
+				var u = arena.spawn_troop("wu", 0, arena.tile_center(9.5, 21.5), true)
+				u.deploy_timer = 0.0
+				u.set_physics_process(false)
+				u.position = arena.tile_center(9.5, 13.0 + 4.5 * float(i))
+				u.scale = Vector2(4.0, 4.0)
+				u.z_index = 30
+				u.facing = 1.0
+				u.staff_out = outs[i]
+				u.state = u.S.APPROACH if i == 0 else u.S.ATTACK
+				if i == 3:
+					u.rage_t = 3.0
+					u.rage_hits = 9
+					u.hp = 30.0
+				u.queue_redraw()
+	elif scenario == "whelpart":
+		# close-up of the curled and open Obsidian Whelp, 5x
+		if _at(0.3):
+			for i in 2:
+				var u = arena.spawn_troop("obsidian", 0, arena.tile_center(9.5, 21.5), true)
+				u.deploy_timer = 0.0
+				u.speed = 0.0
+				u.position = arena.tile_center(9.0, 20.5 + 6.0 * float(i))
+				u.scale = Vector2(5.0, 5.0)
+				u.z_index = 30
+				if i == 0:
+					u.guard_calm = 99.0
+					u.curled = true
+	elif scenario == "coins":
+		if _at(0.2):
+			arena.gold[0] = 4.97
+			arena.gold[1] = 10.0
+		if _at(0.5):
+			print("[coins] t0.5 blue coin 4 twinkle started=%.2f (expect ~0.2-0.3) red full, next rattle at %.2f" % [
+				float(arena.coin_twinkle[0][4]), float(arena.full_twinkle_at[1])])
 	elif scenario == "ovo":
 		_ovo_steps()
 	elif scenario == "deal":
@@ -1111,6 +1230,303 @@ func _femme_steps() -> void:
 ## The goblin commander: spear throws at a dummy, then the Shiesty scoop and
 ## throw. Shots (with --shots=<dir>) catch the ready wave, the scoop and the flight;
 ## the log proves the toss is picture only (his real position stays on the old arc).
+## Shiesty's way home: two enemy troops guard bridge A's half and one guards
+## bridge B's, so he must take B. Then three more are dropped on B's half while
+## he runs: he must not turn back. Guards are frozen and toothless (speed 0,
+## dmg kept so they count) far from his path so the run is not interrupted.
+var lane_shiesty: Node = null
+func _shiesty_lane_steps() -> void:
+	if _at(0.2):
+		arena.ability[0] = "shiesty"
+		arena.gold[0] = 10.0
+		arena.gold[1] = 5.0
+		arena.ability_cd[0] = 0.0
+		for spot in [Vector2(2.5, 6.5), Vector2(3.5, 8.5), Vector2(15.5, 8.5)]:
+			var g = arena.spawn_troop("hero", 1, arena.tile_center(spot.x, spot.y), true)
+			g.deploy_timer = 0.0
+			g.speed = 0.0
+			g.aggro = 0.0
+		print("[shiestylane] guards: 2 on bridge A's half, 1 on bridge B's (expect B)")
+		print("[shiestylane] ability used=%s" % str(arena.use_ability(0)))
+	if lane_shiesty == null:
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
+				lane_shiesty = u
+	if _at(1.5) and lane_shiesty != null:
+		print("[shiestylane] t1.5 landed, threat A/B=%s bridge col=%.0f (expect 13)" % [
+			str(lane_shiesty.lane_threat), lane_shiesty.bridge_col])
+		for spot in [Vector2(12.5, 5.5), Vector2(14.5, 5.5), Vector2(15.5, 6.5)]:
+			var g2 = arena.spawn_troop("hero", 1, arena.tile_center(spot.x, spot.y), true)
+			g2.deploy_timer = 0.0
+			g2.speed = 0.0
+			g2.aggro = 0.0
+		print("[shiestylane] 3 more guards dropped on B's half")
+	for tt in [3.0, 5.0, 7.0]:
+		if _at(tt):
+			if is_instance_valid(lane_shiesty) and not lane_shiesty.dead:
+				var t: Vector2i = arena.tile_of(lane_shiesty.position)
+				print("[shiestylane] t%.1f tile=(%d,%d) bridge col=%.0f" % [tt, t.x, t.y, lane_shiesty.bridge_col])
+			else:
+				print("[shiestylane] t%.1f shiesty gone (home or caught) escaped=%d caught=%d" % [
+					tt, arena.stat_shiesty_escaped, arena.stat_shiesty_caught])
+
+
+## The two whelps (run with --bots=off). Obsidian: open with nobody near, curls
+## when a unit comes within 3 tiles, opens the moment it leaves; a hit curls it
+## (that hit in full, the next at 20 %) and it stays shut 2 s; a melee blow
+## nudges it 0.25 tiles. The hand swap. Magma: feathers burn at 2 tiles.
+var whelp_o: Node = null
+var whelp_m: Node = null
+var whelp_foe: Node = null
+var whelp_at := Vector2.ZERO
+func _whelp_freeze(kind: String, at: Vector2) -> Node:
+	var u = arena.spawn_troop(kind, 1, at, true)
+	u.deploy_timer = 0.0
+	u.position = at
+	u.speed = 0.0
+	u.dmg = 0.0
+	return u
+func _whelp_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		whelp_o = arena.spawn_troop("obsidian", 0, arena.tile_center(9.5, 22.5), true)
+		whelp_o.deploy_timer = 0.0
+		whelp_o.speed = 0.0
+	if _at(0.8):
+		print("[whelp] t0.8 nobody near: curled=%s (expect false)" % str(whelp_o.curled))
+		whelp_foe = _whelp_freeze("hero", whelp_o.position + Vector2(3.2 * t, 0.0))
+		print("[whelp] hero placed, gap=%.2f tiles" % arena.gap_between(whelp_o.position, whelp_foe.position,
+			whelp_o.radius_t, whelp_foe.radius_t))
+	if _at(1.0):
+		print("[whelp] t1.0 curled=%s (expect true)" % str(whelp_o.curled))
+		whelp_foe.take_damage(9999.0, whelp_foe.position)
+	if _at(1.3):
+		print("[whelp] t1.3 hero gone, never hit: curled=%s (expect false)" % str(whelp_o.curled))
+		whelp_o.take_damage(20.0, whelp_o.position + Vector2(200, 0))
+		print("[whelp] hit for 20 while open: hp=%d (expect 40) curled=%s" % [int(whelp_o.hp), str(whelp_o.curled)])
+		whelp_o.take_damage(20.0, whelp_o.position + Vector2(200, 0))
+		print("[whelp] hit for 20 while curled: hp=%d (expect 36)" % int(whelp_o.hp))
+	if _at(3.0):
+		print("[whelp] t3.0 1.7 s after the hit: curled=%s (expect true)" % str(whelp_o.curled))
+	if _at(3.5):
+		print("[whelp] t3.5 2.2 s after the hit: curled=%s (expect false)" % str(whelp_o.curled))
+		whelp_foe = _whelp_freeze("hero", whelp_o.position + Vector2(0.9 * t, 0.0))
+		whelp_at = whelp_o.position
+		whelp_o.take_damage(10.0, whelp_foe.position, whelp_foe)
+	if _at(3.9):
+		print("[whelp] t3.9 melee blow: pushed %.2f tiles away from the hero (expect 0.25) curled=%s" % [
+			arena.tiles_between(whelp_at, whelp_o.position), str(whelp_o.curled)])
+		whelp_foe.take_damage(9999.0, whelp_foe.position)
+		whelp_o.take_damage(9999.0, whelp_o.position)
+		arena.gold[0] = 10.0
+		arena.hands[0][0] = "obsidian"
+		arena.deploy(0, 0, arena.tile_center(9.5, 24.5))
+		print("[whelp] played obsidian from slot 0: slot 0 is now %s (expect magma) obsidian back in deck=%s" % [
+			arena.hands[0][0], str(arena.queues[0].has("obsidian"))])
+	if _at(4.5):
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "obsidian":
+				u.take_damage(9999.0, u.position)
+		whelp_m = arena.spawn_troop("magma", 0, arena.tile_center(9.5, 22.5), true)
+		whelp_m.deploy_timer = 0.0
+		whelp_m.speed = 0.0
+		whelp_foe = _whelp_freeze("hero", whelp_m.position + Vector2(2.4 * t, 0.0))
+		print("[whelp] magma flying=%s, hero %.2f tiles away edge to edge, hp=%d" % [str(whelp_m.flying),
+			arena.gap_between(whelp_m.position, whelp_foe.position, whelp_m.radius_t, whelp_foe.radius_t), int(whelp_foe.hp)])
+	for tt in [5.0, 6.5, 8.5]:
+		if _at(tt) and is_instance_valid(whelp_foe):
+			print("[whelp] t%.1f hero hp=%d status=%d burn_stack=%.1f" % [tt, int(whelp_foe.hp), int(whelp_foe.status), whelp_foe.burn_stack])
+
+
+## A tower and a lone enemy Obsidian Whelp: the first shot lands in full and only
+## then curls it. A hero walks into range further away: the tower switches to
+## it. The hero dies: the tower goes back to the curled whelp (20 % damage).
+var pick_tower: Node = null
+var pick_whelp: Node = null
+var pick_hero: Node = null
+func _towerpick_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		for tw in arena.towers:
+			if int(tw.team) == 0 and not bool(tw.get("crown")):
+				pick_tower = tw
+				break
+		pick_whelp = _whelp_freeze("obsidian", pick_tower.position + Vector2(5.0 * t, 0.0))
+		print("[towerpick] whelp %.1f tiles from the tower, hp=%d curled=%s" % [
+			arena.tiles_between(pick_tower.position, pick_whelp.position), int(pick_whelp.hp), str(pick_whelp.curled)])
+	if _at(1.4):
+		print("[towerpick] t1.4 whelp hp=%d (expect 48: first shot in full) curled=%s" % [int(pick_whelp.hp), str(pick_whelp.curled)])
+		pick_hero = _whelp_freeze("hero", pick_tower.position + Vector2(5.5 * t, 1.5 * t))
+		# a hero beside a curled whelp would keep it shut anyway; keep the whelp blind
+		pick_whelp.guard_cfg = pick_whelp.guard_cfg.duplicate()
+		pick_whelp.guard_cfg["sense"] = -1.0
+	if _at(1.6):
+		print("[towerpick] t1.6 tower target is the hero=%s (expect true: the whelp is curled)" % str(pick_tower.target == pick_hero))
+	if _at(4.0):
+		print("[towerpick] t4.0 whelp hp=%d (expect 48: untouched) hero hp=%d" % [int(pick_whelp.hp), int(pick_hero.hp)])
+		pick_hero.take_damage(9999.0, pick_hero.position)
+	if _at(6.0):
+		print("[towerpick] t6.0 back on the whelp: target=%s whelp hp=%.1f (expect under 48, by 2.4 a shot) curled=%s" % [
+			str(pick_tower.target == pick_whelp), pick_whelp.hp, str(pick_whelp.curled)])
+
+
+## Wu Cheng'en against a row of frozen dummies, away from every tower: the
+## staff comes out first, the poke goes through the target and 2 tiles on
+## (pushing), the sweep takes the cone, and hits bank rage. Then he is cut
+## under 25 %: rage, faster swings and regen by banked hits.
+var wu: Node = null
+var wu_dummies: Array = []
+func _wu_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		wu = arena.spawn_troop("wu", 0, arena.tile_center(9.5, 20.5), true)
+		wu.deploy_timer = 0.0
+		var p: Vector2 = wu.position
+		var fwd: Vector2 = (arena.tile_center(9.5, 19.5) - p).normalized()
+		# target 2.0 ahead, one 1.5 behind it on the line, one 3.0 behind it (out
+		# of the pierce), one 50 degrees off at 1.6 tiles (in the sweep only)
+		wu_dummies = [
+			_lani_dummy("hero", p + fwd * 2.0 * t),
+			_lani_dummy("hero", p + fwd * 3.5 * t),
+			_lani_dummy("hero", p + fwd * 5.0 * t),
+			_lani_dummy("hero", p + fwd.rotated(deg_to_rad(50.0)) * 2.15 * t),
+		]
+		for d in wu_dummies:
+			d.speed = 0.0
+			d.dmg = 0.0
+		print("[wu] dummies: target 2.0 ahead, on the line at 3.5 and 5.0, 50 deg off at 2.15 (ignore drops of 12: tower shots)")
+	if _at(0.5):
+		print("[wu] t0.5 staff_out=%.2f state=%d" % [wu.staff_out, wu.state])
+	for tt in [1.0, 1.6, 2.4, 3.0, 4.4]:
+		if _at(tt):
+			print("[wu] t%.1f staff_out=%.2f combo next=%d hp=%s rage_hits=%d level=%d" % [tt, wu.staff_out, wu.staff_combo,
+				str(wu_dummies.map(func(u): return int(u.hp) if is_instance_valid(u) else -1)), wu.rage_hits, wu.rage_level()])
+	if _at(4.5):
+		for d in wu_dummies:
+			if is_instance_valid(d):
+				d.hp = 9999.0
+				d.max_hp = 9999.0
+		wu.rage_hits = 8
+		wu.take_damage(wu.max_hp * 0.8, wu.position)
+		print("[wu] cut to %d/%d with 8 banked: rage_t=%.1f regen=%.0f/s (expect 25) speed=%.2f (base %.2f)" % [
+			int(wu.hp), int(wu.max_hp), wu.rage_t, wu.rage_regen, wu.speed, wu.ground_speed])
+	if _at(6.5):
+		print("[wu] t6.5 hp=%.1f (2 s of 25/s on top of %d)" % [wu.hp, int(wu.max_hp * 0.2)])
+	if _at(9.6):
+		print("[wu] t9.6 rage over: rage_t=%.1f speed=%.2f hp=%.1f" % [wu.rage_t, wu.speed, wu.hp])
+
+
+## The Nekomancer, held in place, beaming a frozen dummy 3.5 tiles ahead: the
+## beam hits for 14 every 1.2 s, the ritual opens two pentagrams 1.2 tiles out
+## on the forward diagonals every 4 s with the cloak gust, a rat skeleton climbs
+## out of each a second later, and the second ritual's rats still come after
+## she is killed mid-glow.
+var neko: Node = null
+var neko_dummy: Node = null
+func _neko_count(k: String) -> int:
+	var n := 0
+	for u in arena.units:
+		if is_instance_valid(u) and not u.dead and String(u.kind) == k:
+			n += 1
+	return n
+
+
+func _neko_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		neko = arena.spawn_troop("neko", 0, arena.tile_center(9.5, 20.5), true)
+		neko.deploy_timer = 0.0
+		neko.speed = 0.0
+		neko.ground_speed = 0.0
+		var fwd: Vector2 = (arena.tile_center(9.5, 19.5) - neko.position).normalized()
+		neko_dummy = _lani_dummy("hero", neko.position + fwd * 3.5 * t)
+		neko_dummy.speed = 0.0
+		neko_dummy.dmg = 0.0
+		neko_dummy.hp = 9999.0
+		neko_dummy.max_hp = 9999.0
+		print("[neko] fwd=%s (ignore drops of 12 on her: tower shots)" % str(fwd))
+	for tt in [0.4, 1.6, 2.8]:
+		if _at(tt):
+			print("[neko] t%.1f dummy lost %d beam_t=%.2f" % [tt, int(9999.0 - neko_dummy.hp), neko.beam_t])
+	if _at(4.35):
+		var spots: Array = []
+		for c in arena.get_children():
+			if c.get("unit_kind") != null and String(c.get("unit_kind")) == "ratbones":
+				var off: Vector2 = (c.position - neko.position) / t
+				spots.append("(%.2f, %.2f) |%.2f|" % [off.x, off.y, off.length()])
+		print("[neko] t4.35 cloak_t=%.2f pentagrams=%s rats=%d" % [neko.cloak_t, str(spots), _neko_count("ratbones")])
+	if _at(5.4):
+		var offs: Array = []
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "ratbones":
+				offs.append(str(((u.position - neko.position) / t).snapped(Vector2(0.01, 0.01))))
+		print("[neko] t5.4 rats=%d at %s" % [_neko_count("ratbones"), str(offs)])
+	if _at(8.5):
+		print("[neko] t8.5 rats=%d, killing her mid-glow" % _neko_count("ratbones"))
+		neko.take_damage(9999.0, neko.position)
+	if _at(9.6):
+		print("[neko] t9.6 she is gone=%s rats=%d (expect 4)" % [str(not is_instance_valid(neko) or neko.dead), _neko_count("ratbones")])
+
+
+## Gilgamesh & Enkidu, both held in place: the pair lands a tile apart; Enkidu
+## ignores a hovering flyer in his throw band, throws at a ground dummy that
+## appears there (45, then sword: reach 0.5, no air) and has the spear back
+## 3.5 s later; a dummy dropped inside 3 tiles is fought, not thrown at. Then
+## Enkidu is removed and Gilgamesh lashes a dummy 2.25 tiles off his edge.
+var gil: Node = null
+var enk: Node = null
+var gil_dummy: Node = null
+func _gil_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		gil = arena.spawn_troop("gilgamesh", 0, arena.tile_center(9.5, 20.5))
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "enkidu":
+				enk = u
+		for u in [gil, enk]:
+			u.deploy_timer = 0.0
+			u.speed = 0.0
+			u.ground_speed = 0.0
+		print("[gil] pair: gil=%s enk=%s gap=%.2f tiles" % [str(gil != null), str(enk != null),
+			arena.tiles_between(gil.position, enk.position)])
+		var hawk: Node = _lani_dummy("hawk", enk.position + Vector2(4.0 * t, 0.0))
+		hawk.hp = 999.0
+		hawk.max_hp = 999.0
+	if _at(0.9):
+		print("[gil] t0.9 flyer at 4.0: spear_away=%.2f (expect 0, no throw)" % enk.spear_away)
+		gil_dummy = _lani_dummy("hero", enk.position + Vector2(3.8 * t, 0.6 * t))
+		gil_dummy.hp = 9999.0
+		gil_dummy.max_hp = 9999.0
+	if _at(1.4):
+		print("[gil] t1.4 ground dummy at 3.85: dummy lost %d (expect 45) spear_away=%.2f reach=%.2f dmg=%.0f hits_air=%s" % [
+			int(9999.0 - gil_dummy.hp), enk.spear_away, enk.reach, enk.dmg, str(enk.hits_air)])
+	if _at(4.0):
+		# out of the way before the spear comes back, or he throws it again
+		_lani_clear_except([gil, enk])
+	if _at(4.7):
+		print("[gil] t4.7 spear_away=%.2f reach=%.2f dmg=%.0f hits_air=%s (expect 0 1.10 24 true)" % [
+			enk.spear_away, enk.reach, enk.dmg, str(enk.hits_air)])
+		gil_dummy = _lani_dummy("hero", enk.position + Vector2(2.0 * t, 0.4 * t))
+		gil_dummy.hp = 9999.0
+		gil_dummy.max_hp = 9999.0
+	if _at(5.6):
+		print("[gil] t5.6 dummy dropped at 2.0: spear_away=%.2f (expect 0) target=%s" % [
+			enk.spear_away, str(enk.target == gil_dummy)])
+		enk.take_damage(99999.0, enk.position)
+		_lani_clear_except([gil])
+		gil_dummy = _lani_dummy("hero", gil.position + Vector2((2.25 + 0.5 + 0.45) * t, 0.0))
+		gil_dummy.hp = 9999.0
+		gil_dummy.max_hp = 9999.0
+	if _at(8.8):
+		print("[gil] t8.8 Gilgamesh lashed 2.25 off his edge: dummy lost %d (22 a lash, every 1.3 s)" % int(9999.0 - gil_dummy.hp))
+
+
+func _lani_clear_except(keep: Array) -> void:
+	for u in arena.units.duplicate():
+		if is_instance_valid(u) and not keep.has(u):
+			u.take_damage(99999.0, u.position)
+
+
 func _toss_steps() -> void:
 	var t: float = float(arena.TILE)
 	if _at(0.2):

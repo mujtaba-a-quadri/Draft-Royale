@@ -111,7 +111,10 @@ func _physics_process(delta: float) -> void:
 				burn_stack = maxf(0.0, burn_stack - tick_dmg)
 				burn_timer = 1.0
 				take_damage(tick_dmg, position)
-	if target == null or not _target_valid(target) or area.tiles_between(position, target.position) > reach + 1.5:
+	# a curled whelp or hedgehog is the last thing worth a shot: while the
+	# current target is curled, look again every tick for anything better
+	if target == null or not _target_valid(target) or area.tiles_between(position, target.position) > reach + 1.5 \
+			or target.get("curled") == true:
 		target = _acquire()
 	if target == null:
 		queue_redraw()
@@ -135,9 +138,12 @@ func _target_valid(t: Node) -> bool:
 	return t.get("dead") != true and int(t.get("team")) != team
 
 
+## Nearest enemy unit in range. Curled units (an Obsidian Whelp or a hedgehog
+## balled up) only get picked when there is nothing else in range.
 func _acquire() -> Node:
 	var best: Node = null
 	var best_d := INF
+	var best_curled := true
 	for u in area.enemy_units(team):
 		if not is_instance_valid(u) or u.dead:
 			continue
@@ -146,10 +152,14 @@ func _acquire() -> Node:
 		var d: float = area.tiles_between(position, u.position)
 		if d > reach:
 			continue
-		if d < best_d - 0.0001:
+		var curled: bool = u.get("curled") == true
+		if best != null and curled and not best_curled:
+			continue
+		if best == null or (best_curled and not curled) or d < best_d - 0.0001:
 			best = u
 			best_d = d
-		elif absf(d - best_d) <= 0.0001 and best != null and u.get_instance_id() < best.get_instance_id():
+			best_curled = curled
+		elif absf(d - best_d) <= 0.0001 and u.get_instance_id() < best.get_instance_id():
 			best = u
 	return best
 

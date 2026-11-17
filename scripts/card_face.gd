@@ -6,7 +6,7 @@ extends RefCounted
 
 const OUT := Color(0.13, 0.12, 0.16)
 const ATTACK_NAMES := {
-	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "aphid": "Spit Spread", "fu": "Boomerang",
+	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
@@ -69,7 +69,9 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 	var offsets: Array = DDCard.get_card(kind).get("swarm_offsets", [])
 	if offsets.is_empty():
 		ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
-		if kind == "dragon":
+		if kind == "gilgamesh":
+			DDArt.gil_pair(ci, art.get_center() + Vector2(0, art.size.y * 0.14), art.size.y * 0.3)
+		elif kind == "dragon":
 			DDArt.dragon(ci, art.size.y * 0.30, 1.0, 0.0, false)
 		elif kind == "hawk":
 			DDArt.bird(ci, art.size.y * 0.34, 1.0, 0.0, true)
@@ -165,6 +167,8 @@ static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0,
 				hp_txt += " · %d×%d" % [int(bfp[0]), int(bfp[1])]
 		_:
 			hp_txt = "%d HP" % int(d["hp"])
+			if d.has("partner"):
+				hp_txt = "%d + %d HP" % [int(d["hp"]), int(DDCard.get_card(String(d["partner"]))["hp"])]
 			var n := int(d.get("count", 0))
 			if d.has("swarm_offsets") and n <= 1:
 				n = (d["swarm_offsets"] as Array).size()

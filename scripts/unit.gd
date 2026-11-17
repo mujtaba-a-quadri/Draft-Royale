@@ -60,6 +60,52 @@ var knock_time := 0.0
 
 var curl_cfg: Dictionary = {}
 var curled := false
+## Obsidian Whelp: curls (shares `curled`) when an enemy unit is near or it is
+## hit; guard_calm counts down from the last hit.
+var guard_cfg: Dictionary = {}
+var guard_calm := 0.0
+## Wu Cheng'en: staff out 0..1 (drawn from behind his ear), which hit of the
+## poke / sweep combo is next, banked rage hits, and the rage state.
+var staff_cfg: Dictionary = {}
+var staff_out := 0.0
+var staff_combo := 0
+var rage_hits := 0
+var rage_t := 0.0
+var rage_used := false
+var rage_regen := 0.0
+## picture of the last staff hit: 0 none, 1 poke, 2 sweep
+const STAFF_SHOW := 0.24
+var staff_anim := 0
+var staff_anim_t := 0.0
+var staff_dir := Vector2.RIGHT
+var staff_from := 0.0
+var staff_to := 0.0
+## Nekomancer: a beam instead of a bolt, and a ritual clock that opens two
+## pentagrams (scripts/pentagram.gd) every `every` seconds. cloak_t is the
+## picture of the wind catching her cloak as they open.
+const PENTAGRAM := preload("res://scripts/pentagram.gd")
+const BEAM_SHOW := 0.22
+const CLOAK_WIND := 1.0
+var beam := false
+var beam_t := 0.0
+var beam_to := Vector2.ZERO
+var ritual_cfg: Dictionary = {}
+var ritual_cd := 0.0
+var cloak_t := 0.0
+## raised out of a pentagram: the deploy picture climbs out of the ground
+## instead of dropping from the sky
+var rises := false
+## Gilgamesh: his plain hit is a snake lash; whip_t is its picture.
+const WHIP_SHOW := 0.32
+var whip := false
+var whip_t := 0.0
+var whip_to := Vector2.ZERO
+## Enkidu: the spear is in hand (spear_away 0) or thrown, and until it comes
+## back he fights with the short sword.
+var spear_cfg: Dictionary = {}
+var spear_away := 0.0
+var base_dmg := 0.0
+var base_interval := 0.0
 ## Hot Chicken: pecks fireballs, then takes to the air and rams.
 var chicken_cfg: Dictionary = {}
 var chicken_hits := 0
@@ -215,6 +261,8 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	roll_cfg = d.get("roll", {})
 	boom_cfg = d.get("boomerang", {})
 	curl_cfg = d.get("curl", {})
+	guard_cfg = d.get("guard", {})
+	staff_cfg = d.get("staff", {})
 	chicken_cfg = d.get("chicken", {})
 	kamikaze_cfg = d.get("kamikaze", {})
 	spread_cfg = d.get("spread", {})
@@ -229,6 +277,14 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 		summon_cd = float(summon_cfg.get("interval", 12.0))
 		if summon_cfg.has("first"):
 			summon_cd = maxf(0.0, float(summon_cfg["first"]) - DEPLOY_DELAY)
+	whip = bool(d.get("whip", false))
+	spear_cfg = d.get("spear", {})
+	base_dmg = dmg
+	base_interval = interval
+	beam = bool(d.get("beam", false))
+	ritual_cfg = d.get("ritual", {})
+	if not ritual_cfg.is_empty():
+		ritual_cd = float(ritual_cfg["every"])
 	shoots = String(d.get("shoots", ""))
 	shoot_payload = d.get("payload", {})
 	troops_only = bool(d.get("troops_only", false))
@@ -358,6 +414,21 @@ func _physics_process(delta: float) -> void:
 				return
 	swing_t = maxf(0.0, swing_t - delta)
 	slam_t = maxf(0.0, slam_t - delta)
+	staff_anim_t = maxf(0.0, staff_anim_t - delta)
+	beam_t = maxf(0.0, beam_t - delta)
+	cloak_t = maxf(0.0, cloak_t - delta)
+	whip_t = maxf(0.0, whip_t - delta)
+	if spear_away > 0.0:
+		# the spear comes back on the clock, whatever he is doing
+		spear_away = maxf(0.0, spear_away - delta)
+		if spear_away <= 0.0:
+			_spear_back()
+	if rage_t > 0.0:
+		# the rage runs its clock and heals him through stuns and shoves alike
+		rage_t = maxf(0.0, rage_t - delta)
+		hp = minf(max_hp, hp + rage_regen * delta)
+		if rage_t <= 0.0:
+			speed = ground_speed
 	needle_t = maxf(0.0, needle_t - delta)
 	if dash_phase != 0:
 		# a stun or a shove knocks her out of it; otherwise the dash runs to its end
@@ -455,6 +526,22 @@ func _physics_process(delta: float) -> void:
 
 	if not summon_cfg.is_empty():
 		_tick_summon(delta)
+	if not ritual_cfg.is_empty():
+		_tick_ritual(delta)
+
+	# the obsidian whelp: curled while an enemy unit is close or it was hit in the
+	# last `calm` seconds; curled, it does nothing but sit there
+	if not guard_cfg.is_empty():
+		guard_calm = maxf(0.0, guard_calm - delta)
+		if _enemy_unit_within(float(guard_cfg["sense"])):
+			curled = true
+		elif curled and guard_calm <= 0.0:
+			curled = false
+		if curled:
+			state = S.IDLE
+			target = null
+			queue_redraw()
+			return
 
 	# a balled-up hedgehog holds its ground while anything is inside thorn reach;
 	# once nothing is, it uncurls and walks again
@@ -540,6 +627,13 @@ func _physics_process(delta: float) -> void:
 		_tick_needle(delta)
 		queue_redraw()
 		return
+	if not staff_cfg.is_empty():
+		_tick_staff(delta, gap)
+		queue_redraw()
+		return
+	if not spear_cfg.is_empty() and _try_throw():
+		queue_redraw()
+		return
 	if not curl_cfg.is_empty() and not curled and gap <= reach:
 		# a hedgehog has no jab: getting into reach is the cue to ball up
 		_curl()
@@ -595,7 +689,8 @@ func _tick_roll(delta: float) -> void:
 
 
 func _attack() -> void:
-	if atk_cd > 0.0 or dmg <= 0.0:
+	# a shooter whose shot is all payload (the Magma Whelp's burn) still fires
+	if atk_cd > 0.0 or (dmg <= 0.0 and (shoots == "" or shoot_payload.is_empty())):
 		return
 	if not boom_cfg.is_empty():
 		_attack_fu()
@@ -623,6 +718,18 @@ func _attack() -> void:
 		roll_timer = 0.0
 		speed = ground_speed
 	_mark_attack()
+	if whip:
+		# Gilgamesh's snake: the hit is instant, this is only its picture
+		whip_t = WHIP_SHOW
+		whip_to = target.position
+		if target.get("flying") == true:
+			whip_to.y -= 18.0
+	if beam:
+		# the Nekomancer's beam: the hit is instant, this is only its picture
+		beam_t = BEAM_SHOW
+		beam_to = target.position
+		if target.get("flying") == true:
+			beam_to.y -= 18.0
 	if splash > 0.0:
 		arena.reserve_damage(get_instance_id(), target, hit_dmg)
 		arena.spawn_projectile(position, target.position, team, hit_dmg, splash, kind, get_instance_id())
@@ -986,6 +1093,112 @@ func _slam() -> void:
 	arena.shake(2.4)
 
 
+## Wu Cheng'en, once a tick. In reach: stand, draw the staff (no swing until it
+## is all the way out), then poke and sweep in turn. Out of reach: put it away
+## and knuckle-walk on.
+func _tick_staff(delta: float, gap: float) -> void:
+	var draw_time: float = maxf(0.05, float(staff_cfg["draw_time"]))
+	if gap > reach:
+		# a step or two to close back in (his own poke pushes the target off)
+		# keeps the staff in hand; further than that, it goes back behind his ear
+		if gap > reach + float(staff_cfg["keep_out"]):
+			staff_out = maxf(0.0, staff_out - delta / draw_time)
+		state = S.APPROACH
+		_move(delta)
+		return
+	state = S.ATTACK
+	var to: Vector2 = target.position - position
+	if absf(to.x) > 1.0:
+		facing = signf(to.x)
+	if staff_out < 1.0:
+		staff_out = minf(1.0, staff_out + delta / draw_time)
+		return
+	if atk_cd > 0.0:
+		return
+	var faster: float = float(staff_cfg["rage_attack"]) if rage_t > 0.0 else 1.0
+	atk_cd = interval / faster
+	_mark_attack()
+	staff_dir = to.normalized() if to.length() > 0.01 else Vector2(facing, 0.0)
+	if staff_combo == 0:
+		_staff_poke()
+	else:
+		_staff_sweep()
+	staff_combo = 1 - staff_combo
+
+
+## Through the target and `pierce` tiles beyond it: everything on the ground in
+## that strip is hit and pushed straight along the staff.
+func _staff_poke() -> void:
+	var tile: float = float(arena.TILE)
+	var length: float = arena.tiles_between(position, target.position) + float(staff_cfg["pierce"])
+	var width: float = float(staff_cfg["poke_width"])
+	var primary: Node = target
+	var struck := 0
+	for e in arena.enemy_entities(team).duplicate():
+		if not is_instance_valid(e) or e.dead or e.get("flying") == true:
+			continue
+		if e != primary:
+			var off: Vector2 = (e.position - position) / tile
+			var r: float = float(e.get_radius_t())
+			var along: float = off.dot(staff_dir)
+			if along < 0.0 or along > length + r or absf(off.cross(staff_dir)) > width + r:
+				continue
+		e.take_damage(dmg, position, self)
+		struck += 1
+		if is_instance_valid(e) and not e.dead and e.has_method("apply_impulse"):
+			e.apply_impulse(staff_dir, float(staff_cfg["push"]), float(staff_cfg["push_time"]))
+	rage_hits += struck
+	staff_anim = 1
+	staff_anim_t = STAFF_SHOW
+	arena.shake(1.0)
+
+
+## A 120 degree cone centred on the target, swept across from one side.
+func _staff_sweep() -> void:
+	var tile: float = float(arena.TILE)
+	var half: float = deg_to_rad(float(staff_cfg["sweep_deg"])) * 0.5
+	var len_t: float = float(staff_cfg["sweep_len"])
+	var mid: float = staff_dir.angle()
+	var primary: Node = target
+	var struck := 0
+	for e in arena.enemy_entities(team).duplicate():
+		if not is_instance_valid(e) or e.dead or e.get("flying") == true:
+			continue
+		if e != primary:
+			var off: Vector2 = e.position - position
+			var d: float = off.length() / tile
+			if d > len_t + float(e.get_radius_t()):
+				continue
+			if d > 0.01 and absf(angle_difference(mid, off.angle())) > half:
+				continue
+		e.take_damage(dmg, position, self)
+		struck += 1
+	rage_hits += struck
+	staff_anim = 2
+	staff_anim_t = STAFF_SHOW
+	staff_from = mid - half * facing
+	staff_to = mid + half * facing
+	arena.shake(0.8)
+
+
+## Banked hits -> the regen of the highest rage level reached.
+func rage_level() -> int:
+	var lv := 0
+	var levels: Array = staff_cfg.get("rage_levels", [])
+	for i in levels.size():
+		if rage_hits >= int(levels[i][0]):
+			lv = i
+	return lv
+
+
+func _enter_rage() -> void:
+	rage_used = true
+	rage_t = float(staff_cfg["rage_time"])
+	rage_regen = float(staff_cfg["rage_levels"][rage_level()][1])
+	speed = ground_speed * float(staff_cfg["rage_speed"])
+	arena.banner_flash("Wu Cheng'en flies into a rage!")
+
+
 ## How close Femme Fatale stands to a body: needle range, or its edge if it is big.
 func _needle_stop(body: Node) -> float:
 	return maxf(float(needle_cfg["range"]), radius_t + float(body.get_radius_t()) + 0.2)
@@ -1179,8 +1392,11 @@ func _attack_chicken() -> void:
 func _burst() -> void:
 	if dead:
 		return
-	arena.spawn_splash_burst(position, float(kamikaze_cfg["radius"]), float(kamikaze_cfg["dmg"]),
+	# no damage of its own: everything in the splash (towers included) catches fire
+	var rad := float(kamikaze_cfg["radius"])
+	arena.spawn_splash_burst(position, rad, float(kamikaze_cfg.get("dmg", 0.0)),
 		team, Color(1.0, 0.62, 0.25))
+	arena.apply_burn_at(position, rad, float(kamikaze_cfg.get("burn", 0.0)), team)
 	_die()
 
 
@@ -1225,6 +1441,32 @@ func _enemy_within(range_t: float) -> Node:
 			best = e
 			best_d = d
 	return best
+
+
+## Any enemy unit (ground or air, not towers) within range_t tiles, edge to edge.
+func _enemy_unit_within(range_t: float) -> bool:
+	for e in arena.enemy_units(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		if arena.gap_between(position, e.position, radius_t, float(e.get_radius_t())) <= range_t:
+			return true
+	return false
+
+
+## The obsidian whelp being hit: it curls (the hit that wakes it lands in full),
+## restarts its calm clock, and a melee blow nudges it straight back. A blow is
+## melee when it comes from the attacker's own body, not a projectile.
+func _guard_hit(from: Vector2, attacker: Node) -> void:
+	curled = true
+	guard_calm = float(guard_cfg["calm"])
+	if attacker == null or not is_instance_valid(attacker) or not attacker.has_method("get_radius_t"):
+		return
+	if attacker.is_tower() or from.distance_to(attacker.position) > 1.0:
+		return
+	var d: Vector2 = position - attacker.position
+	if d.length() < 0.01:
+		d = Vector2(facing, 0.0)
+	apply_impulse(d.normalized(), float(guard_cfg["melee_push"]), float(guard_cfg["push_time"]))
 
 
 ## The hedgehog's reach attack: ball up, quills out at everything inside thorn
@@ -1442,6 +1684,80 @@ func _tick_summon(delta: float) -> void:
 	arena.shake(2.0)
 
 
+## Enkidu's throw: spear in hand and off cooldown, nothing already inside
+## throw_min (that is hand-to-hand), and a ground troop whose centre is in the
+## throw_min .. throw_range band — the nearest such one takes the spear. Flyers,
+## buildings and towers are never thrown at. Returns true if he threw.
+func _try_throw() -> bool:
+	if spear_away > 0.0 or atk_cd > 0.0:
+		return false
+	var lo: float = float(spear_cfg["throw_min"])
+	var hi: float = float(spear_cfg["throw_range"])
+	var pick: Node = null
+	var best := INF
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d: float = arena.tiles_between(position, e.position)
+		if d < lo and _target_valid(e):
+			# something is already in close: he fights it with the spear in hand
+			return false
+		if e.get("flying") == true or e.is_building() or e.is_tower():
+			continue
+		if d >= lo and d <= hi and d < best and _target_valid(e):
+			best = d
+			pick = e
+	if pick == null:
+		return false
+	target = pick
+	if absf(pick.position.x - position.x) > 1.0:
+		facing = signf(pick.position.x - position.x)
+	_mark_attack()
+	atk_cd = base_interval
+	arena.spawn_projectile(position + Vector2(0.0, -radius_t * float(arena.TILE) * 0.6), pick.position, team,
+		float(spear_cfg["throw_dmg"]), 0.0, "javelin", get_instance_id(), "bolt", false, self,
+		float(spear_cfg["throw_speed"]), pick, {"seek": pick})
+	# the short sword until the spear is back: shorter, quicker, ground only
+	spear_away = float(spear_cfg["away_time"])
+	dmg = float(spear_cfg["sword_dmg"])
+	reach = float(spear_cfg["sword_reach"])
+	interval = float(spear_cfg["sword_interval"])
+	hits_air = false
+	state = S.ATTACK
+	return true
+
+
+func _spear_back() -> void:
+	dmg = base_dmg
+	reach = ground_reach
+	interval = base_interval
+	hits_air = true
+
+
+## The Nekomancer's ritual: on its clock the wind catches her cloak and two
+## pentagrams open on the forward diagonals, `dist` tiles out. Each one raises
+## its unit itself, `delay` seconds later.
+func _tick_ritual(delta: float) -> void:
+	ritual_cd -= delta
+	if ritual_cd > 0.0:
+		return
+	ritual_cd += float(ritual_cfg["every"])
+	cloak_t = CLOAK_WIND
+	var fwd := 1.0 if team == 0 else -1.0
+	var dist_px: float = float(ritual_cfg["dist"]) * float(arena.TILE)
+	for side in [-1.0, 1.0]:
+		var spot: Vector2 = position + Vector2(fwd, side).normalized() * dist_px
+		# off the board or under a building: pulled back toward her until it fits
+		for i in 6:
+			var tl: Vector2i = arena.tile_of(spot)
+			if arena.valid_tile(tl) and arena.building_at(tl) == null:
+				break
+			spot = spot.lerp(position, 0.35)
+		var p: Node2D = PENTAGRAM.new()
+		p.setup(arena, team, String(ritual_cfg["unit"]), spot, float(ritual_cfg["delay"]))
+		arena.add_child(p)
+
+
 func _acquire() -> Node:
 	if targets_weakest:
 		var weakest: Node = null
@@ -1505,6 +1821,8 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 	var taken := amount
 	if curled and not curl_cfg.is_empty():
 		taken *= float(curl_cfg["damage_mult"])
+	if curled and not guard_cfg.is_empty():
+		taken *= float(guard_cfg["damage_mult"])
 	last_from = from
 	if attacker != null:
 		last_attacker = attacker
@@ -1537,6 +1855,10 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 			var air_reach = attacker.get("reach")
 			if air_reach != null and float(air_reach) <= MELEE_AIR_REACH:
 				_curl_up()
+	if not guard_cfg.is_empty() and hp > 0.0:
+		_guard_hit(from, attacker)
+	if not staff_cfg.is_empty() and not rage_used and hp > 0.0 and hp < max_hp * float(staff_cfg["rage_hp"]):
+		_enter_rage()
 	if kind == "alchemist" and not phase2 and hp > 0.0 and hp <= max_hp * 0.5:
 		_enter_phase2()
 	if hp <= 0.0:
@@ -1653,7 +1975,13 @@ func _draw() -> void:
 	var sx := 1.0
 	var sy := 1.0
 	var drop := 0.0
-	if deploy_timer > 0.0:
+	if deploy_timer > 0.0 and rises:
+		# climbing up out of the pentagram: starts flat and sunk, ends standing
+		var rf: float = clampf((DEPLOY_DELAY - deploy_timer) / DEPLOY_DELAY, 0.0, 1.0)
+		sy = lerpf(0.15, 1.0, ease(rf, 0.5))
+		sx = lerpf(1.3, 1.0, rf)
+		drop = px * 0.8 * (1.0 - rf)
+	elif deploy_timer > 0.0:
 		var e := DEPLOY_DELAY - deploy_timer
 		if e < FALL_TIME:
 			var ff := e / FALL_TIME
@@ -1678,6 +2006,23 @@ func _draw() -> void:
 	var ink: Color = arena.team_ink(int(team))
 	if kind == "hedgehog":
 		DDArt.hedgehog(self, px, facing, clock, curled, ink)
+	elif kind == "obsidian":
+		DDArt.whelp(self, px, facing, clock, curled, false, ink)
+	elif kind == "wu":
+		if rage_t > 0.0:
+			var rp: float = 0.5 + 0.5 * sin(clock * 14.0)
+			draw_circle(Vector2.ZERO, px * (1.25 + 0.1 * rp), Color(1.0, 0.15, 0.1, 0.18 + 0.14 * rp))
+		DDArt.bonobo(self, px, facing, clock, {"staff": staff_out, "walk": state == S.APPROACH,
+			"swing": staff_anim_t > 0.0, "rage": rage_t > 0.0}, ink)
+	elif kind == "gilgamesh":
+		DDArt.gilgamesh(self, px, facing, clock, {"lashing": whip_t > 0.0, "walk": state == S.APPROACH},
+			ink, arena.team_color(int(team)))
+	elif kind == "enkidu":
+		DDArt.enkidu(self, px, facing, clock, {"spear": spear_away <= 0.0, "walk": state == S.APPROACH,
+			"strike": attack_stretch / ATTACK_STRETCH}, ink)
+	elif kind == "neko":
+		DDArt.nekomancer(self, px, facing, clock, {"wind": cloak_t / CLOAK_WIND,
+			"cast": beam_t / BEAM_SHOW, "walk": state == S.APPROACH}, ink, arena.team_color(int(team)))
 	elif kind == "hawk":
 		DDArt.bird(self, px, facing, clock, bird_lead, ink)
 	elif kind == "dragon":
@@ -1763,6 +2108,46 @@ func _draw() -> void:
 		var wide: float = float(sword_cfg["leap_width"]) * 2.0 * float(arena.TILE)
 		draw_line(Vector2.ZERO, leap_dir * line_px, Color(1.0, 1.0, 1.0, 0.4 * kf), wide * (0.4 + 0.6 * kf), true)
 		DDArt.greatsword(self, leap_dir * px * 0.7, leap_dir * blade_px2, px * 0.5, ink)
+	if whip_t > 0.0:
+		# Gilgamesh's lash: the snake shoots out from his hand to the target in a
+		# travelling wave, holds a beat with its jaws on it, and snaps back
+		var wp: float = 1.0 - whip_t / WHIP_SHOW
+		var ext: float = clampf(wp / 0.35, 0.0, 1.0)
+		if wp > 0.7:
+			ext = 1.0 - clampf((wp - 0.7) / 0.3, 0.0, 1.0)
+		DDArt.snake_lash(self, DDArt.gilgamesh_hand(px, facing), whip_to - position, ext,
+			clock, px * 0.2, arena.team_color(int(team)), ink)
+	if beam_t > 0.0:
+		# the Nekomancer's beam, staff tip to target, in her team's colour
+		var bf: float = beam_t / BEAM_SHOW
+		var from: Vector2 = DDArt.neko_staff_tip(px, facing)
+		var to: Vector2 = beam_to - position
+		var bc: Color = arena.team_color(int(team))
+		draw_line(from, to, Color(bc.r, bc.g, bc.b, 0.35 * bf), px * 0.55 * bf + 2.0, true)
+		draw_line(from, to, Color(bc.lightened(0.3).r, bc.lightened(0.3).g, bc.lightened(0.3).b, 0.9 * bf), px * 0.22 * bf + 1.0, true)
+		draw_line(from, to, Color(1.0, 1.0, 1.0, 0.85 * bf), 1.2, true)
+		draw_circle(to, px * (0.25 + 0.3 * (1.0 - bf)), Color(bc.r, bc.g, bc.b, 0.5 * bf))
+		draw_circle(from, px * 0.22 * bf + 1.0, Color(1.0, 1.0, 1.0, 0.8 * bf))
+	if staff_anim_t > 0.0:
+		var tile_px: float = float(arena.TILE)
+		var sp: float = 1.0 - staff_anim_t / STAFF_SHOW
+		var held := Vector2(0.0, -px * 0.35)
+		if staff_anim == 1:
+			# the poke: the staff shoots out along the line and a streak runs on
+			# through the pierce
+			var reach_px: float = tile_px * (reach + radius_t) * sin(minf(sp * 1.6, 1.0) * PI * 0.5)
+			var tip: Vector2 = held + staff_dir * (px * 0.6 + reach_px)
+			var streak: float = tile_px * float(staff_cfg["pierce"]) * sp
+			draw_line(tip, tip + staff_dir * streak, Color(1.0, 0.95, 0.75, 0.45 * (1.0 - sp)), px * 0.5, true)
+			DDArt.gold_staff(self, tip - staff_dir * px * 2.6, tip, px * 0.13)
+		else:
+			# the sweep: the staff rakes across the cone, a pale wake behind it
+			var sang: float = lerpf(staff_from, staff_to, ease(sp, 0.5))
+			var slen: float = float(staff_cfg["sweep_len"]) * tile_px
+			draw_arc(held, slen * 0.75, minf(staff_from, sang), maxf(staff_from, sang), 20,
+				Color(1.0, 0.95, 0.75, 0.32 * (1.0 - sp * 0.6)), slen * 0.4, true)
+			var sd := Vector2.from_angle(sang)
+			DDArt.gold_staff(self, held - sd * px * 0.6, held + sd * slen, px * 0.13)
 	if not needle_cfg.is_empty():
 		var tip_px: float = float(needle_cfg["tip"]) * float(arena.TILE)
 		if dash_phase == 1:
@@ -1805,10 +2190,41 @@ func _draw() -> void:
 		for i in 3:
 			var a := clock * 4.0 + float(i) * TAU / 3.0
 			draw_circle(Vector2(cos(a), sin(a)) * px * 0.9 + Vector2(0, -px - 16.0 - lift), 3.0, Color(1.0, 0.9, 0.35))
-	if hp < max_hp:
+	if hp < max_hp or not staff_cfg.is_empty():
 		var w: float = px * 2.2
 		var y2: float = -px - 10.0 - lift
+		if not staff_cfg.is_empty():
+			# his bars sit above the staff
+			y2 -= px * 0.5
 		draw_rect(Rect2(-w * 0.5, y2, w, 5.0), Color(0.08, 0.07, 0.1, 0.85), true)
 		var frac := clampf(hp / max_hp, 0.0, 1.0)
 		var col2 := Color(0.45, 0.9, 0.55) if team == 0 else Color(0.95, 0.45, 0.45)
 		draw_rect(Rect2(-w * 0.5 + 1.0, y2 + 1.0, (w - 2.0) * frac, 3.0), col2, true)
+		if not staff_cfg.is_empty():
+			_draw_rage_bars(w, y2)
+
+
+## Wu Cheng'en's bars: the rage threshold as a tick on the HP bar in the
+## opponent's colour, and under it the rage bar. It fills once per rage level,
+## each pass redder, laid over the colour of the level before it.
+const RAGE_COLORS := [Color(1.0, 0.8, 0.55), Color(1.0, 0.52, 0.32), Color(0.95, 0.24, 0.16), Color(0.75, 0.04, 0.06)]
+func _draw_rage_bars(w: float, y2: float) -> void:
+	if not rage_used:
+		var mark_x: float = -w * 0.5 + 1.0 + (w - 2.0) * float(staff_cfg["rage_hp"])
+		draw_line(Vector2(mark_x, y2 - 2.0), Vector2(mark_x, y2 + 7.0), arena.team_color(1 - int(team)), 2.0)
+	var levels: Array = staff_cfg["rage_levels"]
+	var lv := rage_level()
+	var y3: float = y2 + 6.0
+	var under: Color = Color(0.08, 0.07, 0.1, 0.85) if lv == 0 else Color(RAGE_COLORS[lv - 1])
+	draw_rect(Rect2(-w * 0.5, y3, w, 4.0), Color(0.08, 0.07, 0.1, 0.85), true)
+	draw_rect(Rect2(-w * 0.5 + 1.0, y3 + 1.0, w - 2.0, 2.0), under, true)
+	var fill := 1.0
+	if lv < levels.size() - 1:
+		var lo: float = float(levels[lv][0])
+		var hi: float = float(levels[lv + 1][0])
+		fill = clampf((float(rage_hits) - lo) / maxf(1.0, hi - lo), 0.0, 1.0)
+	var top: Color = RAGE_COLORS[mini(lv, RAGE_COLORS.size() - 1)]
+	draw_rect(Rect2(-w * 0.5 + 1.0, y3 + 1.0, (w - 2.0) * fill, 2.0), top, true)
+	if rage_t > 0.0:
+		# raging: the bar drains with the time left
+		draw_rect(Rect2(-w * 0.5, y3 + 4.0, w * rage_t / float(staff_cfg["rage_time"]), 1.5), Color(1.0, 0.2, 0.15), true)

@@ -31,9 +31,16 @@ const MATCH_TIME := 150.0
 const OVERTIME := 60.0
 const OVERTIME_GOLD := 2.0
 const OVERTIME_DRAW_CUT := 1.0
-const TENTACLE_HP := 20.0
-const TENTACLE_DMG := 20.0
+const TENTACLE_HP := 35.0
+## the hold squeezes: TENTACLE_DMG on the grab and every TENTACLE_INTERVAL after
+const TENTACLE_DMG := 7.0
+const TENTACLE_INTERVAL := 1.6
 const TENTACLE_TIME := 4.0
+
+
+## Everything the tentacle's squeezes add up to over a full hold.
+static func tentacle_total_damage() -> float:
+	return TENTACLE_DMG * float(int(ceil(TENTACLE_TIME / TENTACLE_INTERVAL)))
 const GOBLIN_DMG := 30.0
 
 ## Orientation. LANDSCAPE = true  â†’ your half on the LEFT, enemy on the RIGHT,
@@ -51,8 +58,8 @@ const LANDSCAPE := DDBoard.LANDSCAPE
 
 const GRASS_A := Color(0.149, 0.42, 0.58, 1.0)
 const GRASS_B := Color(0.33, 0.46, 0.24)
-const BAND_A := GRASS_A
-const BAND_B := Color(0.33, 0.46, 0.24)
+var BAND_A := GRASS_A.darkened(TEAM_INK_DARKEN-0.2)
+var BAND_B := GRASS_B.darkened(TEAM_INK_DARKEN-0.2)
 const WATER := Color(0.678, 0.332, 0.139, 1.0)
 const WATER_HI := Color(0.176, 0.007, 0.001, 1.0)
 const WOOD := Color(0.62, 0.45, 0.3)
@@ -359,6 +366,7 @@ func _draw_gold_pieces() -> void:
 	var maxp := int(gold_max)
 	var r := TILE * 0.3
 	for team in 2:
+		var full: bool = float(gold[team]) >= gold_max - 0.001
 		for i in maxp:
 			# blue runs along the bottom-left UI strip, red mirrored across the
 			# vertical so it sits on their side of the board
@@ -366,9 +374,17 @@ func _draw_gold_pieces() -> void:
 			var at: Vector2 = tile_center(17.5, ty)
 			var filled: float = clampf(float(gold[team]) - float(i), 0.0, 1.0)
 			if filled >= 1.0:
+				if full:
+					# a full purse rattles: each coin jitters on its own beat
+					at += Vector2(sin(clock * 47.0 + float(i) * 2.3), cos(clock * 53.0 + float(i) * 1.7)) * 1.4
 				draw_circle(at, r, Color(0.98, 0.78, 0.22))
 				draw_circle(at + Vector2(-r * 0.3, -r * 0.3), r * 0.4, Color(1.0, 0.94, 0.62, 0.9))
 				draw_arc(at, r, 0.0, TAU, 20, Color(0.55, 0.38, 0.05), 1.6, true)
+				var started: float = float(coin_twinkle[team][i]) if i < (coin_twinkle[team] as Array).size() else -1.0
+				var since: float = clock - started if started >= 0.0 else -1.0
+				if since >= 0.0 and since < TWINKLE_FRAME * float(TWINKLE_SIZES.size()):
+					_draw_twinkle(at + Vector2(r * 0.35, -r * 0.35), r,
+						float(TWINKLE_SIZES[int(since / TWINKLE_FRAME)]))
 			elif filled > 0.0:
 				draw_circle(at, r * 1.35, Color(0.3, 0.3, 0.34, 0.95))
 				draw_arc(at, r * 1.35, -PI * 0.5, -PI * 0.5 + TAU * filled, 22, Color(1.0, 1.0, 0.84), 3.2, true)
@@ -376,6 +392,50 @@ func _draw_gold_pieces() -> void:
 			else:
 				draw_circle(at, r, Color(0.28, 0.28, 0.32))
 				draw_arc(at, r, 0.0, TAU, 18, Color(0.44, 0.44, 0.5), 1.2, true)
+
+
+## Coin twinkle, all picture: a four-point glint stepped through a few held
+## frames. It plays on a coin the moment it is minted, and on every coin, a
+## little apart, each TWINKLE_FULL_EVERY seconds while the purse is full.
+const TWINKLE_FRAME := 0.06
+const TWINKLE_SIZES := [0.35, 0.8, 1.2, 0.9, 0.45]
+const TWINKLE_FULL_EVERY := 1.6
+const TWINKLE_STAGGER := 0.05
+## [team][coin] -> clock time its current twinkle started (-1 = none)
+var coin_twinkle := [[], []]
+var coins_whole := [0, 0]
+var full_twinkle_at := [0.0, 0.0]
+
+
+func _tick_coin_twinkle() -> void:
+	var maxp := int(gold_max)
+	for team in 2:
+		if (coin_twinkle[team] as Array).size() != maxp:
+			coin_twinkle[team] = []
+			for i in maxp:
+				coin_twinkle[team].append(-1.0)
+		var whole := clampi(int(floor(float(gold[team]) + 0.0001)), 0, maxp)
+		if whole > int(coins_whole[team]):
+			for i in range(int(coins_whole[team]), whole):
+				coin_twinkle[team][i] = clock
+		coins_whole[team] = whole
+		if whole >= maxp:
+			if clock >= float(full_twinkle_at[team]):
+				full_twinkle_at[team] = clock + TWINKLE_FULL_EVERY
+				for i in maxp:
+					coin_twinkle[team][i] = clock + TWINKLE_STAGGER * float(i)
+		else:
+			# the first rattle of the next full purse comes a beat after it fills
+			full_twinkle_at[team] = clock + TWINKLE_FULL_EVERY * 0.5
+
+
+func _draw_twinkle(at: Vector2, r: float, size: float) -> void:
+	var arm: float = r * 0.9 * size
+	var white := Color(1.0, 1.0, 0.92, 0.95)
+	draw_colored_polygon(PackedVector2Array([at + Vector2(0, -arm), at + Vector2(arm * 0.18, -arm * 0.18),
+		at + Vector2(arm, 0), at + Vector2(arm * 0.18, arm * 0.18), at + Vector2(0, arm),
+		at + Vector2(-arm * 0.18, arm * 0.18), at + Vector2(-arm, 0), at + Vector2(-arm * 0.18, -arm * 0.18)]), white)
+	draw_circle(at, arm * 0.22, Color(1.0, 1.0, 1.0))
 
 
 ## Cards tick in every DRAW_INTERVAL seconds; drawing with a full hand throws
@@ -402,6 +462,8 @@ func draw_card(team: int) -> bool:
 	var k: String = queues[team].pop_front()
 	hands[team].append(k)
 	_reset_charges(team, k)
+	if sfx != null:
+		sfx.take_card()
 	return true
 
 
@@ -607,6 +669,7 @@ func _finish_on_towers() -> void:
 
 func _process(delta: float) -> void:
 	clock += delta
+	_tick_coin_twinkle()
 	if banner_timer > 0.0:
 		banner_timer = maxf(0.0, banner_timer - delta)
 	if float(reject["timer"]) > 0.0:
@@ -924,6 +987,7 @@ func nearest_own_tower(team: int, pos: Vector2) -> Node:
 
 
 const GIANT_KINDS := ["dragon"]
+const GROUND_FIRE_SCRIPT := preload("res://scripts/ground_fire.gd")
 
 
 func apply_burn_at(center: Vector2, radius_t: float, burn: float, team: int, ticks: int = 4) -> void:
@@ -962,6 +1026,13 @@ func spell_blast(center: Vector2, radius_t: float, dmg: float, team: int, tower_
 			var dir: Vector2 = e.position - center
 			if dir.length() > 0.01 and e.has_method("apply_impulse"):
 				e.apply_impulse(dir.normalized(), knock_tiles, 0.28)
+	# some spells leave the ground burning (Fireball): drawn under the units
+	var gf: Dictionary = DDCard.get_card(kind).get("ground_fire", {})
+	if not gf.is_empty():
+		var fire: Node2D = GROUND_FIRE_SCRIPT.new()
+		fire.setup(self, center, team, radius_t, gf)
+		add_child(fire)
+		move_child(fire, 0)
 	var col := Color(1.0, 0.55, 0.15) if kind == "fireball" else Color(1.0, 0.8, 0.3)
 	var b := DDBurst.new()
 	b.setup(self, maxf(radius_t, 0.6), col)
@@ -1256,11 +1327,13 @@ func use_ability(player: int) -> bool:
 		t.hp = TENTACLE_HP
 		t.max_hp = TENTACLE_HP
 		t.life = TENTACLE_TIME
+		t.dmg = TENTACLE_DMG
+		t.interval = TENTACLE_INTERVAL
 		t.setup(self, player, victim)
 		t.position = victim.position
 		units.append(t)
 		add_child(t)
-		victim.take_damage(TENTACLE_DMG, t.position)
+		# no reveal hit any more: the tentacle squeezes on its own clock
 		if victim.get("stunned") != null:
 			victim.stunned = TENTACLE_TIME
 		banner_flash("Tentacle grabs %s!" % DDCard.pretty(String(victim.kind)))
@@ -1467,13 +1540,14 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 			return
 		charges[team].erase(kind)
 	hand.remove_at(index)
-	if kind == "penny":
-		# the one card that changes: Pen takes her slot straight away and flies
-		# into the hand from the spot she was played on
-		hand.insert(index, "pen")
+	var becomes := String(DDCard.get_card(kind).get("becomes", ""))
+	if becomes != "":
+		# a card that changes (Penny -> Pen, Obsidian -> Magma Whelp): the other
+		# half takes its slot straight away and flies in from where it was played
+		hand.insert(index, becomes)
 		for pn in panels:
 			if is_instance_valid(pn) and int(pn.player) == team:
-				pn.note_arrival("pen", world)
+				pn.note_arrival(becomes, world)
 	else:
 		# no automatic draw: the card cycles to the back of the deck
 		queues[team].append(kind)
@@ -1508,6 +1582,15 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 	else:
 		# a building under our feet shoves the body off to the nearest free tile
 		snapped = free_spot_near(snapped)
+	if data.has("partner") and not single:
+		# a pair card (Gilgamesh & Enkidu): the card's own unit and its partner
+		# land side by side across the lane, half the gap each way
+		var half_gap := float(data.get("partner_gap", 1.0)) * 0.5 * TILE
+		var lead: Node = spawn_troop(kind, team, snapped, true)
+		var mate: Node = spawn_troop(String(data["partner"]), team, snapped, true)
+		lead.position = snapped + Vector2(0.0, -half_gap)
+		mate.position = snapped + Vector2(0.0, half_gap)
+		return lead
 	var offsets: Array = data.get("swarm_offsets", [])
 	if offsets.is_empty() or single:
 		var u := DDUnit.new()

@@ -139,8 +139,8 @@ func _wants_tentacle() -> bool:
 	if victim == null:
 		return false
 	var hp: float = float(victim.get("hp"))
-	# the reveal burst alone finishes it: that is a kill for 2 gold
-	if hp <= float(arena.TENTACLE_DMG):
+	# the squeezes alone finish it inside the hold: that is a kill for 2 gold
+	if hp <= float(arena.tentacle_total_damage()):
 		return true
 	# can my side finish it inside the hold? then the stun is earning its keep
 	var allied := 0.0
@@ -289,7 +289,8 @@ func _threat_of(e: Node) -> float:
 	var t := dps * 0.22 + hp / 130.0
 	var kam = e.get("kamikaze_cfg")
 	if kam != null and not (kam as Dictionary).is_empty():
-		t += float((kam as Dictionary)["dmg"]) / 32.0   # a suicide burst counts too
+		# a suicide burst counts too, whether it hits or sets alight
+		t += (float((kam as Dictionary).get("dmg", 0.0)) + float((kam as Dictionary).get("burn", 0.0))) / 32.0
 	if e.is_building():
 		t *= 0.65
 	return clampf(t, 0.0, 6.0)

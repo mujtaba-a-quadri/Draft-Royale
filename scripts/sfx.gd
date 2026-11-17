@@ -9,11 +9,22 @@ extends Node
 
 const DRAW_FILE := "res://SFX/freesound_community opening hand.mp3"
 const PLACE_FILE := "res://SFX/oxidvideos-place cardmp3.mp3"
+## A single card drawn into either hand: one of three takes, picked at random.
+const TAKE_FILES := [
+	"res://SFX/oxidvideos-taking-playing-card-522520.mp3",
+	"res://SFX/oxidvideos-taking-playing-card-2-522516.mp3",
+	"res://SFX/oxidvideos-taking-playing-card-3-522513.mp3",
+]
+## Draws this many physics frames apart count as one: both hands draw on the same
+## clock, and the two players should not hear a doubled sound.
+const TAKE_SAME_FRAMES := 3
 const DRAW_SLICES := 8
 const VOICES := 6
 
 var draw_stream: AudioStream = null
 var place_stream: AudioStream = null
+var take_streams: Array[AudioStream] = []
+var last_take_frame := -1000
 var slice_seconds := 0.0
 var voices: Array[AudioStreamPlayer] = []
 
@@ -21,6 +32,10 @@ var voices: Array[AudioStreamPlayer] = []
 func _ready() -> void:
 	draw_stream = load(DRAW_FILE)
 	place_stream = load(PLACE_FILE)
+	for path in TAKE_FILES:
+		var s: AudioStream = load(path)
+		if s != null:
+			take_streams.append(s)
 	if draw_stream != null:
 		slice_seconds = draw_stream.get_length() / float(DRAW_SLICES)
 	for i in VOICES:
@@ -55,6 +70,22 @@ func place_card() -> void:
 	if voice == null:
 		return
 	voice.stream = place_stream
+	voice.play()
+
+
+## One card drawn (either player). Simultaneous draws play once. The pick is a
+## cosmetic roll, so it never touches the seeded match.
+func take_card() -> void:
+	if take_streams.is_empty():
+		return
+	var frame := Engine.get_physics_frames()
+	if frame - last_take_frame <= TAKE_SAME_FRAMES:
+		return
+	last_take_frame = frame
+	var voice := _voice()
+	if voice == null:
+		return
+	voice.stream = take_streams[randi() % take_streams.size()]
 	voice.play()
 
 

@@ -64,11 +64,13 @@ const CARDS := {
 		"name": "Fireball",
 		"cost": 5,
 		"type": "spell",
-		"blurb": "Fired from your king tower: 40 damage, 60 burn, and everything loose is shoved away.",
+		"blurb": "Fired from your king tower: 40 damage, 70 burn, and everything loose is shoved away. The ground keeps burning for 4.2 seconds: 10 more burn a second to anything standing in it.",
 		"hp": 0.0, "dmg": 40.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
 		"radius": 2.2, "splash": 2.2, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
 		"buildings_only": false,
 		"burn": 70.0, "knock": 1.2, "launch": "king",
+		# a patch the size of the blast, applying `burn` every `every` seconds
+		"ground_fire": {"burn": 10.0, "every": 1.0, "time": 4.2},
 		"tower_mult": 0.40,
 		"accent": Color(1.0, 0.55, 0.15),
 	},
@@ -90,14 +92,15 @@ const CARDS := {
 		"name": "Hot Chicken",
 		"cost": 2,
 		"type": "troop",
-		"blurb": "Pecks fireballs from range. Three hits on one target and it takes to the air: a flying fire spirit that rams for 30 splash and takes itself with it. Shoot it down before it lands.",
+		"blurb": "Pecks fireballs from range. Three hits on one target and it takes to the air: a flying fire spirit that rams in and sets everything nearby alight with 30 burn, taking itself with it. Shoot it down before it lands.",
 		"hp": 45.0, "dmg": 5.0, "speed": 1.35, "reach": 3.5, "interval": 0.75,
 		"radius": 0.4, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"hits_air": true,
 		"burn": 5.0,
 		"chicken": {"hits_to_fly": 3, "fire_speed": 620.0, "burst_reach": 0.3},
-		"kamikaze": {"radius": 1.4, "dmg": 30.0, "speed_mult": 2.0},  
+		# the ram does no damage of its own: it sets the splash alight
+		"kamikaze": {"radius": 1.4, "burn": 30.0, "speed_mult": 2.0},
 		"accent": Color(1.0, 0.55, 0.2),
 	},
 	"penny": {
@@ -106,12 +109,129 @@ const CARDS := {
 		"type": "troop",
 		"blurb": "Calico blur. Only ever goes after troops. Three quick swipes, then she fades out, backs off and circles around them.",
 		"hp": 90.0, "dmg": 10.0, "speed": 2.5, "reach": 0.45, "interval": 0.7,
-		"radius": 0.34, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"radius": 0.51, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"troops_only": true,
 		"dodge": {"after_hits": 2, "time": 0.9, "back": 0.5, "sweep_deg": 90.0,
 			"jump_time": 0.35, "jump_reach": 2.5, "jump_mult": 2.0},
+		# playing her puts this card in her hand slot
+		"becomes": "pen",
 		"accent": Color(0.95, 0.62, 0.28),
+	},
+	"obsidian": {
+		"name": "Obsidian Whelp",
+		"cost": 1,
+		"type": "troop",
+		"blurb": "A baby black dragon in a coat of scales. Anything near, or any hit, and it curls up tight: 80 % less damage, but a melee blow still nudges it back. Playing it brings a Magma Whelp into your hand.",
+		"hp": 60.0, "dmg": 8.0, "speed": 0.8, "reach": 0.4, "interval": 1.2,
+		"radius": 0.36, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		# curls when an enemy unit is within `sense` tiles (edge to edge) or it is
+		# hit; opens again once nothing is in sense AND it has gone `calm` s unhit
+		"guard": {"sense": 3.0, "damage_mult": 0.2, "melee_push": 0.25, "push_time": 0.12, "calm": 2.0},
+		"becomes": "magma",
+		"accent": Color(0.42, 0.36, 0.5),
+	},
+	"wu": {
+		"name": "Wu Cheng'en",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "A bonobo who knuckle-walks up to you, then pulls a tiny staff from behind his ear that grows to full size in his hands. Poke, sweep, repeat. Every hit he lands banks rage; at a quarter of his health it all comes out at once.",
+		# dmg / reach / interval: each staff hit
+		"hp": 140.0, "dmg": 16.0, "speed": 1.0, "reach": 1.0, "interval": 1.4,
+		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"staff": {
+			# drawing the staff from behind his ear, before the first swing
+			"draw_time": 0.4,
+			# a target this many tiles past reach is closed on with the staff still out
+			"keep_out": 1.5,
+			# poke: through the target and pierce tiles on, pushing everything hit
+			"pierce": 2.0, "poke_width": 0.35, "push": 0.5, "push_time": 0.15,
+			# sweep: a cone centred on the target, out to sweep_len tiles
+			"sweep_deg": 120.0, "sweep_len": 1.8,
+			# rage: under rage_hp of his HP, once per life, for rage_time seconds
+			"rage_hp": 0.25, "rage_time": 5.0, "rage_speed": 1.25, "rage_attack": 1.25,
+			# every enemy struck banks one rage; regen by banked hits
+			"rage_levels": [[0, 5.0], [4, 15.0], [8, 25.0], [12, 40.0]],
+		},
+		"accent": Color(0.42, 0.36, 0.34),
+	},
+	"neko": {
+		"name": "Nekomancer",
+		"cost": 5,
+		"type": "troop",
+		"blurb": "A black cat in a green cloak and a wizard's hat. Her staff fires a beam at anything in range, ground or air, and every four seconds the wind catches her cloak and two pentagrams open in front of her, each raising a rat skeleton a second later.",
+		"hp": 100.0, "dmg": 14.0, "speed": 0.85, "reach": 4.0, "interval": 1.2,
+		"radius": 0.6, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		# an instant single-target hit, drawn as a beam in the owner's colour
+		"beam": true,
+		# every `every` s: two pentagrams `dist` tiles out on the forward diagonals,
+		# and `delay` s later a `unit` climbs out of each (even if she has died)
+		"ritual": {"unit": "ratbones", "every": 4.0, "dist": 1.2, "delay": 1.0},
+		"accent": Color(0.55, 0.78, 0.36),
+	},
+	"ratbones": {
+		"name": "Rat Skeleton",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Raised by the Nekomancer. Quick, brittle, and all teeth.",
+		"hp": 20.0, "dmg": 6.0, "speed": 1.4, "reach": 0.35, "interval": 0.8,
+		"radius": 0.39, "splash": 0.0, "aggro": 5.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.9, 0.87, 0.78),
+	},
+	# one card, two bodies: Gilgamesh is the card's own unit and `partner` lands
+	# beside him (arena.spawn_troop)
+	"gilgamesh": {
+		"name": "Gilgamesh & Enkidu",
+		"cost": 6,
+		"type": "troop",
+		"blurb": "The king and the wild man, side by side. Gilgamesh lashes with a living snake two and a half tiles long; Enkidu throws his spear at the first troop to come within four and a half tiles, then fights with a short sword until it comes back to him.",
+		"hp": 320.0, "dmg": 22.0, "speed": 1.3, "reach": 2.5, "interval": 1.3,
+		"radius": 0.5, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		# the snake whip: an instant hit at reach, drawn as a lash in the owner's colour
+		"whip": true,
+		"partner": "enkidu",
+		# how far apart the two land, across the lane, in tiles
+		"partner_gap": 1.0,
+		"accent": Color(0.85, 0.66, 0.3),
+	},
+	"enkidu": {
+		"name": "Enkidu",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Horned, bull-legged, raised by the beasts. Never dealt alone: he comes with Gilgamesh.",
+		# dmg / reach / interval: the spear in hand (reaches air)
+		"hp": 280.0, "dmg": 24.0, "speed": 1.45, "reach": 1.1, "interval": 1.2,
+		"radius": 0.48, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"spear": {
+			# thrown at a ground troop (never a building, tower or flyer) whose centre is
+			# between throw_min and throw_range tiles away; anything closer is fought hand to hand
+			"throw_range": 4.5, "throw_min": 3.0, "throw_dmg": 45.0, "throw_speed": 760.0,
+			# then the short sword (ground only) until the spear is back
+			"away_time": 3.5, "sword_dmg": 16.0, "sword_reach": 0.5, "sword_interval": 0.9,
+		},
+		"accent": Color(0.7, 0.52, 0.34),
+	},
+	"magma": {
+		"name": "Magma Whelp",
+		"cost": 1,
+		"type": "troop",
+		"blurb": "The Obsidian Whelp's molten twin. Flies, and flicks flaming feathers at anything within two tiles, ground or air: no impact, just 5 burn each.",
+		"hp": 30.0, "dmg": 0.0, "speed": 1.3, "reach": 2.0, "interval": 1.4,
+		"radius": 0.34, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"flying_unit": true,
+		"shoots": "feather",
+		"payload": {"burn": 5.0},
+		"accent": Color(1.0, 0.45, 0.12),
 	},
 	"aphid": {
 		"name": "Primal Aphid",
@@ -180,8 +300,8 @@ const CARDS := {
 		"accent": Color(0.72, 0.86, 1.0),
 	},
 	"ovomachine": {
-		"name": "In-Ovo Machine",
-		"cost": 6,
+		"name": "Ovo Javer Machine",
+		"cost": 6,  
 		"type": "building",
 		"blurb": "An industrial hatchery: a two by two block of steel that cranks out a hot chicken through the front hatch a second after it lands and every twelve seconds after, and one last chicken climbs out of the wreck when it dies.",
 		"hp": 240.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
@@ -234,7 +354,7 @@ const CARDS := {
 		"cost": 6,
 		"type": "troop",
 		"blurb": "Six bruisers that refuse to stay dead. Anything they kill gets back up as one of theirs.",
-		"hp": 111.0, "dmg": 15.0, "speed": 0.85, "reach": 0.5, "interval": 1.0,
+		"hp": 88.0, "dmg": 15.0, "speed": 0.85, "reach": 0.5, "interval": 1.0,
 		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"swarm_offsets": [[-0.8, -0.9], [0.8, -0.9], [-1.2, 0.1], [1.2, 0.1], [-0.8, 1.1], [0.8, 1.1]],
@@ -431,8 +551,9 @@ const CARDS := {
 		"name": "Tentacle",
 		"cost": 2,
 		"type": "troop",
-		"blurb": "The ability's grappler: burst-rises under the enemy's healthiest tower and beats on it.",
-		"hp": 25.0, "dmg": 20.0, "speed": 0.0, "reach": 1.2, "interval": 0.8,
+		"blurb": "The ability's grappler: bursts up under the enemy troop with the most HP, coils round it and holds it for 4 s, squeezing for 7 every 1.6 s.",
+		# the live numbers are arena.TENTACLE_*; these mirror them for the inspector
+		"hp": 20.0, "dmg": 7.0, "speed": 0.0, "reach": 0.0, "interval": 1.6,
 		"radius": 0.6, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 4.0,
 		"buildings_only": false,
 		"accent": Color(0.72, 0.45, 0.95),
@@ -449,13 +570,14 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh"]
 
 
-## Every card in the game. Pen is not in the deck — he only arrives when Penny is
-## played — but the debug overlay should still be able to show him.
+## Every card in the game. Pen and the Magma Whelp are not in the deck — they
+## only arrive when Penny / the Obsidian Whelp is played (card key "becomes") —
+## but the debug overlay should still be able to show them.
 static func all_kinds() -> Array:
-	return ORDER + ["pen"]
+	return ORDER + ["pen", "magma"]
 
 
 ## Placeholder for any kind that was never registered. Shaped exactly like a real

@@ -247,11 +247,28 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.55, 0.15, 0.85))
 		draw_circle(Vector2.ZERO, 2.6, Color(1.0, 0.85, 0.4))
 		return
+	if kind == "javelin":
+		# Enkidu's spear, point first, with a little wobble of the shaft
+		var ja := (to - from).angle()
+		draw_set_transform(Vector2.ZERO, ja + sin(clock * 30.0) * 0.04, Vector2.ONE)
+		DDArt.enkidu_spear(self, Vector2(-26, 0), Vector2(12, 0), 2.6)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if kind == "spear":
 		# the goblin commander's standard, point first, banner streaming behind
 		var ang := (to - from).angle()
 		draw_set_transform(Vector2.ZERO, ang, Vector2.ONE)
 		DDArt.standard(self, Vector2(-34, 0), Vector2(12, 0), DDArt.banner_color(area.team_color(team)), clock, 1.0, 1.0)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	if kind == "feather":
+		# a flaming feather, quill first, trailing sparks
+		var fa := (to - from).angle()
+		draw_set_transform(Vector2.ZERO, fa, Vector2.ONE)
+		draw_circle(Vector2(-6, 0), 4.5, Color(1.0, 0.45, 0.1, 0.35))
+		draw_colored_polygon(PackedVector2Array([Vector2(6, 0), Vector2(-2, -3.2), Vector2(-9, 0), Vector2(-2, 3.2)]),
+			Color(1.0, 0.55, 0.15))
+		draw_line(Vector2(-9, 0), Vector2(6, 0), Color(1.0, 0.92, 0.55), 1.2, true)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
 	if kind == "venom":
