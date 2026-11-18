@@ -119,6 +119,39 @@ var frog_from := Vector2.ZERO
 var frog_to := Vector2.ZERO
 var frog_victim: Node = null
 ## Hot Chicken: pecks fireballs, then takes to the air and rams.
+## the Phalanx's spartans: a shield with its own HP, raised by the Obsidian
+## Whelp's rules; once it breaks, a dagger between spear pokes
+var shield_cfg: Dictionary = {}
+var shield_hp := 0.0
+var shield_up := false
+var shield_calm := 0.0
+var shield_hit_t := 0.0
+var dagger_cfg: Dictionary = {}
+var dagger_next := false
+const POKE_SHOW := 0.22
+const STAB_SHOW := 0.16
+var poke_t := 0.0
+var stab_t := 0.0
+var poke_to := Vector2.ZERO
+
+## the Wolf Pack: every wolf shares one `pack` dictionary (made in
+## arena.spawn_troop); its first living member runs it each tick
+var pack_cfg: Dictionary = {}
+var pack: Dictionary = {}
+var wolf_lunge := false
+var wolf_lunge_t := 0.0
+
+## ants: the tile they last stood in, and once turned by a grave or another ant,
+## the other lane's tower they now walk at
+var trail_cfg: Dictionary = {}
+var ant_tile := Vector2i(-999, -999)
+var ant_turned := false
+var ant_goal: Node = null
+## just turned: it first walks back down its own trail to here (INF: done)
+var ant_back := Vector2.INF
+## which way it last walked (for "going opposite directions")
+var move_dir := Vector2.ZERO
+
 var chicken_cfg: Dictionary = {}
 var chicken_hits := 0
 var chicken_target := 0
@@ -292,6 +325,11 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	whip = bool(d.get("whip", false))
 	spear_cfg = d.get("spear", {})
 	frog_cfg = d.get("frog", {})
+	shield_cfg = d.get("shield", {})
+	shield_hp = float(shield_cfg.get("hp", 0.0))
+	dagger_cfg = d.get("dagger", {})
+	pack_cfg = d.get("pack", {})
+	trail_cfg = d.get("trail", {})
 	base_dmg = dmg
 	base_interval = interval
 	beam = bool(d.get("beam", false))
@@ -431,6 +469,9 @@ func _physics_process(delta: float) -> void:
 	beam_t = maxf(0.0, beam_t - delta)
 	cloak_t = maxf(0.0, cloak_t - delta)
 	whip_t = maxf(0.0, whip_t - delta)
+	poke_t = maxf(0.0, poke_t - delta)
+	stab_t = maxf(0.0, stab_t - delta)
+	shield_hit_t = maxf(0.0, shield_hit_t - delta)
 	if spear_away > 0.0:
 		# the spear comes back on the clock, whatever he is doing
 		spear_away = maxf(0.0, spear_away - delta)
@@ -489,6 +530,11 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 		return
 
+	if not pack.is_empty() and _pack_leader() == self:
+		# the pack's shared brain runs once a tick, on whichever wolf leads it,
+		# stunned or not
+		_tick_pack(delta)
+
 	if stunned > 0.0:
 		stunned = maxf(0.0, stunned - delta)
 		# a stun breaks Slate's charge: he starts again from a standstill
@@ -546,6 +592,14 @@ func _physics_process(delta: float) -> void:
 		_tick_summon(delta)
 	if not ritual_cfg.is_empty():
 		_tick_ritual(delta)
+
+	# a spartan's shield: the whelp's curl rules, but he keeps fighting behind it
+	if not shield_cfg.is_empty() and shield_hp > 0.0:
+		shield_calm = maxf(0.0, shield_calm - delta)
+		if _enemy_unit_within(float(shield_cfg["sense"])):
+			shield_up = true
+		elif shield_up and shield_calm <= 0.0:
+			shield_up = false
 
 	# the obsidian whelp: curled while an enemy unit is close or it was hit in the
 	# last `calm` seconds; curled, it does nothing but sit there
@@ -656,6 +710,14 @@ func _physics_process(delta: float) -> void:
 	if not spear_cfg.is_empty() and _try_throw():
 		queue_redraw()
 		return
+	if not pack.is_empty():
+		_tick_wolf(delta)
+		queue_redraw()
+		return
+	if not trail_cfg.is_empty():
+		_tick_ant(delta)
+		queue_redraw()
+		return
 	if not curl_cfg.is_empty() and not curled and gap <= reach:
 		# a hedgehog has no jab: getting into reach is the cue to ball up
 		_curl()
@@ -687,7 +749,10 @@ func _move(delta: float, at: Vector2 = Vector2.INF) -> void:
 	if absf(dir.x) > 0.05:
 		facing = signf(dir.x)
 	var spd := speed * (1.0 - (slow_amount if status == Status.SLOW else 0.0))
+	if shield_up:
+		spd *= float(shield_cfg["move_mult"])
 	position += dir * spd * arena.TILE * delta
+	move_dir = dir
 	moved_this_frame = true
 
 
@@ -722,6 +787,9 @@ func _attack() -> void:
 		return
 	if not spread_cfg.is_empty():
 		_attack_spread()
+		return
+	if not shield_cfg.is_empty():
+		_attack_spartan()
 		return
 	if shoots != "":
 		_mark_attack()
@@ -1671,7 +1739,8 @@ func _tick_summon(delta: float) -> void:
 		# on a fixed cadence rather than waiting for company
 		summon_cd = float(summon_cfg.get("interval", 12.0))
 		arena.spawn_troop(String(summon_cfg["unit"]), team, _hatch_spot(), true)
-		arena.shake(1.2)
+		if not bool(summon_cfg.get("quiet", false)):
+			arena.shake(1.2)
 		return
 	var rng_t := float(summon_cfg["range"])
 	var near := false
@@ -1871,6 +1940,400 @@ func _tick_ritual(delta: float) -> void:
 		arena.add_child(p)
 
 
+## A spartan's attack: a spear poke out to reach, or, with the shield broken and
+## the target within the dagger's reach, a stab between every two pokes (each
+## half an interval apart). Behind a raised shield it all comes slower.
+func _attack_spartan() -> void:
+	var gap: float = arena.gap_between(position, target.position, radius_t, float(target.get_radius_t()))
+	if absf(target.position.x - position.x) > 1.0:
+		facing = signf(target.position.x - position.x)
+	var close: bool = shield_hp <= 0.0 and not dagger_cfg.is_empty() and gap <= float(dagger_cfg["reach"])
+	var stab: bool = close and dagger_next
+	var hit: float = float(dagger_cfg["dmg"]) if stab else dmg
+	_mark_attack()
+	if stab:
+		stab_t = STAB_SHOW
+		dagger_next = false
+	else:
+		poke_t = POKE_SHOW
+		poke_to = target.position
+		dagger_next = true
+	var iv := interval
+	if shield_up:
+		iv *= float(shield_cfg["attack_mult"])
+	if close:
+		iv *= 0.5
+	atk_cd = iv
+	if target.has_method("take_damage"):
+		arena.reserve_damage(get_instance_id(), target, hit)
+		target.take_damage(hit, position, self)
+		arena.release_reservation(get_instance_id())
+
+
+func _pack_leader() -> Node:
+	for m in pack["members"]:
+		if is_instance_valid(m) and not m.dead:
+			return m
+	return null
+
+
+func _pack_alive() -> Array:
+	var out: Array = []
+	for m in pack["members"]:
+		if is_instance_valid(m) and not m.dead:
+			out.append(m)
+	return out
+
+
+## Ground a body can stand on: on the board, and out of the river unless on a
+## bridge (two tiles wide, ending on BRIDGE_COL).
+func _ground_ok(at: Vector2) -> bool:
+	var tl: Vector2i = arena.tile_of(at)
+	if not arena.valid_tile(tl):
+		return false
+	if tl.y >= arena.RIVER_TOP and tl.y <= arena.RIVER_BOTTOM:
+		for bx in [int(arena.BRIDGE_COL_A), int(arena.BRIDGE_COL_B)]:
+			if tl.x == bx or tl.x == bx - 1:
+				return true
+		return false
+	return true
+
+
+## The pack's brain, run by its leader once a tick: where the pack is (the
+## middle of the living wolves), what it is hunting, whether it has arrived, how
+## far the ring has turned, and whose turn it is to go in.
+func _tick_pack(delta: float) -> void:
+	var alive := _pack_alive()
+	if alive.is_empty():
+		return
+	var c := Vector2.ZERO
+	for m in alive:
+		c += m.position
+	c /= float(alive.size())
+	pack["center"] = c
+	var tgt = pack.get("target")
+	var ok: bool = tgt != null and is_instance_valid(tgt) and not tgt.dead and _target_valid(tgt)
+	var on_structure: bool = ok and (tgt.is_building() or tgt.is_tower())
+	pack["rethink"] = float(pack.get("rethink", 0.0)) - delta
+	# a troop is hunted until it dies; a structure is only what they do while
+	# there is no troop in reach, so they keep looking
+	if not ok or (on_structure and float(pack["rethink"]) <= 0.0):
+		pack["rethink"] = float(pack_cfg["rethink"])
+		var pick: Node = _pack_prey(c)
+		if pick == null:
+			pick = tgt if on_structure else _pack_structure(c)
+		if pick != tgt:
+			pack["target"] = pick
+			pack["engaged"] = false
+			pack["turn"] = 0.0
+			tgt = pick
+		ok = pick != null
+	if not ok:
+		return
+	var tr := float(tgt.get_radius_t())
+	var ring := float(pack_cfg["ring"])
+	var dist: float = arena.tiles_between(c, tgt.position)
+	if bool(pack.get("engaged", false)) and dist > tr + ring + 3.0:
+		# it got away from the ring: run it down together again
+		pack["engaged"] = false
+	if not bool(pack.get("engaged", false)):
+		if dist > tr + ring + 1.0:
+			return
+		pack["engaged"] = true
+		pack["turn"] = 0.0
+		pack["spin"] = 0.0
+		pack["base"] = (c - tgt.position).angle()
+	if not (tgt.is_building() or tgt.is_tower()):
+		pack["spin"] = float(pack["spin"]) + float(pack_cfg["spin"]) * delta
+	pack["turn"] = float(pack["turn"]) - delta
+	if float(pack["turn"]) > 0.0:
+		return
+	# clockwork: the next wolf in the rotation that can go, goes
+	var members: Array = pack["members"]
+	var n := members.size()
+	var start := int(pack.get("next", 0))
+	for k in n:
+		var idx := (start + k) % n
+		var w = members[idx]
+		if not is_instance_valid(w) or w.dead or w.wolf_lunge:
+			continue
+		if w.stunned > 0.0 or w.knock_time > 0.0 or w.deploy_timer > 0.0:
+			continue
+		w.wolf_lunge = true
+		w.wolf_lunge_t = 0.0
+		pack["next"] = (idx + 1) % n
+		pack["turn"] = float(pack["turn"]) + interval / float(alive.size())
+		return
+	pack["turn"] = 0.0
+
+
+## The loneliest ground troop within `hunt` tiles of the pack: the one whose
+## nearest friend (troop, building or tower) is furthest away.
+func _pack_prey(c: Vector2) -> Node:
+	var best: Node = null
+	var best_iso := -1.0
+	var hunt := float(pack_cfg["hunt"])
+	for e in arena.enemy_units(team):
+		if not is_instance_valid(e) or e.dead or e.is_building() or not _target_valid(e):
+			continue
+		if arena.tiles_between(c, e.position) > hunt:
+			continue
+		var iso := 999.0
+		for f in arena.units:
+			if f == e or not is_instance_valid(f) or f.dead or int(f.team) != int(e.team):
+				continue
+			iso = minf(iso, arena.tiles_between(e.position, f.position))
+		for tw in arena.towers:
+			if not is_instance_valid(tw) or tw.dead or int(tw.team) != int(e.team):
+				continue
+			iso = minf(iso, arena.tiles_between(e.position, tw.position))
+		if iso > best_iso + 0.0001 or (absf(iso - best_iso) <= 0.0001 and best != null and e.get_instance_id() < best.get_instance_id()):
+			best_iso = iso
+			best = e
+	return best
+
+
+## No troop to hunt: the nearest enemy building close enough to matter, else
+## the nearest tower, as any troop would.
+func _pack_structure(c: Vector2) -> Node:
+	var best: Node = null
+	var best_d := INF
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead or not _target_valid(e):
+			continue
+		if not (e.is_building() or e.is_tower()):
+			continue
+		var d: float = arena.tiles_between(c, e.position)
+		if not e.is_tower() and d > 7.5:
+			continue
+		if d < best_d:
+			best_d = d
+			best = e
+	return best
+
+
+## This wolf's place in the travelling diamond, mirrored for its side.
+func _wolf_offset() -> Vector2:
+	var offs: Array = DDCard.get_card(kind).get("swarm_offsets", [])
+	var i: int = (pack["members"] as Array).find(self)
+	if i < 0 or i >= offs.size():
+		return Vector2.ZERO
+	var xdir := 1.0 if team == 0 else -1.0
+	var ydir := -1.0 if team == 0 else 1.0
+	return Vector2(float(offs[i][0]) * xdir, float(offs[i][1]) * ydir) * float(arena.TILE)
+
+
+## One wolf: dart in and bite when its turn comes; otherwise hold its place,
+## in the diamond on the move or on the ring once the pack has arrived.
+func _tick_wolf(delta: float) -> void:
+	var tgt = pack.get("target")
+	if tgt == null or not is_instance_valid(tgt) or tgt.dead:
+		wolf_lunge = false
+		state = S.IDLE
+		return
+	target = tgt
+	var tr := float(tgt.get_radius_t())
+	if wolf_lunge:
+		wolf_lunge_t += delta
+		if arena.gap_between(position, tgt.position, radius_t, tr) <= reach:
+			_mark_attack()
+			if absf(tgt.position.x - position.x) > 1.0:
+				facing = signf(tgt.position.x - position.x)
+			if tgt.has_method("take_damage"):
+				arena.reserve_damage(get_instance_id(), tgt, dmg)
+				tgt.take_damage(dmg, position, self)
+				arena.release_reservation(get_instance_id())
+			wolf_lunge = false
+			state = S.ATTACK
+			return
+		if wolf_lunge_t > 1.2:
+			# it could not get there: back to the ring, the turn is spent
+			wolf_lunge = false
+		else:
+			state = S.ATTACK
+			_step_to(tgt.position, speed * float(pack_cfg["lunge_mult"]), delta)
+			return
+	var c: Vector2 = pack.get("center", position)
+	var engaged := bool(pack.get("engaged", false))
+	var spot: Vector2
+	if engaged:
+		var alive := _pack_alive()
+		var n := alive.size()
+		var me := alive.find(self)
+		var ring_r: float = (tr + float(pack_cfg["ring"])) * float(arena.TILE)
+		var ang: float
+		if tgt.is_building() or tgt.is_tower():
+			# a structure: an arc on the side they came from
+			ang = float(pack["base"]) + (float(me) - float(n - 1) * 0.5) * 0.7
+		else:
+			ang = float(pack["base"]) + float(pack["spin"]) + TAU * float(me) / float(n)
+		spot = tgt.position + Vector2.from_angle(ang) * ring_r
+		if not _ground_ok(spot):
+			# in the river or off the board: the nearest good place round the ring
+			for k in range(1, 10):
+				var found := false
+				for s in [1.0, -1.0]:
+					var alt: Vector2 = tgt.position + Vector2.from_angle(ang + s * 0.35 * float(k)) * ring_r
+					if _ground_ok(alt):
+						spot = alt
+						found = true
+						break
+				if found:
+					break
+	else:
+		# on the move: the pack's middle walks the route, each wolf keeps its place
+		var wp: Vector2 = arena.route_point(c, tgt.position)
+		var ahead: Vector2 = wp - c
+		if ahead.length() > float(arena.TILE):
+			ahead = ahead.normalized() * float(arena.TILE)
+		spot = c + ahead + _wolf_offset()
+		if not _ground_ok(spot):
+			# squeezing over a bridge: single file
+			spot = c + ahead
+	var dist := position.distance_to(spot)
+	if engaged and absf(tgt.position.x - position.x) > 1.0:
+		facing = signf(tgt.position.x - position.x)
+	if dist < 2.0:
+		state = S.IDLE
+		return
+	state = S.APPROACH
+	var spd := speed
+	if not engaged and dist > float(arena.TILE) * 1.5:
+		# fallen behind (shoved, slowed): catch up
+		spd *= 1.25
+	_step_to(spot, spd, delta, engaged)
+
+
+## An ant. It walks the shortest way to the tower like anyone, until it steps
+## into a tile where one of its own ants died in the last grave_time s: then it
+## turns for the other lane's tower (crossing by that lane's bridge). A turned
+## ant that touches one walking the other way turns that one too, so the turn
+## runs down the whole column. Any enemy troop or building in aggro range is
+## attacked first, whichever way it is going.
+func _tick_ant(delta: float) -> void:
+	var tl: Vector2i = arena.tile_of(position)
+	if tl != ant_tile:
+		ant_tile = tl
+		if _ant_grave_at(tl):
+			_ant_turn()
+	if ant_turned:
+		var touch: float = float(trail_cfg["touch"])
+		for o in arena.units:
+			if o == self or not is_instance_valid(o) or o.dead or int(o.team) != team:
+				continue
+			if o.get("trail_cfg") == null or (o.trail_cfg as Dictionary).is_empty() or o.ant_turned:
+				continue
+			if o.move_dir.dot(move_dir) >= 0.0:
+				continue
+			if arena.gap_between(position, o.position, radius_t, o.radius_t) <= touch:
+				o._ant_turn()
+	if ant_goal != null and (not is_instance_valid(ant_goal) or ant_goal.dead):
+		# the other lane's tower fell: back to the ordinary shortest way
+		ant_goal = null
+		ant_turned = false
+	# anything worth biting in range comes first; otherwise the lane
+	var foe: Node = _acquire()
+	if foe != null and foe.is_tower():
+		foe = null
+	if foe != null:
+		target = foe
+	elif ant_turned:
+		target = ant_goal
+	elif target == null or not _target_valid(target) or not target.is_tower():
+		target = arena.nearest_enemy_tower(team, position)
+	if target == null:
+		state = S.IDLE
+		return
+	var gap: float = arena.gap_between(position, target.position, radius_t, float(target.get_radius_t()))
+	if gap <= reach:
+		state = S.ATTACK
+		_attack()
+		return
+	state = S.APPROACH
+	if ant_turned and target == ant_goal and ant_back != Vector2.INF:
+		_move(delta, ant_back)
+		if position.distance_to(ant_back) < 2.0:
+			ant_back = Vector2.INF
+	elif ant_turned and target == ant_goal:
+		_move(delta, _ant_waypoint())
+	else:
+		_move(delta)
+
+
+func _ant_grave_at(tl: Vector2i) -> bool:
+	var keep: int = int(float(trail_cfg["grave_time"]) * float(Engine.physics_ticks_per_second))
+	var now: int = Engine.get_physics_frames()
+	var hit := false
+	var fresh: Array = []
+	for g in arena.ant_graves:
+		if now - int(g["frame"]) > keep:
+			continue
+		fresh.append(g)
+		if int(g["team"]) == team and g["tile"] == tl:
+			hit = true
+	arena.ant_graves = fresh
+	return hit
+
+
+## Turn for the other lane: the enemy side tower on the lane this ant is not
+## in. With that one gone (or no side towers, as against a boss) it does not turn.
+func _ant_turn() -> void:
+	var here: float = float(arena.tile_of(position).x)
+	var mid: float = (float(arena.BRIDGE_COL_A) + float(arena.BRIDGE_COL_B)) * 0.5
+	var pick: Node = null
+	var best := INF
+	for tw in arena.towers:
+		if not is_instance_valid(tw) or tw.dead or int(tw.team) == team or bool(tw.get("crown")):
+			continue
+		var col: float = float(arena.tile_of(tw.position).x)
+		if (col < mid) == (here < mid):
+			continue
+		var d: float = position.distance_to(tw.position)
+		if d < best:
+			best = d
+			pick = tw
+	if pick == null:
+		return
+	ant_goal = pick
+	ant_turned = true
+	target = pick
+	# turning round: back down the trail first, into whoever is following
+	if move_dir.length() > 0.01:
+		ant_back = position - move_dir.normalized() * float(trail_cfg.get("back", 1.5)) * float(arena.TILE)
+
+
+## The next point on the way to the other lane's tower: crossing by that
+## lane's bridge. Caught on a bridge when it turned, it first backs off onto
+## the bank it came from.
+func _ant_waypoint() -> Vector2:
+	var goal: Vector2 = ant_goal.position
+	var mid: float = (float(arena.BRIDGE_COL_A) + float(arena.BRIDGE_COL_B)) * 0.5
+	var bc: float = float(arena.BRIDGE_COL_A) if float(arena.tile_of(goal).x) < mid else float(arena.BRIDGE_COL_B)
+	var tl: Vector2i = arena.tile_of(position)
+	var g: Vector2i = arena.tile_of(goal)
+	if tl.y >= arena.RIVER_TOP and tl.y <= arena.RIVER_BOTTOM and absf(float(tl.x) - bc) > 1.5:
+		var back_row: float = float(arena.RIVER_BOTTOM) + 1.0 if g.y < arena.RIVER_TOP else float(arena.RIVER_TOP) - 1.0
+		return arena.tile_center(float(tl.x) + 0.5, back_row + 0.5)
+	return arena.route_point(position, goal, bc)
+
+
+## Walk toward `goal` at `spd` tiles a second along the river-aware route,
+## without overshooting it.
+func _step_to(goal: Vector2, spd: float, delta: float, keep_facing: bool = false) -> void:
+	var wp: Vector2 = arena.route_point(position, goal)
+	var dir := wp - position
+	if dir.length() < 1.0:
+		dir = goal - position
+	var dl := dir.length()
+	if dl < 0.001:
+		return
+	var s: float = spd * (1.0 - (slow_amount if status == Status.SLOW else 0.0)) * float(arena.TILE) * delta
+	position += dir / dl * minf(s, dl)
+	if not keep_facing and absf(dir.x) > 0.05 * dl:
+		facing = signf(dir.x)
+	moved_this_frame = true
+
+
 func _acquire() -> Node:
 	if targets_weakest:
 		var weakest: Node = null
@@ -1936,6 +2399,28 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 		taken *= float(curl_cfg["damage_mult"])
 	if curled and not guard_cfg.is_empty():
 		taken *= float(guard_cfg["damage_mult"])
+	# a spartan's shield: burn and poison come from inside (no attacker, from his
+	# own spot) and go past it; any other hit either raises it (and lands in full)
+	# or, already raised, is taken by the shield first
+	if shield_hp > 0.0 and not (attacker == null and from == position):
+		shield_calm = float(shield_cfg["calm"])
+		if not shield_up:
+			shield_up = true
+		else:
+			var soak := minf(shield_hp, taken)
+			shield_hp -= soak
+			taken -= soak
+			shield_hit_t = 0.2
+			if shield_hp <= 0.0:
+				shield_hp = 0.0
+				shield_up = false
+				arena.spawn_splash_ring(position, radius_t * 1.2, team)
+			if arena.show_damage() and soak > 0.0:
+				arena.spawn_damage_text(position + Vector2(0.0, -radius_t * arena.TILE - 8.0), soak, Color(0.7, 0.75, 0.85))
+			if taken <= 0.0:
+				if attacker != null:
+					last_attacker = attacker
+				return
 	last_from = from
 	if attacker != null:
 		last_attacker = attacker
@@ -2011,10 +2496,24 @@ func _explode() -> void:
 	_die()
 
 
+## An egg's brood: round(hatch_max * age / lifetime), never fewer than one
+## (half its life: 4 of 8; the full life: 8).
+func hatch_count() -> int:
+	var d: Dictionary = DDCard.get_card(kind)
+	var most := int(d.get("hatch_max", 1))
+	if most <= 1 or lifetime <= 0.0:
+		return 1
+	return clampi(roundi(float(most) * clampf(age / lifetime, 0.0, 1.0)), 1, most)
+
+
 func _die() -> void:
 	if dead:
 		return
 	dead = true
+	if not trail_cfg.is_empty():
+		# an ant's death marks its tile for its nest-mates (not drawn)
+		arena.ant_graves.append({"tile": arena.tile_of(position), "team": team,
+			"frame": Engine.get_physics_frames()})
 	# death blast (snowman): damage + slow around the corpse
 	var da: Dictionary = DDCard.get_card(kind).get("death_aoe", {})
 	if not da.is_empty():
@@ -2023,10 +2522,16 @@ func _die() -> void:
 	# an egg hatches where it stood, however it went (timer or damage)
 	var hatch_kind := String(DDCard.get_card(kind).get("hatch", ""))
 	if hatch_kind != "":
-		var born = arena.spawn_troop(hatch_kind, team, position, true)
-		if born != null and is_instance_valid(born):
-			born.position = position
-			born.deploy_timer = 0.0
+		# the longer it stood, the more come out: in a ring if there are several
+		var n := hatch_count()
+		for i in n:
+			var spot := position
+			if n > 1:
+				spot += Vector2.from_angle(TAU * float(i) / float(n) + 0.4) * 0.7 * float(arena.TILE)
+			var born = arena.spawn_troop(hatch_kind, team, spot, true)
+			if born != null and is_instance_valid(born):
+				born.position = spot
+				born.deploy_timer = 0.0
 	# a hatchery gives up one last unit as it goes, however it went
 	if bool(summon_cfg.get("on_death", false)):
 		arena.spawn_troop(String(summon_cfg["unit"]), team, _hatch_spot(), true)
@@ -2150,6 +2655,36 @@ func _draw() -> void:
 		elif frog_hop_t > 0.0:
 			air = 0.7
 		DDArt.dart_frog(self, px, facing, clock, air, ink, DDArt.frog_stripe(arena.team_color(int(team))))
+	elif kind == "phalanx":
+		var sh := 0
+		if shield_hp > 0.0:
+			sh = 2 if shield_up else 1
+		var smax := float(shield_cfg.get("hp", 1.0))
+		DDArt.spartan(self, px, facing, clock, {"shield": sh, "dent": 1.0 - shield_hp / maxf(1.0, smax),
+			"poke": 1.0 - poke_t / POKE_SHOW, "stab": 1.0 - stab_t / STAB_SHOW if stab_t > 0.0 else 0.0,
+			"walk": state == S.APPROACH and moved_this_frame}, ink, arena.team_color(int(team)))
+		if shield_hit_t > 0.0 and shield_up:
+			draw_arc(Vector2(px * 0.42 * facing, -px * 0.12), px * 0.62, 0.0, TAU, 20, Color(1, 1, 1, shield_hit_t * 3.0), 2.0, true)
+	elif kind == "wolves":
+		DDArt.wolf(self, px, facing, clock, {"run": moved_this_frame,
+			"bite": attack_stretch / ATTACK_STRETCH}, ink)
+	elif kind == "meerkats":
+		DDArt.meerkat(self, px, facing, clock, moved_this_frame, ink)
+	elif kind == "ant":
+		DDArt.ant(self, px, facing, clock, ink)
+		if ant_turned and target == ant_goal:
+			# turned for the other lane: the reverse arrows over its head
+			DDArt.reverse_arrows(self, Vector2(0.0, -px - 9.0), 7.0)
+	elif kind == "anthill":
+		DDArt.anthill(self, px, clock, ink)
+	elif kind == "spideregg":
+		DDArt.creature(self, kind, px, facing, clock, 0.0, false, ink)
+		# the brood showing through the silk: one dark speck per spiderling it
+		# would let out right now
+		var brood := hatch_count()
+		for i in brood:
+			var a: float = TAU * float(i) / 8.0 - PI * 0.5
+			draw_circle(Vector2(cos(a) * px * 0.5, sin(a) * px * 0.62), px * 0.11, Color(0.35, 0.2, 0.1, 0.8))
 	elif kind == "enkidu":
 		DDArt.enkidu(self, px, facing, clock, {"spear": spear_away <= 0.0, "walk": state == S.APPROACH,
 			"strike": attack_stretch / ATTACK_STRETCH}, ink)
@@ -2335,6 +2870,13 @@ func _draw() -> void:
 		draw_rect(Rect2(-w * 0.5 + 1.0, y2 + 1.0, (w - 2.0) * frac, 3.0), col2, true)
 		if not staff_cfg.is_empty():
 			_draw_rage_bars(w, y2)
+	if not shield_cfg.is_empty() and shield_hp > 0.0 and shield_hp < float(shield_cfg["hp"]):
+		# a dented shield: its own bar, steel grey, just above where the HP bar sits
+		var sw: float = px * 2.2
+		var shy: float = -px - 16.0 - lift
+		draw_rect(Rect2(-sw * 0.5, shy, sw, 4.0), Color(0.08, 0.07, 0.1, 0.85), true)
+		draw_rect(Rect2(-sw * 0.5 + 1.0, shy + 1.0, (sw - 2.0) * shield_hp / float(shield_cfg["hp"]), 2.0),
+			Color(0.78, 0.8, 0.86), true)
 
 
 ## Wu Cheng'en's bars: the rage threshold as a tick on the HP bar in the

@@ -82,6 +82,10 @@ const TEAM_INK_DARKEN := 0.45
 
 var towers: Array = []
 var units: Array = []
+## Where ants have died: [{"tile": Vector2i, "team": int, "frame": physics frame}].
+## Ants that walk into one of their own side's fresh graves change lanes
+## (DDUnit._tick_ant). Nothing draws them.
+var ant_graves: Array = []
 var gold := [4.2, 4.2]
 var gold_max := 10.0
 var gold_rate := 1.0 / 2.4
@@ -1286,14 +1290,16 @@ func is_doomed(t: Node) -> bool:
 
 # ------------------------------------------------------------------- movement
 
-func route_point(from: Vector2, goal: Vector2) -> Vector2:
+## bridge_col: cross by this bridge rather than the nearest one (an ant that
+## has changed lanes); -1 for the nearest.
+func route_point(from: Vector2, goal: Vector2, bridge_col: float = -1.0) -> Vector2:
 	var f := tile_of(from)
 	var g := tile_of(goal)
 	var toward_enemy := g.y < RIVER_TOP and f.y >= RIVER_TOP
 	var toward_home := g.y > RIVER_BOTTOM and f.y <= RIVER_BOTTOM
 	if not toward_enemy and not toward_home:
 		return goal
-	var bc := nearest_bridge_col(f.x)
+	var bc := nearest_bridge_col(f.x) if bridge_col < 0.0 else bridge_col
 	var lane: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) + 0.5).lerp(tile_center(bc + 0.5, float(RIVER_BOTTOM) + 0.5), 0.5)
 	var far_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) - 1.2) if toward_enemy else tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.2)
 	# line up with the bridge lane first (the axis the bridge runs along),
@@ -1833,10 +1839,17 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 	# the push, whichever side of the board the flock is deployed on
 	var ydir := -1.0 if team == 0 else 1.0
 	var xdir := 1.0 if team == 0 else -1.0
+	# a pack card (the Wolf Pack): one shared dictionary is the whole pack's mind
+	var pack: Dictionary = {}
+	if data.has("pack"):
+		pack = {"members": []}
 	for i in offsets.size():
 		var off: Array = offsets[i]
 		var b := DDUnit.new()
 		b.setup(kind, team, self)
+		if data.has("pack"):
+			b.pack = pack
+			(pack["members"] as Array).append(b)
 		if i == 0 and data.has("lead_hp"):
 			var lead_hp := float(data["lead_hp"])
 			b.max_hp = lead_hp

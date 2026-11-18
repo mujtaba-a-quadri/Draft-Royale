@@ -6,7 +6,7 @@ extends RefCounted
 
 const OUT := Color(0.13, 0.12, 0.16)
 const ATTACK_NAMES := {
-	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "frog": "Poison Leap", "ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
+	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "frog": "Poison Leap", "phalanx": "Spear", "wolves": "Bite", "meerkats": "Bite", "ant": "Bite", "anthill": "Ants","ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
@@ -37,10 +37,20 @@ static func rate_text(d: Dictionary) -> String:
 		# no cadence to show: it goes off once
 		var fc: Dictionary = d["frog"]
 		return "poison · once · leap r%.1f" % float(fc["leap_range"])
+	if d.has("pack"):
+		# the pack bites in turn: one bite every interval / wolves
+		var n_pack := (d["swarm_offsets"] as Array).size()
+		return "a bite every %.1fs · ×%d · ring r%.0f" % [float(d["interval"]) / float(n_pack), n_pack,
+			float((d["pack"] as Dictionary)["ring"])]
 	var sum_cfg: Dictionary = d.get("summon", {})
 	if not sum_cfg.is_empty():
 		var spawn_iv := float(sum_cfg.get("interval", sum_cfg.get("cooldown", 0.0)))
-		parts.append("spawn %.0fs" % spawn_iv if spawn_iv > 0.0 else "spawn")
+		if spawn_iv <= 0.0:
+			parts.append("spawn")
+		elif is_equal_approx(spawn_iv, roundf(spawn_iv)):
+			parts.append("spawn %.0fs" % spawn_iv)
+		else:
+			parts.append("spawn %.1fs" % spawn_iv)
 	if d.has("lifetime") and float(d["lifetime"]) > 0.0:
 		parts.append("%.0fs life" % float(d["lifetime"]))
 	if d.has("roll"):

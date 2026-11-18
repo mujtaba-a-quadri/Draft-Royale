@@ -10,24 +10,34 @@ extends Node2D
 ## headless run does not depend on the editor having rescanned global classes.
 ##
 ## What she does, all on fixed physics ticks (her dice are a seeded RNG, so a run
-## is reproducible):
-##   skitter  she waits at the back a random 3-7 s, runs 3-6 tiles toward the
-##            player, holds for (10 - that wait) s, lays an egg on a 2x2 patch of
-##            web and runs back. She never turns.
-##   spit     any distance, each a small splash of damage + poison: one at the
-##            closest enemy unit as she sets off, one every 1.2 s at the closest
-##            unit while she is forward, and one at the nearest tower or building
-##            as she backs up. Her eye glints from the last forward spit until
-##            she leaves: the warning for the building shot.
-##   legs     a front-leg stab at the nearest enemy inside `reach` tiles.
-##   webs     every web_every s a 2x2 patch ahead of the nearest ground troop.
-##            A troop stepping on a web tile is slowed and that tile is gone.
-##   traps    every trap_every s a ballista trap on one bridge, alternating. The
-##            first ground troop to step on it is launched out of the arena.
+## is reproducible). One cycle, and she never turns round:
+##   skitter  she waits at the back a random 3-7 s and runs 3-6 tiles toward the
+##            player.
+##   seep     forward, poison seeps from her mouth: a pool in front of her face
+##            that runs on down the "hill" as a braided stream into the river,
+##            and the river turns poison from the inflow downstream. Enemy
+##            ground troops in the pool or stream are poisoned.
+##   spit     only once the pool has formed: every forward_spit_every s at the
+##            closest enemy unit, a splash of damage + poison, until she has
+##            been forward (10 - that wait) s.
+##   egg      she lays an egg on a 2x2 patch of web and stops seeping: the pool
+##            dries from her mouth down, then the river clears from the top.
+##   trap     she walks to a bridge with no trap and builds one with her front
+##            legs (3 s): a slingshot cone of silk. The first ground troop to
+##            step on it is launched out of the arena. No free bridge, no trap.
+##   parting  her eye glints, she spits at the nearest tower or building, and
+##            walks home.
+## And all the while: a front-leg stab at the nearest enemy inside `reach`
+## tiles, and every web_every s a 2x2 web ahead of the nearest ground troop (a
+## troop stepping on a web tile is slowed and that tile is gone).
 ##
 ## All numbers come from the "spider" card in card_db.gd.
 
-enum S { HOME, ADVANCE, FORWARD, RETREAT }
+enum S { HOME, ADVANCE, FORWARD, TO_BRIDGE, BUILD, GLINT, RETREAT }
+
+## the green of her abdomen, for the poison
+const POISON := Color(0.8, 0.8, 0.32)
+const POISON_DARK := Color(0.62, 0.66, 0.22)
 
 const STRIKE_SHOW := 0.32
 const FLING_TIME := 0.9
@@ -74,8 +84,26 @@ var forward_spit_cd := 0.0
 var glint := false
 var leg_cd := 0.0
 var web_cd := 0.0
-var trap_clock := 0.0
 var next_bridge := 0
+## the trap she is walking to / building (one of `traps`), empty for none
+var build_trap: Dictionary = {}
+var build_poke := 0.0
+
+## the poison: a path from where her mouth was (`ooze_from`) straight down the
+## lane to the river's near bank, `ooze_len` tiles long. The stretch from
+## `ooze_dry` to `ooze_wet` tiles along it is wet. The river is poison from
+## column `river_a` to `river_b` (tile columns, fractional; it flows toward
+## higher columns, down the screen).
+var ooze_on := false
+var ooze_from := Vector2.ZERO
+var ooze_len := 0.0
+var ooze_wet := 0.0
+var ooze_dry := 0.0
+var river_in := 0.0
+var river_a := 0.0
+var river_b := 0.0
+var river_wet := false
+var pool_cd := 0.0
 var rng := RandomNumberGenerator.new()
 
 ## Vector2i tile -> true
@@ -183,6 +211,7 @@ func _physics_process(delta: float) -> void:
 				if dead:
 					return
 	_tick_skitter(delta)
+	_tick_ooze(delta)
 	_tick_legs(delta)
 	_tick_webs(delta)
 	_tick_traps(delta)
@@ -199,54 +228,115 @@ func _redraw() -> void:
 # ---------------------------------------------------------------------- skitter
 
 ## One cycle: wait at the back for a random back_min..back_max seconds, run
-## forward, hold there for (cycle - time waited at the back), run home. The
-## longer she sat at the back, the shorter she stays in your face.
+## forward, seep and (once the pool is there) spit for (cycle - time waited at
+## the back) s, lay an egg, build a trap on a free bridge, glint, take the
+## parting shot, walk home. The longer she sat at the back, the shorter she
+## stays in your face.
 func _tick_skitter(delta: float) -> void:
 	var run_time: float = maxf(0.1, float(cfg["skitter_time"]))
-	if state == S.HOME:
-		skitter_clock += delta
-		if skitter_clock >= back_wait:
-			_begin_skitter()
-	elif state == S.ADVANCE:
-		state_t += delta
-		position = move_from.lerp(move_to, smoothstep(0.0, 1.0, state_t / run_time))
-		if state_t >= run_time:
-			position = move_to
-			state = S.FORWARD
-			state_t = 0.0
-			stay_time = maxf(0.0, float(cfg["cycle"]) - back_wait)
-			forward_spit_cd = 0.0
-			glint = false
-	elif state == S.FORWARD:
-		state_t += delta
-		# at the front she spits at the closest unit on a steady beat. The shot
-		# after which there is no time for another lights her eye: that glint
-		# is the warning for the one she fires at a building as she backs up.
-		forward_spit_cd -= delta
-		if forward_spit_cd <= 0.0 and state_t < stay_time:
-			var beat: float = float(cfg["forward_spit_every"])
-			forward_spit_cd = beat
-			_spit_at(_nearest_enemy(INF))
-			if state_t + beat >= stay_time:
+	state_t += delta
+	match state:
+		S.HOME:
+			skitter_clock += delta
+			if skitter_clock >= back_wait:
+				_begin_skitter()
+		S.ADVANCE:
+			position = move_from.lerp(move_to, smoothstep(0.0, 1.0, state_t / run_time))
+			if state_t >= run_time:
+				position = move_to
+				_set_state(S.FORWARD)
+				stay_time = maxf(0.0, float(cfg["cycle"]) - back_wait)
+				forward_spit_cd = 0.0
+				_start_ooze()
+		S.FORWARD:
+			# no shooting until the pool in front of her has formed
+			if ooze_wet >= float(cfg["pool_len"]):
+				forward_spit_cd -= delta
+				if forward_spit_cd <= 0.0 and state_t < stay_time:
+					forward_spit_cd = float(cfg["forward_spit_every"])
+					_spit_at(_nearest_enemy(INF))
+			if state_t >= stay_time:
+				_lay_egg()
+				ooze_on = false
+				_head_for_bridge()
+		S.TO_BRIDGE:
+			if _walk_to(move_to, delta):
+				_set_state(S.BUILD)
+		S.BUILD:
+			var trap: Dictionary = build_trap
+			trap["build"] = minf(1.0, state_t / maxf(0.1, float(cfg["build_time"])))
+			# the front legs work the silk, left and right in turn
+			build_poke -= delta
+			if build_poke <= 0.0:
+				build_poke = STRIKE_SHOW
+				strike_t = STRIKE_SHOW
+				strike_at = trap["at"]
+				strike_side = -strike_side
+			if float(trap["build"]) >= 1.0:
+				build_trap = {}
 				glint = true
-		if state_t >= stay_time:
-			glint = false
-			_lay_egg()
-			# the parting shot goes at a tower or building, wherever it is
-			_spit_at(_nearest_structure())
-			move_from = position
-			move_to = home
-			state = S.RETREAT
-			state_t = 0.0
-	else:
-		# backing up: she keeps facing the player's board the whole way
-		state_t += delta
-		position = move_from.lerp(move_to, smoothstep(0.0, 1.0, state_t / run_time))
-		if state_t >= run_time:
-			position = home
-			state = S.HOME
-			state_t = 0.0
-			_roll_back_wait()
+				_set_state(S.GLINT)
+		S.GLINT:
+			if state_t >= float(cfg["glint_time"]):
+				glint = false
+				# the parting shot goes at a tower or building, wherever it is
+				_spit_at(_nearest_structure())
+				move_to = home
+				_set_state(S.RETREAT)
+		S.RETREAT:
+			# walking home: she keeps facing the player's board the whole way
+			if _walk_to(home, delta):
+				_set_state(S.HOME)
+				_roll_back_wait()
+
+
+func _set_state(s: int) -> void:
+	state = s
+	state_t = 0.0
+
+
+## A step toward `to` at walk_speed tiles a second; true once she is there.
+func _walk_to(to: Vector2, delta: float) -> bool:
+	var step: float = float(cfg["walk_speed"]) * float(arena.TILE) * delta
+	var d: Vector2 = to - position
+	if d.length() <= step:
+		position = to
+		return true
+	position += d.normalized() * step
+	return false
+
+
+## Off to a bridge with no trap on it (the nearer one; both free and level,
+## alternating). Neither free: straight to the glint and the parting shot.
+func _head_for_bridge() -> void:
+	var free: Array = []
+	for b in [0, 1]:
+		var taken := false
+		for trap in traps:
+			if int(trap["bridge"]) == b:
+				taken = true
+		if not taken:
+			free.append(b)
+	if free.is_empty():
+		glint = true
+		_set_state(S.GLINT)
+		return
+	var pick: int = int(free[0])
+	if free.size() == 2:
+		var d0: float = position.distance_to(bridge_point(0))
+		var d1: float = position.distance_to(bridge_point(1))
+		if absf(d0 - d1) < 1.0:
+			pick = next_bridge
+		else:
+			pick = 0 if d0 < d1 else 1
+	next_bridge = 1 - pick
+	build_trap = {"at": bridge_point(pick), "bridge": pick, "build": 0.0}
+	traps.append(build_trap)
+	build_poke = 0.0
+	# she stands on her own bank, far enough back that her front legs reach
+	# the middle of the bridge
+	move_to = bridge_point(pick) - fwd * (1.0 + float(cfg.get("build_back", 2.4))) * float(arena.TILE)
+	_set_state(S.TO_BRIDGE)
 
 
 func _roll_back_wait() -> void:
@@ -258,10 +348,7 @@ func _begin_skitter() -> void:
 	advance_tiles = rng.randi_range(int(cfg["skitter_min"]), int(cfg["skitter_max"]))
 	move_from = position
 	move_to = home + fwd * float(advance_tiles) * float(arena.TILE)
-	state = S.ADVANCE
-	state_t = 0.0
-	# setting off: a spit at the closest enemy unit, however far away it is
-	_spit_at(_nearest_enemy(INF))
+	_set_state(S.ADVANCE)
 
 
 ## The egg is an ordinary 2x2 building (card "spideregg") dropped where she is
@@ -275,6 +362,92 @@ func _lay_egg() -> void:
 	egg.deploy_timer = 0.0
 	for t in egg.occupied_tiles:
 		webs[t] = true
+
+
+# ----------------------------------------------------------------------- poison
+
+## She has just arrived forward: poison starts at her mouth and runs down the
+## lane to the river's near bank.
+func _start_ooze() -> void:
+	ooze_from = position + fwd * ART_SCALE * WIDE * 0.9 * float(arena.TILE)
+	var bank: Vector2 = arena.tile_center(HOME_COL, float(arena.RIVER_TOP))
+	ooze_len = maxf(0.5, (bank - ooze_from).dot(fwd) / float(arena.TILE))
+	ooze_wet = 0.0
+	ooze_dry = 0.0
+	ooze_on = true
+	river_in = HOME_COL
+	river_wet = false
+	pool_cd = float(cfg["pool_every"])
+
+
+func _tick_ooze(delta: float) -> void:
+	if ooze_len <= 0.0:
+		return
+	var seep: float = float(cfg["seep_speed"])
+	if ooze_on:
+		ooze_wet = minf(ooze_len, ooze_wet + seep * delta)
+	else:
+		ooze_dry = minf(ooze_wet, ooze_dry + seep * delta)
+	var flow: float = float(cfg["river_speed"]) * delta
+	var stream_in: bool = ooze_wet >= ooze_len - 0.001 and ooze_dry < ooze_len - 0.001
+	if stream_in:
+		# it has reached the river: the poison runs downstream from the inflow
+		if not river_wet:
+			river_wet = true
+			river_a = river_in
+			river_b = river_in
+		river_b = minf(_river_end(), river_b + flow)
+	elif not ooze_on and river_wet:
+		# the stream has dried: the river clears from the top down
+		river_a = minf(river_b, river_a + flow)
+		if river_a >= river_b - 0.001:
+			river_wet = false
+	if not ooze_on and ooze_dry >= ooze_wet - 0.001 and not river_wet:
+		ooze_len = 0.0
+		return
+	# whatever stands in the pool or the stream soaks some up
+	pool_cd -= delta
+	if pool_cd <= 0.0:
+		pool_cd += float(cfg["pool_every"])
+		for u in arena.enemy_units(team):
+			if not is_instance_valid(u) or u.dead or u.get("flying") == true or u.is_building():
+				continue
+			if in_ooze(u.position, float(u.get_radius_t())) and u.has_method("add_poison"):
+				u.add_poison(float(cfg["pool_poison"]))
+
+
+## The far end of the river, in tile columns: the bottom edge of the board.
+func _river_end() -> float:
+	return float(arena.col_max(arena.RIVER_TOP) + 1)
+
+
+## Half-width in tiles of the pool `s` tiles from her mouth (pool part only).
+func _pool_half(s: float) -> float:
+	var pl: float = float(cfg["pool_len"])
+	return float(cfg["pool_wide"]) * (0.55 + 0.45 * sin(PI * clampf(s / pl, 0.0, 1.0)))
+
+
+## How far either branch of the stream sits from the middle `s` tiles down: they
+## split below the pool and come together again at the river.
+func _branch_off(s: float) -> float:
+	var pl: float = float(cfg["pool_len"])
+	var k: float = clampf((s - pl) / maxf(0.1, ooze_len - pl), 0.0, 1.0)
+	return 0.32 * sin(PI * k) + 0.05 * sin(s * 7.0)
+
+
+## Is a body at `at` (radius r tiles) standing in the wet part of the pool or
+## the stream?
+func in_ooze(at: Vector2, r: float) -> bool:
+	if ooze_len <= 0.0 or ooze_wet <= ooze_dry:
+		return false
+	var rel: Vector2 = (at - ooze_from) / float(arena.TILE)
+	var s: float = rel.dot(fwd)
+	if s < ooze_dry - r or s > ooze_wet + r:
+		return false
+	var lat: float = absf(rel.dot(fwd.orthogonal()))
+	if s < float(cfg["pool_len"]):
+		return lat <= _pool_half(s) + r
+	return lat <= _branch_off(s) + float(cfg["stream_wide"]) + r
 
 
 # ---------------------------------------------------------------------- attacks
@@ -398,15 +571,14 @@ func bridge_point(bridge: int) -> Vector2:
 		arena.tile_center(col + 0.5, float(arena.RIVER_BOTTOM) + 0.5), 0.5)
 
 
-func _tick_traps(delta: float) -> void:
-	trap_clock += delta
-	if trap_clock >= float(cfg["trap_every"]):
-		trap_clock = 0.0
-		lay_trap()
+func _tick_traps(_delta: float) -> void:
 	if traps.is_empty():
 		return
 	var trigger: float = float(cfg["trap_radius"])
 	for trap in traps.duplicate():
+		if float(trap.get("build", 1.0)) < 1.0:
+			# still being spun: nothing to spring yet
+			continue
 		for u in arena.enemy_units(team):
 			if not is_instance_valid(u) or u.dead:
 				continue
@@ -418,14 +590,15 @@ func _tick_traps(delta: float) -> void:
 				break
 
 
-## One bridge at a time, alternating. A bridge that is still armed is left alone.
+## Dev only (--scenario=spider): an armed trap on the next bridge at once. In
+## play she builds them herself (_head_for_bridge / S.BUILD).
 func lay_trap() -> void:
 	var bridge := next_bridge
 	next_bridge = 1 - next_bridge
 	for trap in traps:
 		if int(trap["bridge"]) == bridge:
 			return
-	traps.append({"at": bridge_point(bridge), "bridge": bridge})
+	traps.append({"at": bridge_point(bridge), "bridge": bridge, "build": 1.0})
 	strands.append({"to": bridge_point(bridge), "t": STRAND_TIME})
 
 
@@ -471,6 +644,9 @@ func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 		# her works go with her
 		webs.clear()
 		traps.clear()
+		build_trap = {}
+		ooze_len = 0.0
+		river_wet = false
 		modulate = Color(1.0, 1.0, 1.0, 0.35)
 		arena.on_tower_destroyed(self)
 	_redraw()
@@ -482,7 +658,8 @@ func _draw() -> void:
 	var tile: float = float(arena.TILE)
 	var r: float = ART_SCALE * tile
 	draw_circle(Vector2.ZERO, r * 1.5, Color(0.0, 0.0, 0.0, 0.14))
-	var pose := {"move": 1.0 if (state == S.ADVANCE or state == S.RETREAT) else 0.12}
+	var walking: bool = state == S.ADVANCE or state == S.RETREAT or state == S.TO_BRIDGE
+	var pose := {"move": 1.0 if walking else 0.12}
 	if strike_t > 0.0:
 		var local: Vector2 = (strike_at - position).rotated(-fwd.angle())
 		pose["strike"] = 1.0 - strike_t / STRIKE_SHOW
@@ -525,15 +702,116 @@ func _draw() -> void:
 
 
 func _draw_floor() -> void:
+	_draw_river()
+	_draw_ooze()
 	for t in webs:
 		DDArt.web_tile(floor_layer, arena.tile_rect(t.x, t.y))
 	for trap in traps:
-		DDArt.ballista_trap(floor_layer, trap["at"], float(arena.TILE), clock)
+		DDArt.slingshot_trap(floor_layer, trap["at"], float(arena.TILE), clock, float(trap.get("build", 1.0)))
 	# a line of silk from her spinneret to whatever she just laid
 	for s in strands:
 		var a: float = clampf(float(s["t"]) / STRAND_TIME, 0.0, 1.0)
 		floor_layer.draw_line(position - fwd * ART_SCALE * WIDE * 1.6 * float(arena.TILE), s["to"],
 			Color(1.0, 1.0, 1.0, 0.7 * a), 2.0, true)
+
+
+## The pool and the stream: blobs of her green laid along the path, a darker
+## rim under a lighter body, a sheen that drifts downhill.
+func _draw_ooze() -> void:
+	if ooze_len <= 0.0 or ooze_wet <= ooze_dry:
+		return
+	var tile: float = float(arena.TILE)
+	var side: Vector2 = fwd.orthogonal()
+	var pl: float = float(cfg["pool_len"])
+	var sw: float = float(cfg["stream_wide"])
+	var blobs: Array = []
+	var s := ooze_dry
+	while s <= ooze_wet:
+		var at: Vector2 = ooze_from + fwd * s * tile
+		if s < pl:
+			blobs.append([at, _pool_half(s) * tile])
+		else:
+			var off: float = _branch_off(s) * tile
+			blobs.append([at + side * off, sw * tile])
+			blobs.append([at - side * off, sw * tile])
+		s += 0.08
+	for b in blobs:
+		floor_layer.draw_circle(b[0], float(b[1]) + 2.5, POISON_DARK)
+	for b in blobs:
+		floor_layer.draw_circle(b[0], float(b[1]), POISON)
+	# sheen running downhill
+	for k in 6:
+		var sk: float = fmod(clock * 1.6 + float(k) * 0.7, maxf(0.5, ooze_wet - ooze_dry)) + ooze_dry
+		var lat: float = sin(float(k) * 2.3) * (0.4 if sk < pl else 0.0)
+		var p: Vector2 = ooze_from + fwd * sk * tile + side * lat * tile
+		if sk >= pl:
+			p += side * _branch_off(sk) * tile * (1.0 if k % 2 == 0 else -1.0)
+		floor_layer.draw_circle(p, tile * 0.07, Color(1.0, 1.0, 0.85, 0.55))
+	if ooze_on and ooze_dry <= 0.0:
+		# still welling up at her mouth
+		var bub: float = 0.5 + 0.5 * sin(clock * 7.0)
+		floor_layer.draw_circle(ooze_from, tile * (0.2 + 0.08 * bub), POISON.lightened(0.15))
+
+
+## The poisoned river: from river_a down to river_b, both lanes of water, but
+## not the bridges.
+func _draw_river() -> void:
+	if not river_wet or river_b <= river_a:
+		return
+	var tile: float = float(arena.TILE)
+	var gaps: Array = []
+	for bx in [int(arena.BRIDGE_COL_A), int(arena.BRIDGE_COL_B)]:
+		gaps.append([float(bx - 1), float(bx + 1)])
+	# split the wet span around the bridges
+	var spans: Array = [[river_a, river_b]]
+	for g in gaps:
+		var next: Array = []
+		for sp in spans:
+			var a: float = sp[0]
+			var b: float = sp[1]
+			if b <= float(g[0]) or a >= float(g[1]):
+				next.append(sp)
+				continue
+			if a < float(g[0]):
+				next.append([a, float(g[0])])
+			if b > float(g[1]):
+				next.append([float(g[1]), b])
+		spans = next
+	for row in range(arena.RIVER_TOP, arena.RIVER_BOTTOM + 1):
+		var base: Rect2 = arena.tile_rect(0, row)
+		for sp in spans:
+			var a2: float = sp[0]
+			var b2: float = sp[1]
+			var rect: Rect2
+			if arena.LANDSCAPE:
+				rect = Rect2(base.position.x, base.position.y + a2 * tile, tile, (b2 - a2) * tile)
+			else:
+				rect = Rect2(base.position.x + a2 * tile, base.position.y, (b2 - a2) * tile, tile)
+			floor_layer.draw_rect(rect, Color(POISON.r, POISON.g, POISON.b, 0.96), true)
+	# ripples carried downstream, and a frothy leading edge
+	for sp in spans:
+		var a3: float = sp[0]
+		var b3: float = sp[1]
+		var c := a3 + fmod(clock * 2.0, 1.0)
+		while c < b3:
+			for row2 in range(arena.RIVER_TOP, arena.RIVER_BOTTOM + 1):
+				var r2: Rect2 = arena.tile_rect(0, row2)
+				var p0: Vector2
+				var p1: Vector2
+				if arena.LANDSCAPE:
+					p0 = Vector2(r2.position.x + tile * 0.2, r2.position.y + c * tile)
+					p1 = p0 + Vector2(tile * 0.6, 0.0)
+				else:
+					p0 = Vector2(r2.position.x + c * tile, r2.position.y + tile * 0.2)
+					p1 = p0 + Vector2(0.0, tile * 0.6)
+				floor_layer.draw_line(p0, p1, Color(1.0, 1.0, 0.8, 0.35), 2.0, true)
+			c += 1.0
+	if river_b < _river_end() - 0.01:
+		for row3 in range(arena.RIVER_TOP, arena.RIVER_BOTTOM + 1):
+			var r3: Rect2 = arena.tile_rect(0, row3)
+			var front: Vector2 = Vector2(r3.get_center().x, r3.position.y + river_b * tile) if arena.LANDSCAPE \
+				else Vector2(r3.position.x + river_b * tile, r3.get_center().y)
+			floor_layer.draw_circle(front, tile * 0.3, Color(POISON_DARK.r, POISON_DARK.g, POISON_DARK.b, 0.7))
 
 
 ## Launched units: straight up toward the camera, so they swell, drift and pop.

@@ -238,6 +238,82 @@ const CARDS := {
 		},
 		"accent": Color(0.98, 0.72, 0.15),
 	},
+	"phalanx": {
+		"name": "Phalanx",
+		"cost": 8,
+		"type": "troop",
+		"blurb": "Six spartans, three across and two deep. Anything close, or any hit, and the shields come up: the shield takes the blows, and they keep advancing and poking over each other's shoulders, only slower. Break a shield and that spartan draws a dagger, stabbing between spear pokes at anything within a tile.",
+		# dmg / reach / interval: the spear poke (ground only)
+		"hp": 70.0, "dmg": 14.0, "speed": 0.85, "reach": 1.7, "interval": 1.3,
+		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		# [forward, across]: two ranks of three
+		"swarm_offsets": [[0.5, -1.0], [0.5, 0.0], [0.5, 1.0], [-0.5, -1.0], [-0.5, 0.0], [-0.5, 1.0]],
+		# raised by the Obsidian Whelp's rules: an enemy unit within `sense` tiles
+		# (edge to edge) or a hit; lowered once nothing is in sense and `calm` s have
+		# passed unhit. Raised, every hit lands on the shield's own `hp` (the hit that
+		# raises it lands on the spartan), and he moves and pokes slower.
+		"shield": {"hp": 60.0, "sense": 3.0, "calm": 2.0, "move_mult": 0.6, "attack_mult": 1.3},
+		# shield broken: with the target within `reach` tiles, a stab between every
+		# two pokes (poke, stab, poke ... each half an interval apart)
+		"dagger": {"reach": 1.0, "dmg": 8.0},
+		"accent": Color(0.78, 0.24, 0.2),
+	},
+	"wolves": {
+		"name": "Wolf Pack",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "Four wolves in a diamond that move as one. They pick out the loneliest troop in reach (or head for a tower), ring it two tiles out, and take turns darting in to bite: one bite every 0.4 seconds with four left, every 0.8 with two.",
+		# dmg: one bite. interval: each wolf's own turn (the pack bites every interval / alive)
+		"hp": 55.0, "dmg": 10.0, "speed": 1.6, "reach": 0.35, "interval": 1.6,
+		"radius": 0.4, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"swarm_offsets": [[0.8, 0.0], [-0.8, 0.0], [0.0, 0.8], [0.0, -0.8]],
+		# hunt: tiles from the pack's centre to look for prey. ring: tiles out from the
+		# target's edge they circle at. spin: how fast the ring turns (rad/s, troops
+		# only). lunge_mult: dart speed. rethink: s between looks while on a structure.
+		"pack": {"hunt": 6.0, "ring": 2.0, "spin": 0.3, "lunge_mult": 2.4, "rethink": 0.5},
+		"accent": Color(0.6, 0.62, 0.68),
+	},
+	"meerkats": {
+		"name": "Meerkats",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "Four meerkats. Quick, fragile, and they bite.",
+		"hp": 22.0, "dmg": 5.0, "speed": 1.9, "reach": 0.35, "interval": 0.6,
+		"radius": 0.3, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"swarm_offsets": [[0.4, 0.4], [0.4, -0.4], [-0.4, 0.4], [-0.4, -0.4]],
+		"accent": Color(0.86, 0.68, 0.42),
+	},
+	"anthill": {
+		"name": "Ant Hill",
+		"cost": 4,
+		"type": "building",
+		"blurb": "A mound of dirt that never stops emptying: an ant crawls out of the front every 1.2 seconds for a minute. Each one is slow, tiny and barely bites.",
+		"hp": 140.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 60.0,
+		"buildings_only": false,
+		"footprint": [1, 1],
+		# quiet: no screen shake per ant
+		"summon": {"unit": "ant", "interval": 1.2, "first": 1.0, "spot": "front", "quiet": true},
+		"accent": Color(0.62, 0.44, 0.28),
+	},
+	"ant": {
+		"name": "Ant",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Out of the Ant Hill. Slow, tiny, and barely bites, but there is always another. Ants that walk where another ant died turn round and take the other lane, and turn every ant they meet on the way.",
+		"hp": 8.0, "dmg": 2.0, "speed": 0.55, "reach": 0.3, "interval": 1.0,
+		"radius": 0.22, "splash": 0.0, "aggro": 4.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		# walking into a tile where one of their own ants died in the last
+		# grave_time s turns an ant to the other lane's tower; a turned ant that
+		# touches (edges within `touch` tiles) an ant walking the other way turns it
+		# too. A turning ant first walks `back` tiles back down its own trail.
+		"trail": {"grave_time": 7.0, "touch": 0.06, "back": 1.5},
+		"accent": Color(0.35, 0.2, 0.14),
+	},
 	"magma": {
 		"name": "Magma Whelp",
 		"cost": 1,
@@ -444,7 +520,7 @@ const CARDS := {
 		"cost": 5,
 		"type": "troop",
 		"blurb": "A mossy old swamp troll dragging a whole tree. Slow, enormous, and only interested in knocking buildings down. He chokes up on the trunk, so the club reaches less far than it looks.",
-		"hp": 330.0, "dmg": 40.0, "speed": 0.5, "reach": 1.7, "interval": 1.8,
+		"hp": 330.0, "dmg": 40.0, "speed": 0.5, "reach": 1.2, "interval": 1.8,
 		"radius": 0.75, "splash": 0.0, "aggro": 4.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": true,
 		"giant": true,
@@ -459,24 +535,35 @@ const CARDS := {
 		"name": "Momma Ballista Spider",
 		"cost": 0,
 		"type": "troop",
-		"blurb": "Elite. Takes the place of all three towers. Skitters forward to lay eggs, spits venom, stabs with her front legs, webs the ground ahead of your troops and arms the bridges.",
+		"blurb": "Elite. Takes the place of all three towers. Skitters forward, seeps a pool of poison that runs down into the river and spits venom from behind it, lays an egg, then builds a slingshot trap on a bridge before her parting shot at your towers. Stabs with her front legs and webs the ground ahead of your troops.",
 		"hp": 900.0, "dmg": 35.0, "speed": 0.0, "reach": 4.0, "interval": 1.6,
 		"radius": 1.5, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
 		"buildings_only": false,
 		"boss": {
-			# every skitter_every seconds: skitter_min..max tiles toward the player,
-			# hold for stay seconds, lay an egg, go back
-			# a cycle: wait back_min..back_max s at the back (random), run forward,
-			# stay there for cycle - that wait, run home
+			# a cycle: wait back_min..back_max s at the back (random), run
+			# skitter_min..max tiles forward in skitter_time s, stay there for
+			# cycle - that wait, lay an egg, walk to a bridge with no trap and build
+			# one, glint, spit at the nearest tower / building, walk home
 			"back_min": 3.0, "back_max": 7.0, "cycle": 10.0,
 			"skitter_min": 3, "skitter_max": 6, "skitter_time": 0.55,
-			# spits reach anywhere: one setting off and one every forward_spit_every
-			# while forward (closest unit), one backing up (nearest tower / building)
+			# forward she seeps poison from her mouth: it runs down the "hill" at
+			# seep_speed tiles/s, the first pool_len tiles a pool pool_wide tiles
+			# across (each side), then a braided stream into the river, which turns
+			# from the inflow downstream at river_speed tiles/s. It dries the same
+			# way, mouth first, once she leaves. Enemy ground troops standing in the
+			# pool or stream take pool_poison every pool_every s.
+			"seep_speed": 2.5, "pool_len": 1.2, "pool_wide": 0.9, "stream_wide": 0.22,
+			"river_speed": 6.0, "pool_poison": 2.0, "pool_every": 1.0,
+			# spits reach anywhere: one every forward_spit_every s at the closest
+			# unit while forward, once the pool has formed; and the parting shot at
+			# the nearest tower / building after the trap, her eye glinting for
+			# glint_time s first
 			"spit_dmg": 6.0, "spit_poison": 10.0, "spit_splash": 0.5, "spit_speed": 700.0,
-			"forward_spit_every": 1.2,
+			"forward_spit_every": 2.0, "glint_time": 0.6,
 			# front legs use the card's dmg / reach / interval above
 			"web_every": 5.0, "web_ahead": 2.5, "web_slow": 0.5, "web_slow_time": 2.0,
-			"trap_every": 20.0, "trap_radius": 0.7,
+			# the trap: walked to at walk_speed tiles/s, built in build_time s
+			"walk_speed": 3.0, "build_time": 3.0, "trap_radius": 0.7,
 		},
 		"accent": Color(0.8, 0.78, 0.3),
 	},
@@ -484,12 +571,14 @@ const CARDS := {
 		"name": "Spider Egg",
 		"cost": 0,
 		"type": "building",
-		"blurb": "Laid by the ballista spider on a patch of web. However it goes, timer or blade, a spiderling climbs out.",
+		"blurb": "Laid by the ballista spider on a patch of web. However it goes, timer or blade, spiderlings climb out: one more for every eighth of its life it lasted, eight if it runs its full course.",
 		"hp": 60.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
 		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 30.0,
 		"buildings_only": false,
 		"footprint": [2, 2],
 		"hatch": "spiderling",
+		# how many hatch: round(hatch_max * age / lifetime), at least 1
+		"hatch_max": 8,
 		"accent": Color(0.93, 0.92, 0.85),
 	},
 	"spiderling": {
@@ -589,7 +678,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill"]
 
 
 ## Every card in the game. Pen and the Magma Whelp are not in the deck — they

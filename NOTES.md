@@ -5,7 +5,7 @@ Read this plus `README.md` before touching anything. The README is the *product*
 reference (rules, cards, numbers); this file is the *working* reference (where code
 lives, how to verify, what is half-done and why).
 
-State at handoff: 22 cards (21 dealt), 150 s matches with a final-minute surge,
+State at handoff: 33 cards (31 dealt), 150 s matches with a final-minute surge,
 commander-tower wins, threat-driven bot with a measurement harness, arena split
 into rules / geometry / painting. Everything below was verified; nothing is
 half-finished in the tree.
@@ -65,7 +65,19 @@ extraction candidate.**
    plain hit, drawn as a snake lash), `spear` (Enkidu: `_try_throw` / `_spear_back`
    swap dmg, reach, interval and `hits_air` while the spear is away), `frog` (Poison
    Dart Frog: `_tick_frog` hops instead of `_move`, `_frog_prey` / `_tick_frog_leap` /
-   `_frog_burst`; no `_attack` at all), `chicken` + `kamikaze` (Hot Chicken,
+   `_frog_burst`; no `_attack` at all), `shield` + `dagger` (Phalanx: the shield's
+   own HP and raise/lower in `_physics_process` and `take_damage`, slower `_move`,
+   `_attack_spartan` for poke / stab), `pack` (Wolf Pack: `arena.spawn_troop` gives
+   every wolf one shared dictionary; the first living wolf runs `_tick_pack` —
+   prey, arrival, ring spin, turn clock — and each runs `_tick_wolf`; no
+   `_attack`), `summon.quiet` (no screen shake per spawn: the Ant Hill),
+   `trail` (ants: `_die` records a grave in `arena.ant_graves` stamped with
+   `Engine.get_physics_frames()`; `_tick_ant` turns on entering a fresh grave
+   tile, `_ant_turn` picks the other lane's side tower and backs `back` tiles
+   down the trail, turned ants turn any ant they touch whose `move_dir` points
+   the other way, and `_ant_waypoint` crosses by the goal lane's bridge through
+   `arena.route_point(from, goal, bridge_col)`; `--scenario=antlane`),
+   `chicken` + `kamikaze` (Hot Chicken,
    two phases), `spread` (Primal Aphid), `dodge` (Penny), `summon` (warren),
    `death_aoe` (snowman), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
    `stationary`, `lifetime`, `shoots` + `payload`, `greatsword` (Laniakea: owns its
@@ -84,7 +96,7 @@ held card is `arena.selection_id()`, Firebolt charges are keyed by id, a played
 card cycles back as the same id, and a `becomes` card (Pen, Magma Whelp) is a new
 id. Anything that rewrites a hand or deck wholesale gets fresh ids from
 `_sync_ids()`; code that moves single cards must move the id with the kind.
-`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 27).
+`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 31).
 Hand 4, `HAND_MAX` 8. Draws every `DRAW_INTERVAL` 16 s, and every gold spent
 takes `DRAW_PER_GOLD` 1 s off the wait (`spend_gold_draw()`; overflow carries).
 Debug keys 1-3 (Tab view) give 2 gold and a card. Scenario:
@@ -372,7 +384,7 @@ Start it with **Tab, then S** (`arena.start_spider_encounter()`), or
 * **Her dice are a seeded `RandomNumberGenerator`** (skitter distance only), so
   the encounter is reproducible like the rest of combat.
 * **Eggs and spiderlings are ordinary `DDUnit`s.** The egg is a 2×2 building
-  with a card key `hatch`; `DDUnit._die` spawns the hatchling on any death.
+  with a card key `hatch`; `DDUnit._die` spawns the hatchlings on any death.
   The spiderling's card key `poison` adds counters on each melee hit.
 * **Poison is a counter, not a status** (`DDUnit.poison`, `DDTower.poison`):
   never cleared, never replaced by burn or slow, ticks 2× the counter every 5 s.
@@ -381,14 +393,33 @@ Start it with **Tab, then S** (`arena.start_spider_encounter()`), or
   child canvas items (`floor_layer` under the board's units, `sky_layer` above).
   A web tile slows through the normal `slow()`, so it replaces a burn like any
   slow does. A trap **removes** a `DDUnit` without calling `_die`, on purpose.
-* **Her cycle**: a random 3 – 7 s at the back (`back_min` / `back_max`, seeded
-  RNG), then forward for `cycle` (10) minus that wait. `back_wait` / `stay_time`
-  on the node hold the current cycle's values.
-* **The venom is tied to the skitter**, not on a cooldown: one glob at the
-  closest enemy unit as she sets off, one every `forward_spit_every` (1.2 s)
-  at the closest unit while forward, one at the nearest tower or building as
-  she backs up, all at any range. `glint` is set by the last forward spit that
-  fits before she leaves and cleared when she backs up.
+* **Her cycle** is the state machine in `_tick_skitter`: HOME (a random 3 – 7 s,
+  `back_min` / `back_max`, seeded RNG) → ADVANCE (`skitter_time`) → FORWARD
+  (`cycle` minus that wait; `back_wait` / `stay_time` hold the current values)
+  → egg → TO_BRIDGE → BUILD (`build_time`) → GLINT (`glint_time`) → RETREAT,
+  walking at `walk_speed`.
+* **The poison** (`_start_ooze` / `_tick_ooze` / `in_ooze`): a straight path from
+  her mouth (`ooze_from`) to the river's near bank on her lane (`ooze_len`
+  tiles); `ooze_dry .. ooze_wet` is the wet stretch, each end moving at
+  `seep_speed`. The first `pool_len` tiles are the pool (`_pool_half`), the rest
+  two branches (`_branch_off`). Once the wet end reaches the bank the river fills
+  from `river_in` (her lane's column) downstream to `_river_end()` at
+  `river_speed`; once the path is dry it clears from the top. Only the path
+  poisons (`pool_poison` every `pool_every` s); the river tint is a picture.
+  Her lane meets the river at the board's middle, so it is the lower half that
+  turns.
+* **The venom waits for the pool**: while FORWARD, one glob every
+  `forward_spit_every` (2 s) at the closest enemy unit once `ooze_wet >=
+  pool_len`; the parting glob at the nearest tower or building after GLINT. No
+  spit on setting off any more.
+* **Traps are built, not timed**: `_head_for_bridge` picks a bridge with no trap
+  (none free: straight to GLINT), adds the trap with `build` 0 and walks to a
+  spot `build_back` (2.4) + 1 tiles short of the bridge's middle. Traps with
+  `build` < 1 never spring. `lay_trap()` (armed at once) is kept for
+  `--scenario=spider` only. `DDArt.slingshot_trap` draws all build stages.
+* **Eggs hatch by age**: `DDUnit.hatch_count()` = round(`hatch_max` × age /
+  lifetime), at least 1. `--scenario=eggs` checks 1 / 4 / 8,
+  `--scenario=spidercycle` (add `--shots=` for pictures) logs one full cycle.
 * **Poison ticks are halved on buildings and towers** (`DDUnit.POISON_BUILDING`). The projectile carries payload key `seek`
   (its landing point follows that node) and bursts through the normal splash
   path, which now also applies `poison` in the splash.

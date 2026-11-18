@@ -205,6 +205,27 @@ func _ready() -> void:
 	elif scenario == "frogart":
 		shot_times = [0.8]
 		run_time = 1.0
+	elif scenario == "phalanx":
+		shot_times = [7.2]
+		run_time = 11.0
+	elif scenario == "wolves":
+		shot_times = [3.0]
+		run_time = 13.0
+	elif scenario == "anthill":
+		shot_times = [6.0]
+		run_time = 6.2
+	elif scenario == "packart":
+		shot_times = [0.8]
+		run_time = 1.0
+	elif scenario == "spidercycle":
+		shot_times = [6.0, 12.0, 14.2, 16.1]
+		run_time = 20.0
+	elif scenario == "eggs":
+		shot_times = []
+		run_time = 33.0
+	elif scenario == "antlane":
+		shot_times = [17.0]
+		run_time = 42.0
 	elif scenario == "whelpart":
 		shot_times = [0.8]
 		run_time = 1.0
@@ -394,6 +415,20 @@ func _process(delta: float) -> void:
 		_gil_steps()
 	elif scenario == "frog":
 		_frog_steps()
+	elif scenario == "phalanx":
+		_phalanx_steps()
+	elif scenario == "wolves":
+		_wolves_steps()
+	elif scenario == "anthill":
+		_anthill_steps()
+	elif scenario == "packart":
+		_packart_steps()
+	elif scenario == "spidercycle":
+		_spidercycle_steps()
+	elif scenario == "eggs":
+		_eggs_steps()
+	elif scenario == "antlane":
+		_antlane_steps()
 	elif scenario == "shiestyfx":
 		_shiesty_fx_steps()
 	elif scenario == "dupes":
@@ -2386,3 +2421,362 @@ func _lane_point(p: int, kind: String) -> Vector2:
 		return arena.tile_center(king.x, king.y)
 	var row := 20.0 if p == 0 else 9.0
 	return arena.tile_center(bridge_x, row)
+
+
+## The Phalanx. First one spartan on its own: the shield raised by a hit (that
+## hit lands), burn going past it, the shield soaking and breaking, then dagger
+## stabs between spear pokes on a dummy inside a tile. Then the full formation
+## walking at a dummy: the layout, the shields coming up at 3 tiles, the slower
+## walk and the slower pokes from both ranks.
+var ph_solo: Node = null
+var ph_dummy: Node = null
+var ph_last_hp := 0.0
+var ph_hits: Array = []
+var ph_units: Array = []
+var ph_pokes: Dictionary = {}
+var ph_raised: Dictionary = {}
+var ph_x := 0.0
+func _phalanx_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.2):
+		var at: Vector2 = arena.tile_center(3.5, 21.5)
+		ph_solo = arena.spawn_troop("phalanx", 0, at, true)
+		ph_solo.deploy_timer = 0.0
+		ph_solo.speed = 0.0
+		var s: Node = ph_solo
+		var side := at + Vector2(t * 2.0, 0.0)
+		print("[phalanx] solo hp %.0f shield %.0f up=%s" % [s.hp, s.shield_hp, str(s.shield_up)])
+		s.take_damage(10.0, side)
+		print("[phalanx] hit 10 with shield down -> hp %.0f shield %.0f up=%s (expect 60 / 60 / true)" % [s.hp, s.shield_hp, str(s.shield_up)])
+		s.take_damage(5.0, s.position)
+		print("[phalanx] burn tick 5 -> hp %.0f shield %.0f (expect 55 / 60)" % [s.hp, s.shield_hp])
+		s.take_damage(25.0, side)
+		print("[phalanx] hit 25 raised -> hp %.0f shield %.0f (expect 55 / 35)" % [s.hp, s.shield_hp])
+		s.take_damage(50.0, side)
+		print("[phalanx] hit 50 raised -> hp %.0f shield %.0f up=%s (expect 40 / 0 / false)" % [s.hp, s.shield_hp, str(s.shield_up)])
+		ph_dummy = _lani_dummy("hero", at + Vector2(t * (0.42 + 0.45 + 0.6), 0.0))
+		ph_dummy.max_hp = 5000.0
+		ph_dummy.hp = 5000.0
+		ph_last_hp = ph_dummy.hp
+	if elapsed > 0.2 and elapsed < 3.5 and is_instance_valid(ph_dummy):
+		if ph_dummy.hp < ph_last_hp - 0.01:
+			ph_hits.append([snappedf(elapsed, 0.01), int(roundf(ph_last_hp - ph_dummy.hp))])
+			ph_last_hp = ph_dummy.hp
+	if _at(3.5):
+		print("[phalanx] broken shield, dummy 0.6 away: hits [time, dmg] %s (expect 14 / 8 alternating, 0.65 s apart)" % str(ph_hits))
+		_lani_clear()
+	if _at(3.7):
+		var centre: Vector2 = arena.tile_center(9.5, 22.5)
+		arena.spawn_troop("phalanx", 0, centre)
+		for u in arena.units:
+			if is_instance_valid(u) and not u.dead and String(u.kind) == "phalanx":
+				ph_units.append(u)
+		var offs: Array = []
+		for u in ph_units:
+			offs.append([snappedf((u.position.x - centre.x) / t, 0.01), snappedf((u.position.y - centre.y) / t, 0.01)])
+		print("[phalanx] %d spartans at offsets [forward, across] %s" % [ph_units.size(), str(offs)])
+		ph_dummy = _lani_dummy("hero", centre + Vector2(t * 4.5, 0.0))
+		ph_dummy.max_hp = 5000.0
+		ph_dummy.hp = 5000.0
+	if elapsed > 3.7 and not ph_units.is_empty():
+		for i in ph_units.size():
+			var u: Node = ph_units[i]
+			if not is_instance_valid(u) or u.dead:
+				continue
+			if u.shield_up and not ph_raised.has(i):
+				ph_raised[i] = true
+				print("[phalanx] t%.2f spartan %d raises its shield, edge gap to dummy %.2f" % [elapsed, i,
+					arena.gap_between(u.position, ph_dummy.position, u.radius_t, ph_dummy.radius_t)])
+			if u.poke_t == u.POKE_SHOW:
+				if not ph_pokes.has(i):
+					ph_pokes[i] = []
+					print("[phalanx] t%.2f spartan %d first poke from edge gap %.2f" % [elapsed, i,
+						arena.gap_between(u.position, ph_dummy.position, u.radius_t, ph_dummy.radius_t)])
+				(ph_pokes[i] as Array).append(snappedf(elapsed, 0.01))
+	if _at(4.6):
+		ph_x = ph_units[1].position.x
+	if _at(4.8):
+		print("[phalanx] walking speed, shield down: %.2f tiles/s (expect 0.85)" % ((ph_units[1].position.x - ph_x) / t / 0.2))
+	if _at(5.6):
+		ph_x = ph_units[1].position.x
+	if _at(5.8):
+		print("[phalanx] walking speed, shield up=%s: %.2f tiles/s (expect 0.51)" % [str(ph_units[1].shield_up), (ph_units[1].position.x - ph_x) / t / 0.2])
+	if _at(10.8):
+		print("[phalanx] pokes per spartan %s (expect 1.69 s apart while raised)" % str(ph_pokes))
+
+
+## The Wolf Pack: two dummies standing together and one on its own; the pack
+## goes for the lonely one, travels in its diamond, rings it, and bites in turn
+## (0.4 s apart with four, 0.8 s with two).
+var wf_wolves: Array = []
+var wf_dummies: Array = []
+var wf_target: Node = null
+var wf_last_hp := 0.0
+var wf_bites: Array = []
+var wf_engaged := false
+func _wolves_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.2):
+		arena.spawn_troop("wolves", 0, arena.tile_center(9.5, 22.5))
+		for u in arena.units:
+			if is_instance_valid(u) and not u.dead and String(u.kind) == "wolves":
+				wf_wolves.append(u)
+		for spot in [Vector2(6.5, 18.5), Vector2(7.5, 18.5), Vector2(13.5, 19.5)]:
+			var d: Node = _lani_dummy("hero", arena.tile_center(spot.x, spot.y))
+			d.max_hp = 1000.0
+			d.hp = 1000.0
+			wf_dummies.append(d)
+		print("[wolves] %d wolves; dummies 0 and 1 side by side, dummy 2 alone" % wf_wolves.size())
+	if wf_wolves.is_empty():
+		return
+	var pk: Dictionary = {}
+	for w in wf_wolves:
+		if is_instance_valid(w) and not w.dead:
+			pk = w.pack
+			if w.attack_stretch == w.ATTACK_STRETCH and wf_engaged:
+				wf_bites.append([snappedf(elapsed, 0.01), wf_wolves.find(w)])
+	if pk.is_empty():
+		return
+	if pk.get("target") != wf_target and pk.get("target") != null:
+		wf_target = pk["target"]
+		wf_last_hp = wf_target.hp
+		print("[wolves] t%.2f pack target: dummy %d (expect 2)" % [elapsed, wf_dummies.find(wf_target)])
+	if _at(1.2):
+		var c: Vector2 = pk["center"]
+		var offs: Array = []
+		for w in wf_wolves:
+			offs.append([snappedf((w.position.x - c.x) / t, 0.01), snappedf((w.position.y - c.y) / t, 0.01)])
+		print("[wolves] travelling, offsets from the pack's middle %s" % str(offs))
+	if bool(pk.get("engaged", false)) and not wf_engaged:
+		wf_engaged = true
+		print("[wolves] t%.2f engaged" % elapsed)
+	if _at(4.0) or _at(5.0) or _at(6.0):
+		var ds: Array = []
+		for w in wf_wolves:
+			if not w.wolf_lunge and w.attack_stretch <= 0.0:
+				ds.append(snappedf(arena.tiles_between(w.position, wf_target.position), 0.01))
+		print("[wolves] ring: centre distances of the wolves not biting %s (expect about %.2f)" % [str(ds), wf_target.radius_t + 2.0])
+	if _at(7.0):
+		print("[wolves] bites with four: %s" % str(wf_bites))
+		wf_bites.clear()
+		for k in 2:
+			var w: Node = wf_wolves[k]
+			w.take_damage(9999.0, w.position)
+		print("[wolves] two wolves killed")
+	if _at(12.9):
+		print("[wolves] bites with two: %s" % str(wf_bites))
+
+
+## The Ant Hill: an ant out of the front every 1.2 s (the first a second in),
+## and a Meerkat swarm for the record.
+var ah_count := 0
+func _anthill_steps() -> void:
+	if _at(0.2):
+		arena.spawn_troop("anthill", 0, arena.tile_center(9.5, 24.5))
+		arena.spawn_troop("meerkats", 0, arena.tile_center(4.5, 22.5))
+		var n := 0
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "meerkats":
+				n += 1
+		print("[anthill] meerkats spawned: %d" % n)
+	if elapsed > 0.2:
+		var n2 := 0
+		for u in arena.units:
+			if is_instance_valid(u) and not u.dead and String(u.kind) == "ant":
+				n2 += 1
+		if n2 > ah_count:
+			ah_count = n2
+			print("[anthill] t%.2f ant %d out (expect 1.2, 2.4, 3.6 ...)" % [elapsed, ah_count])
+
+
+## Close-ups of the new art and the four full cards, drawn on one overlay.
+func _packart_steps() -> void:
+	if not _at(0.3):
+		return
+	var layer := CanvasLayer.new()
+	layer.layer = 60
+	arena.add_child(layer)
+	var c := Control.new()
+	c.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(c)
+	var team_col: Color = arena.team_color(0)
+	var ink: Color = arena.team_ink(0)
+	c.draw.connect(func() -> void:
+		c.draw_rect(Rect2(Vector2.ZERO, c.get_viewport_rect().size), Color(0.36, 0.52, 0.32))
+		var s := 3.4
+		var r := 0.42 * 38.0
+		var y := 150.0
+		var items := [
+			func() -> void: DDArt.spartan(c, r, 1.0, 0.3, {"shield": 1, "walk": true}, ink, team_col),
+			func() -> void: DDArt.spartan(c, r, 1.0, 0.3, {"shield": 2, "dent": 0.6, "poke": 0.5}, ink, team_col),
+			func() -> void: DDArt.spartan(c, r, 1.0, 0.3, {"shield": 0, "stab": 0.5}, ink, team_col),
+			func() -> void: DDArt.wolf(c, 0.4 * 38.0, 1.0, 0.1, {"run": true}, ink),
+			func() -> void: DDArt.wolf(c, 0.4 * 38.0, 1.0, 0.0, {"bite": 1.0}, ink),
+			func() -> void: DDArt.meerkat(c, 0.3 * 38.0, 1.0, 0.0, false, ink),
+			func() -> void: DDArt.ant(c, 0.22 * 38.0 * 1.6, 1.0, 0.0, ink),
+			func() -> void: DDArt.anthill(c, 0.55 * 38.0, 0.4, ink),
+		]
+		# Humbaba large, below the cards: walking carry, wind-up, just struck
+		for k in 3:
+			c.draw_set_transform(Vector2(1330.0 + 0.0 * float(k), 160.0 + 270.0 * float(k)), 0.0, Vector2(2.6, 2.6))
+			DDArt.troll(c, 0.75 * 38.0, 1.0, 0.0, [0.45, 0.95, 0.0][k], ink)
+		for i in items.size():
+			c.draw_set_transform(Vector2(80.0 + 128.0 * float(i), y), 0.0, Vector2(s, s) * (0.8 if i >= 3 else 1.0))
+			(items[i] as Callable).call()
+		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var kinds := ["phalanx", "wolves", "meerkats", "anthill"]
+		for i in kinds.size():
+			DDCardFace.draw_full(c, kinds[i], Rect2(70.0 + 300.0 * float(i), 290.0, 250.0, 390.0))
+	)
+	c.queue_redraw()
+
+
+## One full spider cycle with timestamps: run forward, the pool forming before
+## the first spit, the stream reaching the river and the river turning downstream,
+## spits every 2 s, the egg, drying mouth first then the river from the top, the
+## walk to a bridge, the 3 s build, the glint and the parting spit, home.
+var sc_state := -1
+var sc_venom: Dictionary = {}
+var sc_dummies: Array = []
+var sc_river := false
+var sc_flags: Dictionary = {}
+func _spidercycle_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		arena.start_spider_encounter()
+	var sp: Node = arena.spider
+	if sp == null or not is_instance_valid(sp):
+		return
+	if _at(0.4):
+		sp.back_wait = 1.0
+		sp.skitter_clock = 0.0
+	if int(sp.state) != sc_state:
+		sc_state = int(sp.state)
+		print("[spidercycle] t%.2f state %s at tile %s | ooze wet %.2f dry %.2f len %.2f | river %s %.1f..%.1f" % [
+			elapsed, ["HOME", "ADVANCE", "FORWARD", "TO_BRIDGE", "BUILD", "GLINT", "RETREAT"][sc_state],
+			str(arena.tile_of(sp.position)), sp.ooze_wet, sp.ooze_dry, sp.ooze_len, str(sp.river_wet), sp.river_a, sp.river_b])
+		if sc_state == 2 and sc_dummies.is_empty():
+			# two dummies: one in the pool, one on the stream
+			var side: Vector2 = sp.fwd.orthogonal()
+			for s in [0.6, sp.ooze_len * 0.75]:
+				var d: Node = arena.spawn_troop("hero", 0, sp.ooze_from + sp.fwd * float(s) * t, true)
+				d.position = sp.ooze_from + sp.fwd * float(s) * t + side * 0.0
+				d.deploy_timer = 0.0
+				d.speed = 0.0
+				d.dmg = 0.0
+				d.max_hp = 9000.0
+				d.hp = 9000.0
+				sc_dummies.append(d)
+	# every new venom glob: when, and at what
+	for c in arena.get_children():
+		if c is DDProjectile and String(c.kind) == "venom" and not sc_venom.has(c.get_instance_id()):
+			sc_venom[c.get_instance_id()] = true
+			var tgt = c.payload.get("seek") if c.get("payload") != null else null
+			var what := "?"
+			if tgt != null and is_instance_valid(tgt):
+				what = "tower" if tgt.is_tower() else ("dummy %d" % sc_dummies.find(tgt))
+			print("[spidercycle] t%.2f spit -> %s (pool wet %.2f / %.1f needed)" % [elapsed, what, sp.ooze_wet, float(sp.cfg["pool_len"])])
+	if sp.ooze_wet >= sp.ooze_len - 0.001 and sp.ooze_len > 0.0 and not sc_flags.has("reach"):
+		sc_flags["reach"] = true
+		print("[spidercycle] t%.2f stream reaches the river (inflow col %.1f)" % [elapsed, sp.river_in])
+	if sp.river_wet and sp.river_b >= sp._river_end() - 0.001 and not sc_flags.has("full"):
+		sc_flags["full"] = true
+		print("[spidercycle] t%.2f river poisoned from col %.1f to the bottom (%.1f)" % [elapsed, sp.river_a, sp.river_b])
+	if sp.river_wet and sp.river_a > sp.river_in + 0.01 and not sc_flags.has("clear"):
+		sc_flags["clear"] = true
+		print("[spidercycle] t%.2f river starts clearing from the top; path wet %.2f dry %.2f" % [elapsed, sp.ooze_wet, sp.ooze_dry])
+	if sc_flags.has("full") and not sp.river_wet and not sc_flags.has("clean"):
+		sc_flags["clean"] = true
+		print("[spidercycle] t%.2f river clear; ooze_len now %.1f" % [elapsed, sp.ooze_len])
+	for tt in [3.0, 5.0, 7.0, 9.0]:
+		if _at(tt):
+			print("[spidercycle] t%.1f dummy poison: pool %d, stream %d" % [tt, int(sc_dummies[0].poison), int(sc_dummies[1].poison)])
+	for tt2 in [13.0, 14.2, 15.5]:
+		if _at(tt2):
+			var tr: Array = sp.traps.map(func(x): return [int(x["bridge"]), snappedf(float(x["build"]), 0.01)])
+			print("[spidercycle] t%.1f traps [bridge, built] %s" % [tt2, str(tr)])
+	if _at(19.9):
+		var eggs: Array = arena.units.filter(func(u): return is_instance_valid(u) and String(u.kind) == "spideregg")
+		print("[spidercycle] t19.9 home=%s eggs=%d traps=%d tower poison %s" % [str(sp.position.is_equal_approx(sp.home)),
+			eggs.size(), sp.traps.size(), str(arena.towers.filter(func(x): return int(x.team) == 0).map(func(x): return int(x.poison)))])
+
+
+## Eggs: one broken at half its life (expect 4 spiderlings), one left to run
+## its full 30 s (expect 8), and one broken at once (expect 1).
+var eg_eggs: Array = []
+var eg_lings := 0
+func _eggs_steps() -> void:
+	if _at(0.3):
+		for spot in [Vector2(4.0, 5.0), Vector2(14.0, 5.0), Vector2(9.0, 8.0)]:
+			var e: Node = arena.spawn_troop("spideregg", 1, arena.tile_center(spot.x, spot.y))
+			e.deploy_timer = 0.0
+			eg_eggs.append(e)
+	var lings: int = arena.units.filter(func(u): return is_instance_valid(u) and not u.dead and String(u.kind) == "spiderling").size()
+	if lings != eg_lings:
+		print("[eggs] t%.2f spiderlings %d -> %d" % [elapsed, eg_lings, lings])
+		eg_lings = lings
+		# keep them still so the count stays readable
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "spiderling":
+				u.speed = 0.0
+	if _at(0.5):
+		print("[eggs] breaking egg C at age %.2f (expect 1)" % eg_eggs[2].age)
+		eg_eggs[2].take_damage(9999.0, eg_eggs[2].position)
+	if _at(15.3):
+		print("[eggs] breaking egg A at age %.2f of %.0f (expect 4)" % [eg_eggs[0].age, eg_eggs[0].lifetime])
+		eg_eggs[0].take_damage(9999.0, eg_eggs[0].position)
+	if _at(32.0):
+		print("[eggs] egg B ran out on its own: gone=%s (expect 8 more)" % str(not is_instance_valid(eg_eggs[1])))
+
+
+## Ant lanes: an Ant Hill on the left lane. The first ant to reach the bridge
+## mouth is killed there; the next ant into that tile turns for the right lane,
+## and every ant it meets coming the other way turns too. Ants hatched after the
+## grave has gone stale walk the left lane again. Late on, an enemy dummy by the
+## right-lane route: turned ants attack it before carrying on.
+var al_killed := false
+var al_turned: Dictionary = {}
+var al_dummy: Node = null
+func _antlane_steps() -> void:
+	if _at(0.3):
+		arena.spawn_troop("anthill", 0, arena.tile_center(5.0, 22.5))
+		print("[antlane] ant hill on the left lane; bridges at cols %d and %d" % [int(arena.BRIDGE_COL_A), int(arena.BRIDGE_COL_B)])
+	var ants: Array = arena.units.filter(func(u): return is_instance_valid(u) and not u.dead and String(u.kind) == "ant")
+	if not al_killed:
+		for a in ants:
+			if arena.tile_of(a.position).y <= 17:
+				al_killed = true
+				print("[antlane] t%.2f killing the lead ant at tile %s" % [elapsed, str(arena.tile_of(a.position))])
+				a.take_damage(999.0, a.position)
+				break
+	for a in ants:
+		var id: int = a.get_instance_id()
+		if a.ant_turned and not al_turned.has(id):
+			al_turned[id] = true
+			var goal_col: int = arena.tile_of(a.ant_goal.position).x
+			print("[antlane] t%.2f ant at tile %s turns (goal tower col %d)" % [elapsed, str(arena.tile_of(a.position)), goal_col])
+	for tt in [16.0, 24.0, 32.0, 41.0]:
+		if _at(tt):
+			var n_turn := 0
+			var right := 0
+			for a in ants:
+				if a.ant_turned:
+					n_turn += 1
+				if arena.tile_of(a.position).x >= 9:
+					right += 1
+			print("[antlane] t%.0f ants %d, turned %d, on the right half %d" % [tt, ants.size(), n_turn, right])
+	if _at(24.5):
+		# something to bite on the way to the right lane
+		var turned_ants: Array = ants.filter(func(a): return a.ant_turned)
+		if not turned_ants.is_empty():
+			var a0: Node = turned_ants[0]
+			al_dummy = _lani_dummy("hero", a0.position + Vector2(0.0, 2.0 * float(arena.TILE)))
+			al_dummy.max_hp = 5000.0
+			al_dummy.hp = 5000.0
+			print("[antlane] dummy placed 2 tiles from a turned ant")
+	if _at(27.0) and is_instance_valid(al_dummy):
+		var biting := 0
+		for a in ants:
+			if a.target == al_dummy:
+				biting += 1
+		print("[antlane] t27 ants on the dummy %d, dummy hp %d / 5000" % [biting, int(al_dummy.hp)])
