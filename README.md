@@ -14,8 +14,31 @@ relics, heroes and match types come later).
 
 ```
 godot --path . --editor        # open in the editor
-godot --path .                 # play
+godot --path .                 # play: starts a run
+godot --path . -- --run=<seed> # a run with a fixed seed
+godot --path . -- --match      # one plain match instead of a run
 ```
+
+### A run (first slice)
+
+A run is a string of fights with **one deck** against bots, one after another:
+Border Skirmish, Swamp Patrol, the Momma Ballista Spider (elite), The Chained
+Keep. You start with a **10 card deck** (repeats included: two Heroes, two Frogs).
+
+* **Your commander tower's HP carries over** from fight to fight. Your side
+  towers, and everything on the enemy side, come back full every time.
+* **Win** and, after a moment, **Choose a Card** comes up: three different full
+  cards (face and description) and **Skip**. Click a card or press **1 – 3** to add
+  it to your deck, or Skip (**S**); either way the next fight starts. Enter does
+  not skip it. The three offered are fixed for that run and fight, and can be
+  cards you already have. No reward after the last fight.
+* **Lose** (your commander falls, the clock runs out against you, or a draw) and
+  the run is over; **Enter** (or R) starts a new one.
+* Your hero ability is fixed for the whole run; the enemy gets the other one.
+* The run's position, commander HP and deck size are shown left of the board.
+
+A real act and its map are the next steps; the four fights above are
+placeholders.
 
 ## Controls
 
@@ -68,13 +91,17 @@ is the same size, shrunk so the whole column fits the panel.
 * Three towers per side: two princess towers and one **commander (king) tower**, **250 HP each**.
   **Taking the commander tower wins the match outright** — princess towers alone never end it.
 * **150 second matches.** The clock is the chip at the top of the board. The last 60 seconds are the
-  closing window: **double gold**, **half ability cooldowns**, and card draws **one second faster**.
-  If the clock runs out, the match goes to whoever has **more tower HP left** (all three towers
-  summed, not the tower count) — an exact tie is a draw.
-* **28 cards in the game, 26 in each deck** — Pen and the Magma Whelp are not dealt out; they only
+  closing window: **double gold**, **half ability cooldowns**, and card draws **two seconds faster**.
+  If the clock runs out, **whoever has had more towers destroyed loses**. Level on that, it goes
+  to whoever has **more tower HP left** (all standing towers summed); level on both, it is a draw.
+* **29 cards in the game, 27 in each deck** — Pen and the Magma Whelp are not dealt out; they only
   arrive when Penny / the Obsidian Whelp is played. (The Nekomancer's Rat Skeletons are summons, not cards.) 4 cards in hand, 1 "next", cycling exactly like
   Clash Royale: play a card and it goes to the back of the queue. Both decks are
-  **shuffled fresh every match**, independently of each other.
+  **shuffled fresh every match**, independently of each other. **A deck may hold several copies
+  of a card**; each copy is its own card (its own slot, its own Firebolt charges).
+* **Card draws: one every 16 s, and every gold you spend brings the next draw 1 s closer** (play a
+  5-cost card and it arrives 5 s sooner). A big spend can roll past a draw; the extra time carries
+  into the next one. Cards, each Firebolt cast, the hero ability and the hero launch all count.
 * Gold: starts at 5, caps at 10, regenerates 1 per 2.4 s — **double rate in the final minute**.
 
 ## Cards (base numbers, all tunable in `scripts/card_db.gd`)
@@ -122,6 +149,7 @@ footprint) rather than squeezing it into the HP ribbon.
 | Wu Cheng'en | 4 | 140 | **16** per staff hit / 1.4 s, melee (1 tile) | A bonobo who **knuckle-walks on all fours**. In reach he stands and **pulls a tiny staff from behind his ear that grows to full size in both hands** (0.4 s, no swing until it is out; it stays out while he closes a step or two, and goes back once the fight is more than 1.5 tiles past his reach). Then he alternates: a **poke** that goes through the target and **2 tiles on**, hitting and **pushing 0.5 tiles** everything on the ground in that line, and a **sweep** across a **120° cone** (1.8 tiles) centred on the target. Ground only. **Every enemy struck banks one rage.** Under **25 % HP** (a tick in the opponent's colour on his HP bar) he **rages once for 5 s**: **+25 % move and attack speed** and regen by banked rage: **5 HP/s**, **15** from 4 hits, **25** from 8, **40** from 12. A second bar under his HP fills once per rage level, each pass redder |
 | Nekomancer | 5 | 100 | **14 beam** / 1.2 s, **4 tiles** | A black cat in a ragged green cloak and a pointed wizard's hat, with a crescent-headed staff. The staff fires an **instant single-target beam** in **your team's colour** at **ground or air**. **Every 4 s** the wind catches her cloak and **two pentagrams** open on the ground **1.2 tiles out on her forward diagonals**; **1 s later a Rat Skeleton climbs out of each**. The pentagrams belong to the board, so **a ritual already glowing still finishes if she dies** |
 | Gilgamesh & Enkidu | 6 | **320 + 280** | lash **22** / 1.3 s (**2.5 tiles**); spear **24** / 1.2 s, **45 thrown** | One card, **two bodies** landing a tile apart, both tanky and quick (1.3 and 1.45). **Gilgamesh**, in teal plate with a lion's head on his shoulder, lashes with **a snake in your colour**: an instant hit out to **2.5 tiles**, ground only. **Enkidu**, the horned bull-man, **throws his spear** (45) at the nearest **ground troop** whose centre is **3 – 4.5 tiles** away — never a flyer, building or tower, and not at all if anything is already **inside 3 tiles**, which he fights with the spear in hand instead (24, **reaches air**). After a throw he fights with a **short sword** (16 / 0.9 s, 0.5 reach, ground only) for **3.5 s**, then the spear is back and can be thrown again |
+| Poison Dart Frog | 1 | 25 | **10 poison**, once | A glossy black frog striped in a brighter version of **your colour**, on blue spotted legs. It never walks: it **hops 0.7 tiles** at a time (0.22 s in the air, 0.45 s sitting, about a tile a second). It has **no attack**. The moment any ground enemy — troop, building or tower — has its edge within **2 tiles**, it **leaps** on the nearest one (following it through the air), lands, and **bursts**: **10 poison** on every ground enemy the **0.5 tile** circle touches, and the frog is gone. Flyers are out of its reach. Poison never wears off (see the spider) |
 | Rat Skeleton | – | 20 | 6 / 0.8 s, melee | The Nekomancer's summon, never dealt. Quick (1.4), brittle, ground only |
 | Magma Whelp | 1 | 30 | **5 burn** per feather / 1.4 s, **2 tiles** | The Obsidian Whelp's molten twin, never dealt. **Flies**, and flicks flaming feathers at **ground and air** within 2 tiles: no impact damage, just 5 burn each. A perfectly ordinary card once in hand; it does not turn back |
 
@@ -282,9 +310,9 @@ Only while **both hands are visible** (Tab). They are ignored in solo view so yo
 cannot cheat the normal layout by accident:
 
 ```
-1  -> +1 gold to player 1 (bottom)
-2  -> +1 gold to both players
-3  -> +1 gold to player 2 (top / the bot)
+1  -> +2 gold and a card to player 1 (bottom)
+2  -> +2 gold and a card to both players
+3  -> +2 gold and a card to player 2 (top / the bot)
 B  -> toggle the bot
 ```
 
@@ -388,7 +416,7 @@ while you drag the card over the arena**, so the placement preview is the only c
 * **It always flies back into its slot** (0.34 s, eased) instead of snapping — after a deploy, on right click, on
   Esc, or when it is carried back off the board after being on it.
 * **Drawing while you hold a card keeps holding it**: when a full hand throws its leftmost card away
-  every slot shifts, and the selection follows the card rather than the slot.
+  every slot shifts, and the selection follows the card (that exact copy) rather than the slot.
 * **NEXT** — the next card's edge is traced by a progress line that starts and ends at its top-left
   corner and fills with the draw timer. It is your team colour, and your opponent's while the hand
   is full (the next draw throws the leftmost card away).

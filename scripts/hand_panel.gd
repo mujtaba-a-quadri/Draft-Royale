@@ -143,7 +143,7 @@ func hit_card(p: Vector2) -> int:
 func select_index(i: int) -> void:
 	# a card that has not been dealt onto the table yet cannot be picked up
 	var h: Array = hand()
-	if i >= 0 and i < h.size() and deal_hidden.has(String(h[i])):
+	if i >= 0 and i < h.size() and deal_hidden.has(arena.hand_id(player, i)):
 		return
 	_press_card(i)
 
@@ -156,7 +156,7 @@ func _begin_deal() -> void:
 	deal_hidden = []
 	for k in h.size():
 		# own hand fills from the right; the opponent's column from the top
-		deal_hidden.append(String(h[k if compact else h.size() - 1 - k]))
+		deal_hidden.append(arena.hand_id(player, k if compact else h.size() - 1 - k))
 	deal_beat = DEAL_BEAT_FALLBACK
 	var sfx = arena.get("sfx")
 	if sfx != null and is_instance_valid(sfx) and float(sfx.slice_seconds) > 0.0:
@@ -172,12 +172,12 @@ func _tick_deal(delta: float) -> void:
 		return
 	deal_clock += delta
 	while not deal_hidden.is_empty() and deal_clock >= float(deal_shown) * deal_beat:
-		var kind := String(deal_hidden.pop_front())
+		var id := int(deal_hidden.pop_front())
 		deal_shown += 1
-		if not hand().has(kind):
+		if arena.hand_index_of(player, id) < 0:
 			continue
 		var from: Vector2 = Vector2(size.x * 0.5, -30.0) if compact else next_rect().get_center()
-		pending_arrivals[kind] = global_position + from
+		pending_arrivals[id] = global_position + from
 
 
 func _process(delta: float) -> void:
@@ -193,19 +193,23 @@ func _process(delta: float) -> void:
 
 
 ## Bind every hand slot to a card node for this frame, then let the cards place
-## themselves. Nodes are matched to slots **by card kind**, not by pool position:
-## when a full hand discards its leftmost card every index shifts, and the card
-## the player is holding must stay the card they are holding.
+## themselves. Nodes are matched to slots **by card copy** (arena.hand_ids), not
+## by pool position or kind: when a full hand discards its leftmost card every
+## index shifts, a hand can hold two of the same card, and the card the player is
+## holding must stay the card they are holding.
 func _layout_cards() -> void:
 	var h: Array = hand()
 	var shelf := shelf_mode()
 	var faces: bool = int(arena.view_mode) == 1
 	var pool: Array = cards.duplicate()
 	var bound := {}
+	var ids: Array = []
+	for i in h.size():
+		ids.append(arena.hand_id(player, i))
 	# exact matches first, so a lifted card keeps its own node and its slot
 	for i in mini(h.size(), cards.size()):
 		for cand in pool:
-			if String(cand.kind) == String(h[i]):
+			if int(cand.card_id) == int(ids[i]):
 				bound[i] = cand
 				pool.erase(cand)
 				break
@@ -228,15 +232,15 @@ func _layout_cards() -> void:
 		c.index = int(i)
 		c.set_slot(r)
 		c.grow = not compact
-		c.set_card(String(h[i]), compact and not faces)
+		c.set_card(String(h[i]), compact and not faces, int(ids[i]))
 		c.visible = not shelf
-		if deal_hidden.has(String(h[i])):
+		if deal_hidden.has(int(ids[i])):
 			# still in the deck as far as the eye is concerned
 			c.visible = false
 			continue
-		if c.visible and pending_arrivals.has(String(h[i])):
-			var from: Vector2 = pending_arrivals[String(h[i])]
-			pending_arrivals.erase(String(h[i]))
+		if c.visible and pending_arrivals.has(int(ids[i])):
+			var from: Vector2 = pending_arrivals[int(ids[i])]
+			pending_arrivals.erase(int(ids[i]))
 			c.fly_in_from(from)
 	# whatever is left over is either flying home or not in the hand at all
 	for c in pool:
@@ -308,7 +312,7 @@ func _draw_next(font: Font) -> void:
 	draw_string(font, Vector2(r.position.x, 90.0), "NEXT", HORIZONTAL_ALIGNMENT_CENTER, NEXT_W, 11,
 		Color(0.62, 0.64, 0.74))
 	DDCardFace.draw(self, String(arena.queues[player][0]), r, 0.9)
-	var frac: float = 1.0 - clampf(float(arena.draw_timer[player]) / float(arena.DRAW_INTERVAL), 0.0, 1.0)
+	var frac: float = 1.0 - clampf(float(arena.draw_timer[player]) / float(arena.draw_interval()), 0.0, 1.0)
 	# the edge trace is the draw timer: no bar underneath it any more
 	_next_progress_line(frac, hand().size() >= arena.HAND_MAX)
 
@@ -472,8 +476,7 @@ func _press_card(i: int) -> void:
 	var h: Array = hand()
 	if i < 0 or i >= h.size():
 		return
-	var kind := String(h[i])
-	if drag_card != null and String(drag_card.kind) == kind:
+	if drag_card != null and int(drag_card.card_id) == arena.hand_id(player, i):
 		arena.clear_selection()
 		_end_drag()
 		return
@@ -521,19 +524,26 @@ func _end_drag() -> void:
 	drag_card = null
 
 
-## Selection is tracked by card kind, not by slot index: the cards in a hand are
-## unique, and a discard can shuffle the slots under the player's feet.
+## Selection is tracked by card copy, not by slot index or kind: a hand can hold
+## two of a card, and a discard can shuffle the slots under the player's feet.
 func _armed(card: DDHandCard) -> bool:
 	if arena.debug_kind != "" or arena.selected_player != player:
 		return false
-	return String(arena.selection_kind()) == String(card.kind)
+	return arena.selection_id() == int(card.card_id)
+
+
+## Casts left on this copy (2 for a fresh Firebolt, 1 after the first throw).
+func charges_left(id: int) -> int:
+	if arena == null:
+		return 1
+	var i: int = arena.hand_index_of(player, id)
+	if i < 0:
+		return 1
+	return arena.charges_of(player, String(hand()[i]), id)
 
 
 ## True while this slot's cost should be flashing (the player just tried to place
 ## something they cannot pay for).
-## Casts left on this card (2 for a fresh Firebolt, 1 after the first throw).
-func charges_left(kind: String) -> int:
-	return arena.charges_of(player, kind) if arena != null else 1
 
 
 func is_rejected(i: int) -> bool:
@@ -550,16 +560,17 @@ func is_rejected(i: int) -> bool:
 # ------------------------------------------------------------ card arrivals
 
 ## Cards that have to fly into the hand rather than simply appearing (Pen, when
-## Penny is played). Keyed by kind, consumed by the next layout pass.
+## Penny is played). Keyed by card id, consumed by the next layout pass.
 var pending_arrivals := {}
 
 
-func note_arrival(kind: String, world: Vector2) -> void:
-	pending_arrivals[kind] = world
+## `id` is the card arriving, `played_id` the copy it replaces.
+func note_arrival(id: int, world: Vector2, played_id: int = -1) -> void:
+	pending_arrivals[id] = world
 	# the card being replaced does not fly home as well
 	if drag_card != null:
 		drag_card.retire_play()
 		drag_card = null
 	for c in cards:
-		if String(c.kind) == kind and c.state == DDHandCard.S.RETURN:
+		if int(c.card_id) == played_id and c.state == DDHandCard.S.RETURN:
 			c.retire_play()

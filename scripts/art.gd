@@ -87,6 +87,8 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			gilgamesh(ci, r, facing, t, {}, ink_col)
 		"enkidu":
 			enkidu(ci, r, facing, t, {}, ink_col)
+		"frog":
+			dart_frog(ci, r, facing, t, 0.0, ink_col)
 		"chicken":
 			_chicken(ci, r, t, facing, fly)
 		"penny":
@@ -683,10 +685,9 @@ static func kraken_arm(ci: CanvasItem, base: Vector2, ground: Vector2, lift: flo
 		tile: float, col: Color, t: float, sway: float = 0.0, out: float = 1.0, ink_col: Color = OUTLINE) -> void:
 	var keep := ink
 	ink = ink_col
-	# the hole it lives in
-	ci.draw_set_transform(base, 0.0, Vector2(1.0, 0.5))
-	ci.draw_circle(Vector2.ZERO, tile * 0.5, Color(0.05, 0.04, 0.1, 0.55))
-	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# the hole it lives in (drawn as a shape, not through draw_set_transform,
+	# which would throw away whatever transform the caller set)
+	ellipse(ci, base, tile * 0.5, tile * 0.25, Color(0.05, 0.04, 0.1, 0.55), 0.0)
 	if out <= 0.02:
 		ink = keep
 		return
@@ -732,9 +733,7 @@ static func kraken_arm(ci: CanvasItem, base: Vector2, ground: Vector2, lift: flo
 
 ## A sunk tentacle: only the horn is left sticking out of its hole.
 static func kraken_stub(ci: CanvasItem, base: Vector2, tile: float) -> void:
-	ci.draw_set_transform(base, 0.0, Vector2(1.0, 0.5))
-	ci.draw_circle(Vector2.ZERO, tile * 0.5, Color(0.05, 0.04, 0.1, 0.55))
-	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	ellipse(ci, base, tile * 0.5, tile * 0.25, Color(0.05, 0.04, 0.1, 0.55), 0.0)
 	var w: float = tile * 0.15
 	var top := base + Vector2(tile * 0.08, -tile * 0.7)
 	var a := base + Vector2(-w, 0.0)
@@ -1829,9 +1828,14 @@ static func bonobo(ci: CanvasItem, r: float, facing: float, t: float, pose: Dict
 	# torso
 	var mid := hip.lerp(shoulder, 0.5)
 	var ang: float = (shoulder - hip).angle()
-	ci.draw_set_transform(mid, ang, Vector2.ONE)
-	ellipse(ci, Vector2.ZERO, hip.distance_to(shoulder) * 0.72, r * 0.36, fur, 2.2)
-	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# a rotated ellipse built point by point: draw_set_transform here would throw
+	# away the caller's transform (card faces, previews, the unit's squash)
+	var tp := PackedVector2Array()
+	var trx: float = hip.distance_to(shoulder) * 0.72
+	for i in 32:
+		var a := TAU * float(i) / 32.0
+		tp.append(mid + Vector2(cos(a) * trx, sin(a) * r * 0.36).rotated(ang))
+	poly(ci, tp, fur, 2.2)
 	# near back leg
 	var knee: Vector2 = hip + P.call(0.26 + 0.1 * gait, 0.32)
 	var foot: Vector2 = knee + P.call(-0.1 + 0.12 * gait, 0.42)
@@ -2245,6 +2249,72 @@ static func enkidu(ci: CanvasItem, r: float, facing: float, t: float, pose: Dict
 	ink = keep
 
 
+## The dart frog's stripes: the owner's colour pushed brighter and a little
+## more saturated, the way the real frog's gold glows against the black.
+static func frog_stripe(team_col: Color) -> Color:
+	return Color.from_hsv(team_col.h, clampf(team_col.s * 1.15, 0.0, 1.0), clampf(team_col.v * 1.5 + 0.18, 0.0, 1.0))
+
+
+## A poison dart frog, side view: glossy black body, stripes in `stripe` from
+## the snout over the eye and down the flank, blue legs netted with black.
+## air 0..1: 0 sitting with the legs folded, 1 fully stretched out mid-leap.
+static func dart_frog(ci: CanvasItem, r: float, facing: float, t: float, air: float = 0.0,
+		ink_col: Color = OUTLINE, stripe: Color = Color(1.0, 0.75, 0.15)) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var a: float = clampf(air, 0.0, 1.0)
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var black := Color(0.07, 0.07, 0.09)
+	var leg := Color(0.36, 0.66, 0.96)
+	var breathe: float = sin(t * 3.0) * 0.02 * (1.0 - a)
+	# far legs (darker), then the body, then the near legs over it
+	var hip_far: Vector2 = P.call(-0.38, 0.12)
+	var foot_far: Vector2 = P.call(lerpf(-0.2, -1.05, a), lerpf(0.45, 0.28, a))
+	ci.draw_line(hip_far, foot_far, ink, r * 0.22, true)
+	ci.draw_line(hip_far, foot_far, leg.darkened(0.3), r * 0.16, true)
+	ci.draw_line(P.call(0.3, 0.2), P.call(lerpf(0.38, 0.55, a), lerpf(0.47, 0.35, a)), leg.darkened(0.3), r * 0.12, true)
+	var body := PackedVector2Array()
+	var shape := [[0.68, -0.02], [0.58, -0.2], [0.32, -0.36], [-0.05, -0.42 - breathe], [-0.4, -0.32],
+		[-0.62, -0.08], [-0.58, 0.18], [-0.25, 0.36], [0.2, 0.36], [0.55, 0.18]]
+	for pt in shape:
+		body.append(P.call(float(pt[0]), float(pt[1]) + a * 0.04))
+	poly(ci, body, black, 2.0)
+	# the stripes: one from the snout over the eye along the back, one down the flank
+	var top := PackedVector2Array([P.call(0.64, -0.08), P.call(0.42, -0.27), P.call(0.05, -0.34),
+		P.call(-0.3, -0.27), P.call(-0.52, -0.1)])
+	ci.draw_polyline(top, stripe, r * 0.13, true)
+	var flank := PackedVector2Array([P.call(0.5, 0.1), P.call(0.15, 0.06), P.call(-0.2, 0.1), P.call(-0.42, 0.04)])
+	ci.draw_polyline(flank, stripe, r * 0.09, true)
+	ci.draw_circle(P.call(-0.05, -0.2), r * 0.06, black)
+	# gloss along the back
+	ci.draw_line(P.call(-0.25, -0.36), P.call(0.1, -0.4), Color(1, 1, 1, 0.45), r * 0.05, true)
+	# near hind leg: a folded thigh at rest, kicked straight back in the air
+	var hip: Vector2 = P.call(-0.36, 0.18)
+	var knee: Vector2 = P.call(lerpf(-0.05, -0.75, a), lerpf(0.3, 0.32, a))
+	var foot: Vector2 = P.call(lerpf(-0.42, -1.2, a), lerpf(0.46, 0.4, a))
+	for seg in [[hip, knee, 0.26], [knee, foot, 0.18]]:
+		ci.draw_line(seg[0], seg[1], ink, r * float(seg[2]) + 2.0, true)
+		ci.draw_line(seg[0], seg[1], leg, r * float(seg[2]), true)
+		for k in 2:
+			ci.draw_circle((seg[0] as Vector2).lerp(seg[1], 0.3 + 0.4 * float(k)), r * 0.05, black)
+	for k in 3:
+		ci.draw_circle(foot + P.call(0.1 * float(k) - 0.1, 0.03), r * 0.045, leg.lightened(0.3))
+	# near front leg and its toe pads
+	var sh: Vector2 = P.call(0.35, 0.22)
+	var hand: Vector2 = P.call(lerpf(0.45, 0.7, a), lerpf(0.5, 0.36, a))
+	ci.draw_line(sh, hand, ink, r * 0.15 + 2.0, true)
+	ci.draw_line(sh, hand, leg, r * 0.15, true)
+	ci.draw_circle(sh.lerp(hand, 0.5), r * 0.045, black)
+	for k in 3:
+		ci.draw_circle(hand + P.call(0.08 * float(k) - 0.04, 0.02), r * 0.045, leg.lightened(0.3))
+	# the big wet eye
+	var eye: Vector2 = P.call(0.4, -0.2)
+	circle(ci, eye, r * 0.15, black, 1.4)
+	ci.draw_circle(eye + P.call(0.05, -0.05), r * 0.045, Color(1, 1, 1, 0.85))
+	ink = keep
+
+
 ## A raised rat skeleton, side view: skull with long incisors, a hunched spine
 ## with hanging ribs, thin legs and a long tail of vertebrae.
 static func ratbones(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Color = OUTLINE) -> void:
@@ -2517,6 +2587,8 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			gil_pair(ci, c, r * 0.8, t)
 		"enkidu":
 			creature(ci, "enkidu", r, 1.0, t)
+		"frog":
+			creature(ci, "frog", r, 1.0, t)
 		"chicken":
 			creature(ci, "chicken", r, 1.0, t)
 		"penny":

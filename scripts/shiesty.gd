@@ -42,6 +42,20 @@ var facing := 1.0
 var bridge_col := 5.0
 ## enemy troops able to hit him on each half when he chose [bridge A, bridge B]
 var lane_threat := [0, 0]
+## On the ground he takes everything a troop takes — burn, slow, poison, shoves,
+## stuns — with a troop's rules (DDUnit's numbers). Only towers ignore him.
+var status: int = DDUnit.Status.NONE
+var slow_amount := 0.0
+var slow_time := 0.0
+var burn_stack := 0.0
+var burn_ticks := 0
+var burn_max_ticks := 4
+var burn_timer := 0.0
+var burn_pulse := 0.0
+var poison := 0.0
+var poison_timer := 0.0
+var knock_vel := Vector2.ZERO
+var knock_time := 0.0
 
 
 func setup(a: Node2D, tm: int, tower: Node, home: Node) -> void:
@@ -71,9 +85,28 @@ func _physics_process(delta: float) -> void:
 	if dead:
 		return
 	clock += delta
+	# poison ticks through stuns, as on a troop
+	if poison > 0.0:
+		poison_timer -= delta
+		if poison_timer <= 0.0:
+			poison_timer += DDUnit.POISON_PERIOD
+			take_damage(poison * DDUnit.POISON_MULT, position)
+			if dead:
+				return
+	if knock_time > 0.0:
+		# a shove carries him, stunned or not
+		knock_time = maxf(0.0, knock_time - delta)
+		position += knock_vel * delta
+		if knock_time <= 0.0:
+			knock_vel = Vector2.ZERO
+		queue_redraw()
+		return
 	if stunned > 0.0:
 		stunned = maxf(0.0, stunned - delta)
 		queue_redraw()
+		return
+	_tick_status(delta)
+	if dead:
 		return
 	if phase == P.LAND:
 		var to: Vector2 = from
@@ -97,7 +130,8 @@ func _physics_process(delta: float) -> void:
 		_escape()
 		return
 	if dir.length() > 0.001:
-		position += dir.normalized() * speed_px * delta
+		var slowed: float = 1.0 - (slow_amount if status == DDUnit.Status.SLOW else 0.0)
+		position += dir.normalized() * speed_px * slowed * delta
 		if absf(dir.x) > 0.5:
 			facing = signf(dir.x)
 	queue_redraw()
@@ -178,6 +212,82 @@ func _escape() -> void:
 	_finish()
 
 
+## Burn and slow, ticked exactly as on a troop (DDUnit._physics_process).
+func _tick_status(delta: float) -> void:
+	if burn_pulse > 0.0:
+		burn_pulse = maxf(0.0, burn_pulse - delta * 1.7)
+	if status == DDUnit.Status.BURN:
+		burn_timer -= delta
+		if burn_timer <= 0.0:
+			burn_timer += 1.0
+			var tick_dmg := floorf(burn_stack * DDUnit.BURN_RATE)
+			if tick_dmg <= 0.0:
+				clear_status()
+			else:
+				burn_stack = maxf(0.0, burn_stack - tick_dmg)
+				burn_ticks += 1
+				burn_pulse = 1.0
+				take_damage(tick_dmg, position)
+				if dead or burn_ticks >= burn_max_ticks or burn_stack <= 0.0:
+					clear_status()
+	elif status == DDUnit.Status.SLOW:
+		slow_time = maxf(0.0, slow_time - delta)
+		if slow_time <= 0.0:
+			clear_status()
+
+
+func clear_status() -> void:
+	status = DDUnit.Status.NONE
+	slow_amount = 0.0
+	slow_time = 0.0
+	burn_stack = 0.0
+	burn_ticks = 0
+	burn_timer = 0.0
+
+
+## The same rules as DDUnit.slow / apply_burn / add_poison / apply_impulse. In
+## the air (untargetable) nothing reaches him.
+func slow(amount: float, seconds: float) -> void:
+	if dead or untargetable or amount <= 0.0:
+		return
+	if status != DDUnit.Status.SLOW:
+		burn_stack = 0.0
+		burn_ticks = 0
+		burn_timer = 0.0
+	status = DDUnit.Status.SLOW
+	slow_amount = amount
+	slow_time = maxf(slow_time, seconds)
+
+
+func apply_burn(amount: float, max_ticks: int = 4) -> void:
+	if dead or untargetable or amount <= 0.0:
+		return
+	if status != DDUnit.Status.BURN:
+		slow_amount = 0.0
+		slow_time = 0.0
+		burn_timer = 1.0
+	status = DDUnit.Status.BURN
+	burn_stack += amount
+	burn_ticks = 0
+	burn_max_ticks = maxi(max_ticks, 1)
+
+
+func add_poison(amount: float) -> void:
+	if dead or untargetable or amount <= 0.0:
+		return
+	if poison <= 0.0:
+		poison_timer = DDUnit.POISON_PERIOD
+	poison += amount
+
+
+func apply_impulse(dir: Vector2, tiles: float, duration: float) -> void:
+	if dead or untargetable or duration <= 0.0:
+		return
+	knock_vel = dir.normalized() * (tiles * float(arena.TILE) / duration)
+	knock_time = duration
+	stunned = 0.0
+
+
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0 or untargetable:
 		return
@@ -240,6 +350,22 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, r * 1.2, 0.0, TAU, 20, Color(1.0, 0.9, 0.4, 0.35), 2.0, true)
 	DDArt.shiesty(self, r, facing, run_clock, arena.team_ink(int(team)))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# status overlays, drawn as on a troop
+	if status == DDUnit.Status.SLOW:
+		draw_circle(Vector2.ZERO, r * 1.15, Color(0.18, 0.32, 0.85, 0.45))
+		draw_arc(Vector2.ZERO, r * 1.15, 0.0, TAU, 20, Color(0.35, 0.55, 1.0, 0.6), 2.0, true)
+	elif status == DDUnit.Status.BURN:
+		var c := DDUnit.burn_color(burn_ticks, burn_max_ticks)
+		var pulse := 0.2 + 0.5 * burn_pulse
+		draw_circle(Vector2.ZERO, r * (1.08 + 0.18 * burn_pulse), Color(c.r, c.g, c.b, pulse))
+		draw_arc(Vector2.ZERO, r * (1.08 + 0.18 * burn_pulse), 0.0, TAU, 20,
+			Color(c.r, c.g, c.b, 0.5 + 0.4 * burn_pulse), 2.0, true)
+	if poison > 0.0:
+		DDArt.poison_badge(self, Vector2(-r - 4.0, -r - 4.0), poison, poison_timer / DDUnit.POISON_PERIOD)
+	if stunned > 0.0:
+		for i in 3:
+			var a := clock * 4.0 + float(i) * TAU / 3.0
+			draw_circle(Vector2(cos(a), sin(a)) * r * 0.9 + Vector2(0, -r - 16.0), 3.0, Color(1.0, 0.9, 0.35))
 	if hp < max_hp:
 		var w := r * 2.0
 		draw_rect(Rect2(-w * 0.5, -r * 1.6, w, 3.0), Color(0.1, 0.08, 0.12, 0.8), true)

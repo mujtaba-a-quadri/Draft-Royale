@@ -6,7 +6,7 @@ extends RefCounted
 
 const OUT := Color(0.13, 0.12, 0.16)
 const ATTACK_NAMES := {
-	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
+	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "frog": "Poison Leap", "ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
@@ -33,6 +33,10 @@ static func hp_text(d: Dictionary) -> String:
 ## buildings show what they do on their clock; spells show what they leave behind.
 static func rate_text(d: Dictionary) -> String:
 	var parts: Array = []
+	if d.has("frog"):
+		# no cadence to show: it goes off once
+		var fc: Dictionary = d["frog"]
+		return "poison · once · leap r%.1f" % float(fc["leap_range"])
 	var sum_cfg: Dictionary = d.get("summon", {})
 	if not sum_cfg.is_empty():
 		var spawn_iv := float(sum_cfg.get("interval", sum_cfg.get("cooldown", 0.0)))
@@ -103,6 +107,32 @@ static func fitted(font: Font, text: String, avail: float, start: float, floor_s
 	while s > floor_size and font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, int(s)).x > avail:
 		s -= 1.0
 	return int(maxf(s, floor_size))
+
+
+## The full card: the in-hand face on top and the card's description (`blurb`)
+## in a panel underneath, inside one frame. Used where there is room to read it
+## (the reward screen). The text size steps down until the whole blurb fits.
+static func draw_full(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0) -> void:
+	if kind == "" or rect.size.x < 60.0:
+		return
+	var d: Dictionary = DDCard.get_card(kind)
+	var accent: Color = d["accent"]
+	var font := ThemeDB.fallback_font
+	var a := clampf(alpha, 0.0, 1.0)
+	ci.draw_rect(rect, Color(0.93, 0.89, 0.8, a))
+	var top := Rect2(rect.position, Vector2(rect.size.x, rect.size.y * 0.66))
+	draw(ci, kind, top, alpha)
+	var box := Rect2(rect.position.x + 6.0, top.end.y + 6.0, rect.size.x - 12.0, rect.end.y - top.end.y - 12.0)
+	ci.draw_rect(box, Color(0.97, 0.95, 0.89, a))
+	ci.draw_rect(box, Color(accent.darkened(0.2).r, accent.darkened(0.2).g, accent.darkened(0.2).b, a), false, 1.5)
+	var text := String(d.get("blurb", ""))
+	var pad := 8.0
+	var size := 17
+	while size > 8 and font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - pad * 2.0, size).y > box.size.y - pad * 2.0:
+		size -= 1
+	ci.draw_multiline_string(font, box.position + Vector2(pad, pad + float(size) * 0.9), text,
+		HORIZONTAL_ALIGNMENT_LEFT, box.size.x - pad * 2.0, size, -1, Color(0.2, 0.17, 0.14, a))
+	ci.draw_rect(rect, Color(0.13, 0.12, 0.16, a), false, 3.0)
 
 
 ## cost_col overrides the cost medallion's digit — the hand uses it to flag a
@@ -183,6 +213,8 @@ static func draw(ci: CanvasItem, kind: String, rect: Rect2, alpha: float = 1.0,
 	ci.draw_rect(atk, Color(accent.lightened(0.45), a))
 	ci.draw_rect(atk, Color(0.13, 0.12, 0.16, a), false, 1.2)
 	var dmg := int(d.get("dmg", 0))
+	if d.has("frog"):
+		dmg = int((d["frog"] as Dictionary)["poison"])
 	var atk_name := String(ATTACK_NAMES.get(kind, "Attack"))
 	var atk_avail := atk.size.x * 0.58 - 6.0
 	ci.draw_string(font, atk.position + Vector2(5.0, atk.size.y * 0.42), atk_name,

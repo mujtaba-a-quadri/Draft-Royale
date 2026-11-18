@@ -103,10 +103,17 @@ static func _deploy_hint(ci: CanvasItem, a) -> void:
 					ci.draw_rect(a.tile_rect(col, row), Color(0.9, 0.95, 0.6, 0.13))
 		var m: Vector2 = a.get_global_mouse_position()
 		if a.board_rect().has_point(m):
-			var tt: Vector2i = a.tile_of(m)
 			var lock = a.aim_lock(m)
+			# hovering where the card cannot go pins the preview to the closest
+			# open tile instead (that is also where a click lands)
+			var spot: Vector2 = m
+			if lock == null:
+				var open: Vector2 = a.deploy_point(sel_player, kind, m)
+				if open != Vector2.INF:
+					spot = open
+			var tt: Vector2i = a.tile_of(spot)
 			var at: Vector2 = a.aim_point(m)
-			var ok: bool = a.can_deploy(sel_player, kind, m)
+			var ok: bool = a.can_deploy(sel_player, kind, spot)
 			var col2: Color = Color(0.5, 1.0, 0.6, 0.85) if ok else Color(1.0, 0.35, 0.35, 0.85)
 			var pfp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
 			if lock != null:
@@ -234,9 +241,19 @@ static func _hud(ci: CanvasItem, a) -> void:
 		ink = Color(1.0, 0.76, 0.42)
 	ci.draw_string(ThemeDB.fallback_font, Vector2(chip.position.x + 12.0, chip.position.y + 21.0), label,
 		HORIZONTAL_ALIGNMENT_CENTER, chip_w - 24.0, 15, ink)
+	var run = a.get_node_or_null("/root/Run")
+	if run != null and run.active and not run.encounter().is_empty():
+		# the run, stacked in the empty margin left of the board
+		var rx: float = 16.0
+		var ry: float = a.ORIGIN.y + 40.0
+		var lines: Array = run.status_lines()
+		for i in lines.size():
+			ci.draw_string(ThemeDB.fallback_font, Vector2(rx, ry + float(i) * 20.0), String(lines[i]),
+				HORIZONTAL_ALIGNMENT_LEFT, a.ORIGIN.x - rx - 8.0, 15 if i == 0 else 13,
+				Color(1.0, 0.86, 0.55, 0.95) if i == 0 else Color(0.9, 0.88, 0.82, 0.85))
 	if a.view_mode == 1:
 		ci.draw_string(ThemeDB.fallback_font, Vector2(a.ORIGIN.x, 30.0),
-			"DEBUG  1 = +1 gold P1   2 = +1 both   3 = +1 P2   B = bot",
+			"DEBUG  1 / 2 / 3 = +2 gold and a card: P1 / both / P2   B = bot",
 			HORIZONTAL_ALIGNMENT_LEFT, 620.0, 13, Color(0.75, 0.8, 0.95, 0.75))
 	# opponent label only — their gold is drawn as coins on the board
 	var strip := Rect2(1372.0, 8.0, 216.0, 34.0)
@@ -276,7 +293,28 @@ static func _result(ci: CanvasItem, a) -> void:
 	var board: Rect2 = a.board_rect()
 	ci.draw_rect(board, Color(0.05, 0.05, 0.08, 0.62), true)
 	var verdict := "DRAW" if int(a.winner) < 0 else "PLAYER %d WINS" % (int(a.winner) + 1)
+	var hint := "press R to play again"
+	var sub := ""
+	var run = a.get_node_or_null("/root/Run")
+	if run != null and run.active and not (run.last as Dictionary).is_empty():
+		var hp_left := int(ceilf(float(run.commander_hp)))
+		if run.won_run:
+			verdict = "RUN COMPLETE"
+			sub = "all %d fights won  ·  commander %d / %d HP" % [run.ACT.size(), hp_left, int(run.COMMANDER_MAX)]
+			hint = "press Enter for a new run"
+		elif run.over:
+			verdict = "RUN OVER"
+			sub = "fell at fight %d of %d, %s" % [run.floor_index + 1, run.ACT.size(), String(run.last.get("name", ""))]
+			hint = "press Enter for a new run"
+		else:
+			verdict = "VICTORY"
+			var nxt: Dictionary = run.ACT[run.floor_index + 1]
+			sub = "commander %d / %d HP carries on  ·  next: %s" % [hp_left, int(run.COMMANDER_MAX), String(nxt["name"])]
+			hint = "choose a card to continue" if run.reward_pending() else "press Enter to continue"
 	ci.draw_string(ThemeDB.fallback_font, Vector2(board.position.x, board.position.y + 380.0), verdict,
 		HORIZONTAL_ALIGNMENT_CENTER, board.size.x, 44, Color(1.0, 0.95, 0.8))
-	ci.draw_string(ThemeDB.fallback_font, Vector2(board.position.x, board.position.y + 424.0), "press R to play again",
+	if sub != "":
+		ci.draw_string(ThemeDB.fallback_font, Vector2(board.position.x, board.position.y + 414.0), sub,
+			HORIZONTAL_ALIGNMENT_CENTER, board.size.x, 18, Color(0.95, 0.88, 0.7))
+	ci.draw_string(ThemeDB.fallback_font, Vector2(board.position.x, board.position.y + 448.0), hint,
 		HORIZONTAL_ALIGNMENT_CENTER, board.size.x, 20, Color(0.85, 0.85, 0.9))

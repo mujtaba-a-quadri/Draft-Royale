@@ -192,6 +192,19 @@ func _ready() -> void:
 	elif scenario == "gilart":
 		shot_times = [0.8]
 		run_time = 1.0
+	elif scenario == "frog":
+		shot_times = []
+		run_time = 5.0
+	elif scenario == "dupes":
+		shot_times = [1.0, 2.2]
+		run_time = 3.0
+	elif scenario == "run":
+		# each fight is its own scene, so the shot is retaken (and overwritten) per fight
+		shot_times = [2.1]
+		run_time = 2.6
+	elif scenario == "frogart":
+		shot_times = [0.8]
+		run_time = 1.0
 	elif scenario == "whelpart":
 		shot_times = [0.8]
 		run_time = 1.0
@@ -379,6 +392,72 @@ func _process(delta: float) -> void:
 		_neko_steps()
 	elif scenario == "gil":
 		_gil_steps()
+	elif scenario == "frog":
+		_frog_steps()
+	elif scenario == "shiestyfx":
+		_shiesty_fx_steps()
+	elif scenario == "dupes":
+		_dupes_steps()
+	elif scenario == "run":
+		_run_steps()
+	elif scenario == "timeout":
+		# the clock running out: more towers lost loses; level on towers -> tower
+		# HP; level on both -> draw. Each case re-runs the finish on a reset board.
+		if _at(0.4):
+			var cases := [
+				["P1 lost none at 100 HP each, P2 lost one but 500 HP left", [100.0, 100.0, 100.0], [0.0, 250.0, 250.0], 0],
+				["one down each, P2 has more HP left", [0.0, 100.0, 100.0], [0.0, 250.0, 250.0], 1],
+				["one down each, level HP", [0.0, 120.0, 120.0], [0.0, 120.0, 120.0], -1],
+			]
+			for c in cases:
+				var mine: Array = []
+				var theirs: Array = []
+				for tw in arena.towers:
+					(mine if int(tw.team) == 0 else theirs).append(tw)
+				for k in 3:
+					for side in [[mine, c[1]], [theirs, c[2]]]:
+						var tw: Node = (side[0] as Array)[k]
+						tw.hp = float((side[1] as Array)[k])
+						tw.dead = tw.hp <= 0.0
+				arena.match_over = false
+				arena._finish_on_towers()
+				print("[timeout] %s -> winner %d (expect %d) | %s" % [c[0], arena.winner, c[3], arena.banner_text])
+	elif scenario == "frogart":
+		# 5x close-up: sitting, mid-hop, mid-leap
+		if _at(0.3):
+			for i in 3:
+				var u = arena.spawn_troop("frog", 0, arena.tile_center(9.5, 21.5), true)
+				u.deploy_timer = 0.0
+				u.set_physics_process(false)
+				u.position = arena.tile_center(9.5, 14.5 + 5.0 * float(i))
+				u.scale = Vector2(5.0, 5.0)
+				u.z_index = 30
+				u.facing = 1.0
+				if i == 1:
+					u.frog_hop_t = float(u.frog_cfg["hop_time"]) * 0.5
+				if i == 2:
+					u.frog_leaping = true
+					u.frog_leap_t = float(u.frog_cfg["leap_time"]) * 0.4
+				u.queue_redraw()
+	elif scenario == "deployclamp":
+		# aiming a troop deep in enemy ground: the preview and the click both go to
+		# the closest tile it may land on; aiming at an open tile is left alone
+		if _at(0.3):
+			arena.hands[0][0] = "slate"
+			arena.gold[0] = 20.0
+			arena.selected_player = 0
+			arena.selected_index = 0
+			var far: Vector2 = arena.tile_center(9.5, 5.5)
+			var open: Vector2 = arena.deploy_point(0, "slate", far)
+			print("[clamp] aimed at tile %s can_deploy=%s -> lands on tile %s (can_deploy=%s) aim_point tile %s" % [
+				str(arena.tile_of(far)), str(arena.can_deploy(0, "slate", far)), str(arena.tile_of(open)),
+				str(arena.can_deploy(0, "slate", open)), str(arena.tile_of(arena.aim_point(far)))])
+			var own: Vector2 = arena.tile_center(9.5, 24.5)
+			print("[clamp] own-side tile %s stays %s" % [str(arena.tile_of(own)), str(arena.tile_of(arena.deploy_point(0, "slate", own)))])
+			arena.try_deploy_at(far)
+			for u in arena.units:
+				if is_instance_valid(u) and String(u.kind) == "slate" and int(u.team) == 0:
+					print("[clamp] slate placed on tile %s gold left %.1f" % [str(arena.tile_of(u.position)), arena.gold[0]])
 	elif scenario == "gilart":
 		# 4x close-up: Gilgamesh at rest and mid-lash, Enkidu with spear and sword
 		if _at(0.3):
@@ -1519,6 +1598,215 @@ func _gil_steps() -> void:
 		gil_dummy.max_hp = 9999.0
 	if _at(8.8):
 		print("[gil] t8.8 Gilgamesh lashed 2.25 off his edge: dummy lost %d (22 a lash, every 1.3 s)" % int(9999.0 - gil_dummy.hp))
+
+
+## The dart frog: hops toward the enemy in 0.7 tile steps with rests between;
+## when a dummy's edge comes within 2 tiles it leaps on it and bursts, putting
+## 10 poison on the dummy and on one standing beside it (within 0.5), none on
+## one 1.5 tiles off, and the frog is gone.
+var frog: Node = null
+var frog_dummies: Array = []
+var frog_last := Vector2.ZERO
+var frog_burst_gaps: Array = []
+func _frog_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		frog = arena.spawn_troop("frog", 0, arena.tile_center(9.5, 24.5), true)
+		frog.deploy_timer = 0.0
+		frog_last = frog.position
+		print("[frog] hop=%.2f over %.2f s, rest %.2f s" % [float(frog.frog_cfg["hop"]),
+			float(frog.frog_cfg["hop_time"]), float(frog.frog_cfg["rest"])])
+	# every hop's landing: how far it went
+	if is_instance_valid(frog) and not frog.dead and elapsed > 0.3 and elapsed < 2.4:
+		if frog.frog_hop_t <= 0.0 and not frog.frog_leaping and frog.position.distance_to(frog_last) > 1.0:
+			print("[frog] t%.2f hopped %.2f tiles" % [elapsed, frog.position.distance_to(frog_last) / t])
+			frog_last = frog.position
+	if _at(2.4):
+		var fwd: Vector2 = (arena.tile_center(9.5, 19.5) - arena.tile_center(9.5, 20.5)).normalized()
+		var a: Node = _lani_dummy("hero", frog.position + fwd * 3.0 * t)
+		# 0.92 apart: just clear of body overlap (0.9), so nothing shoves them
+		var b: Node = _lani_dummy("hero", a.position + fwd.orthogonal() * 0.92 * t)
+		var c: Node = _lani_dummy("hero", a.position + fwd.orthogonal() * -1.5 * t)
+		frog_dummies = [a, b, c]
+		for d in frog_dummies:
+			d.hp = 999.0
+			d.max_hp = 999.0
+			# frozen, so body collision cannot push the pair apart before the burst
+			d.set_physics_process(false)
+		print("[frog] dummies 3.0 ahead: one, one touching it (0.92 beside), one 1.5 off the other way")
+	if is_instance_valid(frog) and not frog.dead and frog.frog_leaping and frog.frog_leap_t <= 0.02 and not frog_dummies.is_empty():
+		print("[frog] t%.2f leaps at dummy %d; centre distances to dummies %s" % [elapsed,
+			frog_dummies.find(frog.frog_victim),
+			str(frog_dummies.map(func(u): return snappedf(arena.tiles_between(frog.position, u.position), 0.01)))])
+	# the burst point and where each dummy stood, on the frame it went off
+	if arena.has_meta("frog_burst") and frog_burst_gaps.is_empty() and not frog_dummies.is_empty():
+		var at: Vector2 = arena.get_meta("frog_burst")
+		for d in frog_dummies:
+			frog_burst_gaps.append(arena.tiles_between(at, d.position) - float(d.get_radius_t()))
+	if _at(3.6):
+		print("[frog] t3.6 frog gone=%s" % str(not is_instance_valid(frog) or frog.dead))
+		for i in frog_dummies.size():
+			var d: Node = frog_dummies[i]
+			var gap: float = frog_burst_gaps[i] if i < frog_burst_gaps.size() else -99.0
+			print("[frog]   dummy edge %.2f tiles from the landing -> poison %.0f (expect %s)" % [
+				gap, d.poison, "10" if gap <= 0.5 else "0"])
+
+
+## Shiesty on his run home takes what a troop takes, through the same arena
+## paths the cards use: a burn splash, a slow blast, poison, a knockback blast.
+## Towers still ignore him. Run with --bots=off.
+var fx_sh: Node = null
+var fx_mark := Vector2.ZERO
+func _shiesty_fx_steps() -> void:
+	if _at(0.2):
+		arena.ability[0] = "shiesty"
+		arena.gold[0] = 10.0
+		arena.ability_cd[0] = 0.0
+		print("[sfx] ability used=%s" % str(arena.use_ability(0)))
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
+				fx_sh = u
+	if fx_sh == null or not is_instance_valid(fx_sh):
+		return
+	if _at(1.2):
+		fx_sh.hp = 400.0
+		fx_sh.max_hp = 400.0
+		print("[sfx] t1.2 landed=%s; burn splash 20 from the enemy side" % str(not fx_sh.untargetable))
+		arena.apply_burn_at(fx_sh.position, 0.5, 20.0, 1)
+		print("[sfx]   burn_stack=%.0f status=%d" % [fx_sh.burn_stack, fx_sh.status])
+	if _at(3.3):
+		print("[sfx] t3.3 hp=%.0f (burn ticks 8 + 4 -> expect 388)" % fx_sh.hp)
+		fx_mark = fx_sh.position
+	if _at(3.8):
+		var free_run: float = fx_sh.position.distance_to(fx_mark)
+		fx_mark = fx_sh.position
+		arena.death_aoe(fx_sh.position, 1.0, 0.0, 0.3, 2.0, 1)
+		print("[sfx] t3.8 ran %.1f px in 0.5 s; slow blast -> status=%d slow=%.2f" % [free_run, fx_sh.status, fx_sh.slow_amount])
+	if _at(4.3):
+		print("[sfx] t4.3 slowed: ran %.1f px in 0.5 s (expect 70 %%)" % fx_sh.position.distance_to(fx_mark))
+		fx_sh.add_poison(5.0)
+		var before: Vector2 = fx_sh.position
+		arena.spell_blast(fx_sh.position + Vector2(-20, 0), 1.5, 0.0, 1, 1.0, 0.0, 1.0, "fireball")
+		fx_mark = before
+		print("[sfx]   poison=%.0f knock_time=%.2f" % [fx_sh.poison, fx_sh.knock_time])
+	if _at(4.7):
+		print("[sfx] t4.7 shoved %.2f tiles; towers ignore him: tower_ignore=%s" % [
+			fx_sh.position.distance_to(fx_mark) / float(arena.TILE), str(fx_sh.tower_ignore)])
+
+
+## Duplicate cards: a deck of repeats deals a hand with two of a card; each copy
+## has its own id, cycles back as itself, keeps its own Firebolt charges, and a
+## Penny turning into Pen leaves the other Penny alone. Then the draw clock:
+## spending gold pulls it forward a second per gold, a big spend carries over,
+## and the debug key gives 2 gold and a card. Run with --bots=off.
+func _dupes_ids() -> String:
+	var out: Array = []
+	for i in arena.hands[0].size():
+		out.append("%s#%d" % [arena.hands[0][i], arena.hand_id(0, i)])
+	return str(out)
+
+
+func _dupes_steps() -> void:
+	var pos: Vector2 = arena.tile_center(9.5, 24.5)
+	if _at(0.3):
+		arena.deck_lists[0] = ["firebolt", "firebolt", "penny", "penny", "frog", "frog", "hero", "hero"]
+		arena._build_decks(11)
+		# a fixed opening, so the checks below do not depend on the shuffle
+		arena.hands[0] = ["firebolt", "firebolt", "penny", "penny"]
+		arena.queues[0] = ["frog", "frog", "hero", "hero"]
+		arena.hand_ids[0] = []
+		arena.queue_ids[0] = []
+		arena.gold[0] = 10.0
+		print("[dupes] hand %s" % _dupes_ids())
+	if _at(0.5):
+		var a: int = arena.hand_id(0, 0)
+		var b: int = arena.hand_id(0, 1)
+		arena.deploy(0, 0, pos)
+		print("[dupes] cast firebolt #%d once: charges #%d=%d #%d=%d (expect 1, 2)" % [a, a,
+			arena.charges_of(0, "firebolt", a), b, arena.charges_of(0, "firebolt", b)])
+		var p1: int = arena.hand_id(0, 2)
+		arena.gold[0] = 10.0
+		arena.deploy(0, 2, pos)
+		print("[dupes] played penny #%d -> hand %s (the other penny stays; pen is new)" % [p1, _dupes_ids()])
+		print("[dupes] deck back %s ids %s" % [str(arena.queues[0]), str(arena.queue_ids[0])])
+	if _at(1.2):
+		arena.draw_timer[0] = 16.0
+		arena.gold[0] = 10.0
+		var before: int = arena.hands[0].size()
+		arena.deploy(0, 3, pos)
+		print("[dupes] spent 3 (penny): draw_timer 16 -> %.1f (expect 13), hand %d -> %d" % [
+			arena.draw_timer[0], before, arena.hands[0].size()])
+		arena.draw_timer[0] = 4.0
+		arena.spend_gold_draw(0, 10.0)
+		fx_mark = Vector2(float(arena.hands[0].size()), 0)
+	if _at(1.3):
+		print("[dupes] spend 10 with 4 s left: one draw (hand %d -> %d), clock carried to %.1f (expect ~10)" % [
+			int(fx_mark.x), arena.hands[0].size(), arena.draw_timer[0]])
+		var g0: float = arena.gold[0]
+		var h0: int = arena.hands[0].size()
+		arena._debug_gold(0, "")
+		print("[dupes] debug key: gold %.1f -> %.1f, hand %d -> %d" % [g0, arena.gold[0], h0, arena.hands[0].size()])
+		print("[dupes] hand %s" % _dupes_ids())
+
+
+## The run loop, driven by script across scene reloads (run with --run=7
+## --bots=off): fight 1 is won with the commander cut to 180; fight 2 opens with
+## the commander still at 180 and the side towers full, and is won; fight 3 is
+## the spider elite, lost; the result screen then starts a fresh run.
+func _run_steps() -> void:
+	var run = arena.get_node_or_null("/root/Run")
+	if run == null or not run.active:
+		if _at(0.3):
+			print("[run] no run active (pass --run)")
+		return
+	if _at(0.3):
+		var kings := []
+		var sides := []
+		for t in arena.towers:
+			if is_instance_valid(t) and int(t.team) == 0:
+				if bool(t.get("crown")):
+					kings.append(int(t.hp))
+				else:
+					sides.append(int(t.hp))
+		print("[run] fight %d (%s): commander %s side towers %s | abilities %s | hand %s | enemy deck %d" % [
+			run.floor_index + 1, String(run.encounter()["name"]), str(kings), str(sides), str(arena.ability),
+			str(arena.hands[0]), arena.hands[1].size() + arena.queues[1].size()])
+	if _at(0.6):
+		var mine: Node = arena._king_of(0)
+		if run.floor_index == 0:
+			mine.take_damage(70.0, mine.position)
+		var foe: Node = arena._king_of(1)
+		if run.floor_index < 2:
+			foe.take_damage(99999.0, foe.position)
+		else:
+			print("[run]   enemy side is the spider: %s" % str(arena.spider != null and is_instance_valid(arena.spider)))
+			mine.take_damage(99999.0, mine.position)
+		print("[run]   result: %s  run over=%s won_run=%s commander now %.0f" % [
+			str(run.last), str(run.over), str(run.won_run), run.commander_hp])
+	if _at(0.9):
+		if run.run_seed != 7:
+			# the fresh run the result screen started after the loss: stop here
+			print("[run] new run after the loss: fight %d commander %.0f history %d seed changed=%s deck %d" % [
+				run.floor_index + 1, run.commander_hp, run.history.size(), str(run.run_seed != 7), run.deck.size()])
+			return
+		if not run.reward_pending():
+			arena.continue_run()
+			return
+		var before: int = run.floor_index
+		arena.continue_run()
+		print("[run]   reward pending: screen up=%s choices %s; Enter does not skip it (still fight %d: %s)" % [
+			str(arena.reward_screen != null and is_instance_valid(arena.reward_screen)), str(run.reward_choices()),
+			run.floor_index + 1, str(run.floor_index == before)])
+	if _at(2.3) and run.run_seed == 7 and run.reward_pending():
+		var rs: Node = arena.reward_screen
+		var n0: int = run.deck.size()
+		if run.floor_index == 0:
+			var want: String = String(rs.choices[1])
+			rs.pick(1)
+			print("[run]   picked %s: deck %d -> %d, last card %s" % [want, n0, run.deck.size(), str(run.deck[-1])])
+		else:
+			rs.skip()
+			print("[run]   skipped: deck %d -> %d" % [n0, run.deck.size()])
 
 
 func _lani_clear_except(keep: Array) -> void:

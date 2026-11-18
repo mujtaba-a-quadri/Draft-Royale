@@ -106,6 +106,18 @@ var spear_cfg: Dictionary = {}
 var spear_away := 0.0
 var base_dmg := 0.0
 var base_interval := 0.0
+## Poison dart frog: moves only in hops (frog_hop_t > 0 in the air, then
+## frog_rest on the ground) and leaps on whatever comes within range, bursting
+## on landing. The leap is committed once it starts.
+var frog_cfg: Dictionary = {}
+var frog_hop_t := 0.0
+var frog_rest := 0.0
+var frog_dir := Vector2.ZERO
+var frog_leaping := false
+var frog_leap_t := 0.0
+var frog_from := Vector2.ZERO
+var frog_to := Vector2.ZERO
+var frog_victim: Node = null
 ## Hot Chicken: pecks fireballs, then takes to the air and rams.
 var chicken_cfg: Dictionary = {}
 var chicken_hits := 0
@@ -279,6 +291,7 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 			summon_cd = maxf(0.0, float(summon_cfg["first"]) - DEPLOY_DELAY)
 	whip = bool(d.get("whip", false))
 	spear_cfg = d.get("spear", {})
+	frog_cfg = d.get("frog", {})
 	base_dmg = dmg
 	base_interval = interval
 	beam = bool(d.get("beam", false))
@@ -442,6 +455,11 @@ func _physics_process(delta: float) -> void:
 	if leaping:
 		# committed: once he is off the ground the slam is coming
 		_tick_leap(delta)
+		queue_redraw()
+		return
+	if frog_leaping:
+		# the frog's leap is committed too: stuns and shoves wait for the landing
+		_tick_frog_leap(delta)
 		queue_redraw()
 		return
 	if dodging or jumping:
@@ -629,6 +647,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if not staff_cfg.is_empty():
 		_tick_staff(delta, gap)
+		queue_redraw()
+		return
+	if not frog_cfg.is_empty():
+		_tick_frog(delta)
 		queue_redraw()
 		return
 	if not spear_cfg.is_empty() and _try_throw():
@@ -1727,6 +1749,97 @@ func _try_throw() -> bool:
 	return true
 
 
+## The frog on the ground: leap if anything is in range, otherwise hop toward
+## its target (a hop, once started, finishes; the rest between hops is where it
+## can turn).
+func _tick_frog(delta: float) -> void:
+	if frog_hop_t > 0.0:
+		var hop_time: float = float(frog_cfg["hop_time"])
+		var step: float = float(frog_cfg["hop"]) / hop_time
+		var spd: float = step * (1.0 - (slow_amount if status == Status.SLOW else 0.0))
+		position += frog_dir * spd * float(arena.TILE) * minf(delta, frog_hop_t)
+		frog_hop_t = maxf(0.0, frog_hop_t - delta)
+		moved_this_frame = true
+		return
+	var prey := _frog_prey()
+	if prey != null:
+		frog_leaping = true
+		frog_leap_t = 0.0
+		frog_from = position
+		frog_victim = prey
+		frog_to = prey.position
+		if absf(prey.position.x - position.x) > 1.0:
+			facing = signf(prey.position.x - position.x)
+		return
+	frog_rest = maxf(0.0, frog_rest - delta)
+	if frog_rest > 0.0 or target == null or not is_instance_valid(target):
+		state = S.IDLE
+		return
+	state = S.APPROACH
+	var wp: Vector2 = arena.route_point(position, target.position)
+	var dir := wp - position
+	if dir.length() < 1.0:
+		dir = target.position - position
+	if dir.length() < 0.001:
+		return
+	frog_dir = dir.normalized()
+	if absf(frog_dir.x) > 0.05:
+		facing = signf(frog_dir.x)
+	frog_hop_t = float(frog_cfg["hop_time"])
+	frog_rest = float(frog_cfg["rest"])
+
+
+## The nearest ground enemy (troop, building or tower) whose edge is within
+## leap_range tiles of the frog's centre. Flyers are out of reach.
+func _frog_prey() -> Node:
+	var best: Node = null
+	var best_d := INF
+	var rng: float = float(frog_cfg["leap_range"])
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		if e.get("flying") == true:
+			continue
+		var d: float = arena.tiles_between(position, e.position) - float(e.get_radius_t())
+		if d <= rng and d < best_d:
+			best_d = d
+			best = e
+	return best
+
+
+func _tick_frog_leap(delta: float) -> void:
+	frog_leap_t += delta
+	if frog_victim != null and is_instance_valid(frog_victim) and not frog_victim.dead:
+		# it follows its prey through the air: the landing is on it, not where it was
+		frog_to = frog_victim.position
+	var f: float = clampf(frog_leap_t / float(frog_cfg["leap_time"]), 0.0, 1.0)
+	position = frog_from.lerp(frog_to, f)
+	if f >= 1.0:
+		_frog_burst()
+
+
+## Landing: 10 poison on every ground enemy the `burst` circle touches (any part
+## of its body; bodies cannot overlap, so measured to the centre it would only
+## ever reach the one it landed on), and the frog is spent.
+func _frog_burst() -> void:
+	frog_leaping = false
+	# for --scenario=frog: where the last burst went off
+	arena.set_meta("frog_burst", position)
+	var r: float = float(frog_cfg["burst"])
+	for e in arena.enemy_entities(team):
+		if not is_instance_valid(e) or e.dead or e.get("flying") == true:
+			continue
+		if not e.has_method("add_poison"):
+			continue
+		if arena.tiles_between(position, e.position) <= r + float(e.get_radius_t()):
+			e.add_poison(float(frog_cfg["poison"]))
+	arena.spawn_splash_ring(position, r, team)
+	hp = 0.0
+	# it spent itself: nothing killed it, so nothing (a zombie) gets to raise it
+	last_attacker = null
+	_die()
+
+
 func _spear_back() -> void:
 	dmg = base_dmg
 	reach = ground_reach
@@ -1965,6 +2078,19 @@ func _draw() -> void:
 		var hf: float = lift / float(arena.TILE)
 		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
 		draw_circle(Vector2.ZERO, px * (0.9 - 0.5 * hf), Color(0.05, 0.06, 0.1, 0.3))
+	elif frog_leaping or frog_hop_t > 0.0:
+		# the frog's hops are small arcs; the leap a big one
+		var ff: float
+		var height: float
+		if frog_leaping:
+			ff = clampf(frog_leap_t / float(frog_cfg["leap_time"]), 0.0, 1.0)
+			height = float(arena.TILE) * 0.9
+		else:
+			ff = 1.0 - frog_hop_t / float(frog_cfg["hop_time"])
+			height = float(arena.TILE) * 0.3
+		lift = sin(ff * PI) * height
+		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
+		draw_circle(Vector2.ZERO, px * (0.9 - 0.3 * sin(ff * PI)), Color(0.05, 0.06, 0.1, 0.3))
 	elif leaping:
 		# Laniakea going up to meet a flyer: an arc that ends at flying height
 		var lf: float = clampf(leap_t / maxf(0.1, float(sword_cfg["leap_time"])), 0.0, 1.0)
@@ -2017,6 +2143,13 @@ func _draw() -> void:
 	elif kind == "gilgamesh":
 		DDArt.gilgamesh(self, px, facing, clock, {"lashing": whip_t > 0.0, "walk": state == S.APPROACH},
 			ink, arena.team_color(int(team)))
+	elif kind == "frog":
+		var air := 0.0
+		if frog_leaping:
+			air = 1.0
+		elif frog_hop_t > 0.0:
+			air = 0.7
+		DDArt.dart_frog(self, px, facing, clock, air, ink, DDArt.frog_stripe(arena.team_color(int(team))))
 	elif kind == "enkidu":
 		DDArt.enkidu(self, px, facing, clock, {"spear": spear_away <= 0.0, "walk": state == S.APPROACH,
 			"strike": attack_stretch / ATTACK_STRETCH}, ink)

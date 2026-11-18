@@ -58,9 +58,17 @@ func draw_hand(count: int = 4) -> void:
 	voice.stream = draw_stream
 	voice.play(float(start) * slice_seconds)
 	var length: float = float(n) * slice_seconds
-	get_tree().create_timer(length).timeout.connect(func() -> void:
+	# a child timer, not a SceneTree one: it goes with this node when the scene is
+	# reloaded (a run moving to its next fight) instead of firing into freed nodes
+	var stopper := Timer.new()
+	stopper.one_shot = true
+	stopper.wait_time = maxf(0.01, length)
+	add_child(stopper)
+	stopper.timeout.connect(func() -> void:
 		if is_instance_valid(voice) and voice.playing:
-			voice.stop())
+			voice.stop()
+		stopper.queue_free())
+	stopper.start()
 
 
 func place_card() -> void:

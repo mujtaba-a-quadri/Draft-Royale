@@ -50,6 +50,9 @@ var panel: Control = null
 var player := 0
 var index := -1
 var kind := ""
+## which copy of `kind` this node is showing (arena.hand_ids); duplicates in a
+## hand share a kind but never an id
+var card_id := -1
 var back := false
 var grow := true
 var home := Rect2()
@@ -82,7 +85,8 @@ func setup(p_panel: Control, p_player: int, p_index: int) -> void:
 
 
 ## Bind a card kind to this slot, and whether it shows its face or its back.
-func set_card(p_kind: String, p_back: bool) -> void:
+func set_card(p_kind: String, p_back: bool, p_id: int = -1) -> void:
+	card_id = p_id
 	if p_kind == kind and p_back == back:
 		return
 	kind = p_kind
@@ -323,7 +327,7 @@ func _draw_used_charge(r: Rect2) -> void:
 	var total := int(DDCard.get_card(kind).get("uses", 1))
 	if total <= 1:
 		return
-	var left := _panel_int("charges_left", kind, total)
+	var left := _panel_int("charges_left", card_id, total)
 	if left >= total or left <= 0:
 		return
 	draw_colored_polygon(PackedVector2Array([

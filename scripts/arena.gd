@@ -26,11 +26,11 @@ const TOWER_BUFFER := 3.5
 const ABILITY_COST := 2
 const ABILITY_COOLDOWN := 15.0
 ## 150 second matches. The last 60 are the closing window: double gold, half
-## ability cooldowns, draws one second faster.
+## ability cooldowns, draws two seconds faster (the cut doubled with the draw).
 const MATCH_TIME := 150.0
 const OVERTIME := 60.0
 const OVERTIME_GOLD := 2.0
-const OVERTIME_DRAW_CUT := 1.0
+const OVERTIME_DRAW_CUT := 2.0
 const TENTACLE_HP := 35.0
 ## the hold squeezes: TENTACLE_DMG on the grab and every TENTACLE_INTERVAL after
 const TENTACLE_DMG := 7.0
@@ -85,15 +85,27 @@ var units: Array = []
 var gold := [4.2, 4.2]
 var gold_max := 10.0
 var gold_rate := 1.0 / 2.4
-## Remaining casts for cards that carry more than one (player -> kind -> casts). A
-## card is only listed here once it has been used; an absent entry means "full".
+## Remaining casts for cards that carry more than one (player -> card id -> casts).
+## A card is only listed here once it has been used; an absent entry means "full".
 var charges := [{}, {}]
+## Every card in a hand or deck is one copy with its own id, so a deck can hold
+## duplicates. hand_ids / queue_ids run parallel to hands / queues (which stay
+## lists of kinds for everything that only asks "what card is this").
+var hand_ids := [[], []]
+var queue_ids := [[], []]
+var next_card_id := 1
+## The cards each player's deck is built from; empty means one of every card in
+## DDCard.ORDER. Repeats are allowed.
+var deck_lists := [[], []]
 
 ## Seconds left in the match, and whether the closing window is live.
 var match_time_left := MATCH_TIME
 var overtime := false
 const HAND_MAX := 8
-const DRAW_INTERVAL := 8.0
+## A draw every DRAW_INTERVAL seconds, and every gold spent takes DRAW_PER_GOLD
+## seconds off the wait for the next one (spend 5, draw 5 s sooner).
+const DRAW_INTERVAL := 12.0
+const DRAW_PER_GOLD := 1.0
 var draw_timer := [DRAW_INTERVAL, DRAW_INTERVAL]
 var hands := [[], []]
 var queues := [[], []]
@@ -167,16 +179,113 @@ func _ready() -> void:
 		var arng := RandomNumberGenerator.new()
 		arng.randomize()
 		ability = ["tentacle", "shiesty"] if arng.randf() < 0.5 else ["shiesty", "tentacle"]
+	var in_run := _apply_run()
 	_build_board_state()
+	if in_run:
+		# the run's commander comes in as wounded as it left the last fight; the
+		# side towers (and the enemy's commander) are fresh every time
+		var king := _king_of(0)
+		if king != null:
+			king.hp = minf(float(king.max_hp), float(Run.commander_hp))
 	_build_control_layer()
 	_build_preview()
-	_build_decks()
+	_build_decks(Run.deck_seed() if in_run else -1)
 	_build_sfx()
 	_build_hud()
 	_build_shelf()
 	_setup_bots()
 	_dev_hook()
+	if in_run:
+		var elite := String(Run.encounter().get("elite", ""))
+		if elite == "spider":
+			start_spider_encounter.call_deferred()
+		elif elite == "kraken":
+			start_kraken_encounter.call_deferred()
+		else:
+			banner_flash("Fight %d of %d  —  %s" % [Run.floor_index + 1, Run.ACT.size(), String(Run.encounter()["name"])])
 	queue_redraw()
+
+
+## The run layer (scripts/run_state.gd, autoload "Run"). Pressing play starts a
+## run; `--match` plays one plain match instead, and the bot sim and dev
+## scenarios (`--botsim=`, `--scenario=`, `--shots=`, `--demo`) never start one
+## unless `--run` / `--run=<seed>` asks. While a run is going, this match is its
+## current fight: your run deck against the encounter's, a bot on the other side,
+## abilities from the run. Returns whether this match is part of a run.
+func _apply_run() -> bool:
+	if not Run.active:
+		var want := true
+		var run_seed := -1
+		for a in OS.get_cmdline_user_args():
+			if a == "--match" or a.begins_with("--botsim=") or a.begins_with("--scenario=") \
+					or a.begins_with("--shots=") or a == "--demo":
+				want = false
+		for a in OS.get_cmdline_user_args():
+			if a == "--run" or a.begins_with("--run="):
+				want = true
+				if a.begins_with("--run="):
+					run_seed = int(a.substr(6))
+		if want:
+			Run.start(run_seed)
+	if not Run.active or Run.encounter().is_empty():
+		return false
+	deck_lists = [Run.deck.duplicate(), (Run.encounter().get("deck", []) as Array).duplicate()]
+	# side 1 is always the encounter's bot; side 0 is yours (or a bot with --bots=both)
+	bot_players[1] = true
+	ability = [Run.ability, Run.enemy_ability()]
+	return true
+
+
+## From the result screen: the next fight after a win, a fresh run once this one
+## is over (won or lost). Either way the arena scene is rebuilt from the run.
+func continue_run() -> void:
+	if not Run.active or not match_over:
+		return
+	if Run.reward_pending():
+		# the card has to be picked or skipped first (the reward screen does that)
+		return
+	if Run.can_continue():
+		Run.advance()
+	elif Run.over:
+		Run.start()
+	else:
+		return
+	get_tree().reload_current_scene()
+
+
+## Every way a match ends comes through here once (the commander falling, the
+## clock), so the run hears about it.
+func _match_ended() -> void:
+	if not Run.active:
+		return
+	var king := _king_of(0)
+	var left := 0.0
+	if king != null and is_instance_valid(king) and not king.dead:
+		left = float(king.hp)
+	Run.report(int(winner), left)
+	if Run.reward_pending():
+		_show_reward()
+
+
+const REWARD_SCRIPT := preload("res://scripts/reward_screen.gd")
+var reward_screen: Control = null
+
+
+## The card reward after a won fight: its own CanvasLayer, above the board and
+## the hand. Picking or skipping moves the run on (continue_run).
+func _show_reward() -> void:
+	if reward_screen != null and is_instance_valid(reward_screen):
+		return
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	reward_screen = REWARD_SCRIPT.new()
+	reward_screen.setup(self, Run.reward_choices())
+	layer.add_child(reward_screen)
+	# the hand is done for this fight; it would only show through the screen
+	for pn in panels:
+		if is_instance_valid(pn):
+			pn.visible = false
 
 
 func _setup_bots() -> void:
@@ -292,7 +401,7 @@ func _build_control_layer() -> void:
 func _build_decks(seed_value: int = -1) -> void:
 	charges = [{}, {}]
 	for p in 2:
-		var deck: Array = DDCard.ORDER.duplicate()
+		var deck: Array = (deck_lists[p] as Array).duplicate() if not (deck_lists[p] as Array).is_empty() else DDCard.ORDER.duplicate()
 		var rng := RandomNumberGenerator.new()
 		if seed_value >= 0:
 			rng.seed = seed_value + p * 7919
@@ -305,7 +414,48 @@ func _build_decks(seed_value: int = -1) -> void:
 			deck[j] = tmp
 		hands[p] = deck.slice(0, 4)
 		queues[p] = deck.slice(4)
+		hand_ids[p] = []
+		queue_ids[p] = []
+		_sync_ids(p)
 		gold[p] = 5.0
+
+
+func _new_card_id() -> int:
+	next_card_id += 1
+	return next_card_id - 1
+
+
+## Keep the id lists the same length as the kind lists. Normal play moves both
+## together; anything that rewrites a hand or deck wholesale (an elite clearing
+## the opponent, a dev scenario) gets fresh ids for it here.
+func _sync_ids(p: int) -> void:
+	if (hand_ids[p] as Array).size() != (hands[p] as Array).size():
+		hand_ids[p] = (hands[p] as Array).map(func(_k): return _new_card_id())
+	if (queue_ids[p] as Array).size() != (queues[p] as Array).size():
+		queue_ids[p] = (queues[p] as Array).map(func(_k): return _new_card_id())
+
+
+## The id of the copy in hand slot i (-1 if there is none).
+func hand_id(p: int, i: int) -> int:
+	if p < 0 or p > 1:
+		return -1
+	_sync_ids(p)
+	if i < 0 or i >= (hand_ids[p] as Array).size():
+		return -1
+	return int(hand_ids[p][i])
+
+
+## Hand slot holding the copy with this id (-1 if it is not in the hand).
+func hand_index_of(p: int, id: int) -> int:
+	if p < 0 or p > 1:
+		return -1
+	_sync_ids(p)
+	return (hand_ids[p] as Array).find(id)
+
+
+## The copy currently lifted (-1 if none).
+func selection_id() -> int:
+	return hand_id(selected_player, selected_index)
 
 
 ## One sound node for the whole match; it also owns the deal sound so the four
@@ -443,10 +593,12 @@ func _draw_twinkle(at: Vector2, r: float, size: float) -> void:
 func draw_card(team: int) -> bool:
 	if queues[team].is_empty():
 		return false
+	_sync_ids(team)
 	if hands[team].size() >= HAND_MAX:
 		var dropped: String = hands[team][0]
 		hands[team].remove_at(0)
 		queues[team].append(dropped)
+		queue_ids[team].append(hand_ids[team].pop_front())
 		# the hand shifted left by one: follow the same card, not the same index
 		if selected_player == team:
 			if selected_index == 0:
@@ -460,8 +612,10 @@ func draw_card(team: int) -> bool:
 			elif int(staged["index"]) > 0:
 				staged["index"] = int(staged["index"]) - 1
 	var k: String = queues[team].pop_front()
+	var kid: int = int(queue_ids[team].pop_front())
 	hands[team].append(k)
-	_reset_charges(team, k)
+	hand_ids[team].append(kid)
+	_reset_charges(team, kid)
 	if sfx != null:
 		sfx.take_card()
 	return true
@@ -472,9 +626,19 @@ func _tick_draw(delta: float) -> void:
 		return
 	for p in 2:
 		draw_timer[p] = float(draw_timer[p]) - delta
-		if float(draw_timer[p]) <= 0.0:
-			draw_timer[p] = draw_interval()
+		# a big spend can push the clock past more than one draw: each one lands,
+		# and whatever is left over counts toward the next
+		while float(draw_timer[p]) <= 0.0:
+			draw_timer[p] = float(draw_timer[p]) + draw_interval()
 			draw_card(p)
+
+
+## Spending gold pulls the next draw closer: DRAW_PER_GOLD seconds per gold.
+## Every spend goes through here (cards, each Firebolt cast, abilities, the hero).
+func spend_gold_draw(player: int, amount: float) -> void:
+	if player < 0 or player > 1 or amount <= 0.0:
+		return
+	draw_timer[player] = float(draw_timer[player]) - amount * DRAW_PER_GOLD
 
 
 ## True when any living unit stands inside this screen-space rect. Used to let
@@ -511,6 +675,9 @@ func aim_point(world: Vector2) -> Vector2:
 	var kind := selection_kind()
 	if kind == "":
 		return world
+	var open := deploy_point(selection_owner(), kind, world)
+	if open != Vector2.INF:
+		world = open
 	var t := tile_of(world)
 	var fp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
 	if int(fp[0]) > 1 or int(fp[1]) > 1:
@@ -532,7 +699,14 @@ func try_deploy_at(world: Vector2) -> void:
 		return
 	var kind := selection_kind()
 	# a unit-locking card casts on the troop it is aimed at, not on the tile
-	var at: Vector2 = aim_point(world) if bool(DDCard.get_card(kind).get("unit_lock", false)) else world
+	var at: Vector2 = world
+	if bool(DDCard.get_card(kind).get("unit_lock", false)):
+		at = aim_point(world)
+	else:
+		# past where this card may go: it lands on the closest tile that is open
+		var open := deploy_point(selected_player, kind, world)
+		if open != Vector2.INF:
+			at = open
 	var missing: float = float(DDCard.cost(kind)) - float(gold[selected_player])
 	if missing <= 0.0:
 		deploy(selected_player, selected_index, at)
@@ -623,17 +797,20 @@ func ability_cooldown_time() -> float:
 	return ABILITY_COOLDOWN * (0.5 if overtime else 1.0)
 
 
-## How many casts this card has left in this player's hand (1 for normal cards).
-func charges_of(player: int, kind: String) -> int:
+## How many casts this copy has left (1 for normal cards). Without an id it asks
+## about the first copy of `kind` in the hand.
+func charges_of(player: int, kind: String, id: int = -1) -> int:
 	var total := int(DDCard.get_card(kind).get("uses", 1))
 	if total <= 1 or player < 0 or player > 1:
 		return 1
-	return int((charges[player] as Dictionary).get(kind, total))
+	if id < 0:
+		id = hand_id(player, (hands[player] as Array).find(kind))
+	return int((charges[player] as Dictionary).get(id, total))
 
 
-func _reset_charges(team: int, kind: String) -> void:
+func _reset_charges(team: int, id: int) -> void:
 	if team >= 0 and team <= 1:
-		(charges[team] as Dictionary).erase(kind)
+		(charges[team] as Dictionary).erase(id)
 
 
 func _tick_clock(delta: float) -> void:
@@ -649,22 +826,38 @@ func _tick_clock(delta: float) -> void:
 		_finish_on_towers()
 
 
-## Time up: the match goes to whoever has more tower HP left, not more towers.
+## Time up: whoever has had more towers destroyed loses. Only if that is level
+## does it go to whoever has more tower HP left, and only if that is level too is
+## it a draw. (A kraken tentacle counts as destroyed once it is `down`; its
+## `dead` also flickers while it burrows.)
 func _finish_on_towers() -> void:
 	if match_over:
 		return
 	var hp := [0.0, 0.0]
+	var lost := [0, 0]
 	for tw in towers:
-		if is_instance_valid(tw) and not tw.dead:
+		if not is_instance_valid(tw):
+			continue
+		var gone: bool = bool(tw.get("down")) if tw.get("down") != null else bool(tw.dead)
+		if gone:
+			lost[int(tw.team)] += 1
+		elif not tw.dead:
 			hp[int(tw.team)] += float(tw.hp)
 	match_over = true
 	banner_timer = 999.0
+	if lost[0] != lost[1]:
+		winner = 0 if lost[0] < lost[1] else 1
+		banner_text = "TIME  —  PLAYER %d WINS: %d TOWERS DOWN TO %d" % [winner + 1, maxi(lost[0], lost[1]), mini(lost[0], lost[1])]
+		_match_ended()
+		return
 	if is_equal_approx(hp[0], hp[1]):
 		winner = -1
-		banner_text = "TIME  â€”  DRAW (%.0f  Â·  %.0f HP)" % [hp[0], hp[1]]
+		banner_text = "TIME  —  DRAW (%d towers down each, %.0f  ·  %.0f HP)" % [lost[0], hp[0], hp[1]]
+		_match_ended()
 		return
 	winner = 0 if hp[0] > hp[1] else 1
-	banner_text = "TIME  â€”  PLAYER %d WINS ON TOWERS (%.0f  Â·  %.0f HP)" % [winner + 1, hp[0], hp[1]]
+	banner_text = "TIME  —  PLAYER %d WINS ON TOWER HP (%.0f  ·  %.0f HP)" % [winner + 1, hp[0], hp[1]]
+	_match_ended()
 
 
 func _process(delta: float) -> void:
@@ -1322,6 +1515,7 @@ func use_ability(player: int) -> bool:
 		if victim == null:
 			return false
 		gold[player] = float(gold[player]) - float(ABILITY_COST)
+		spend_gold_draw(player, float(ABILITY_COST))
 		ability_cd[player] = ability_cooldown_time()
 		var t := DDTentacle.new()
 		t.hp = TENTACLE_HP
@@ -1342,6 +1536,7 @@ func use_ability(player: int) -> bool:
 	if tower == null:
 		return false
 	gold[player] = float(gold[player]) - float(ABILITY_COST)
+	spend_gold_draw(player, float(ABILITY_COST))
 	ability_cd[player] = ability_cooldown_time()
 	var king := _king_of(player)
 	var g := DDShiesty.new()
@@ -1458,8 +1653,13 @@ func deploy_debug(world: Vector2) -> void:
 	banner_flash("DEBUG: %s for player %d" % [DDCard.pretty(debug_kind), team + 1])
 
 
+## Debug cheat (Tab view, keys 1-3): 2 gold and a card for this player.
+const DEBUG_GOLD := 2.0
+
+
 func _debug_gold(player: int, message: String) -> void:
-	gold[player] = minf(gold_max, float(gold[player]) + 1.0)
+	gold[player] = minf(gold_max, float(gold[player]) + DEBUG_GOLD)
+	draw_card(player)
 	if message != "":
 		banner_flash(message)
 
@@ -1516,6 +1716,25 @@ func can_deploy(team: int, kind: String, world: Vector2) -> bool:
 	return false
 
 
+## Where a card aimed at `world` actually lands: `world` itself if it can be
+## deployed there, otherwise the centre of the closest tile that can (so hovering
+## past your half pins the preview to the edge of it, and the click lands there).
+## Vector2.INF when no tile at all is open to this card.
+func deploy_point(team: int, kind: String, world: Vector2) -> Vector2:
+	if kind == "" or can_deploy(team, kind, world):
+		return world
+	var best := Vector2.INF
+	var best_d := INF
+	for row in GRID_H:
+		for col in range(col_min(row), col_max(row) + 1):
+			var c := tile_center(float(col) + 0.5, float(row) + 0.5)
+			var d := c.distance_squared_to(world)
+			if d < best_d and can_deploy(team, kind, c):
+				best_d = d
+				best = c
+	return best
+
+
 func deploy(team: int, index: int, world: Vector2) -> void:
 	var hand: Array = hands[team]
 	if index < 0 or index >= hand.size():
@@ -1527,30 +1746,38 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 		banner_flash("Claim the middle to deploy there")
 		return
 	gold[team] -= DDCard.cost(kind)
+	spend_gold_draw(team, float(DDCard.cost(kind)))
 	if sfx != null:
 		sfx.place_card()
 	spawn_troop(kind, team, world)
+	_sync_ids(team)
+	var id: int = int(hand_ids[team][index])
 	# a card with uses left (Firebolt) stays in the hand AND stays lifted, so the
 	# next click casts it again; right click puts it back with the charge intact
 	var total_uses := int(DDCard.get_card(kind).get("uses", 1))
 	if total_uses > 1:
-		var left := charges_of(team, kind) - 1
+		var left := charges_of(team, kind, id) - 1
 		if left > 0:
-			charges[team][kind] = left
+			charges[team][id] = left
 			return
-		charges[team].erase(kind)
+		charges[team].erase(id)
 	hand.remove_at(index)
+	hand_ids[team].remove_at(index)
 	var becomes := String(DDCard.get_card(kind).get("becomes", ""))
 	if becomes != "":
 		# a card that changes (Penny -> Pen, Obsidian -> Magma Whelp): the other
-		# half takes its slot straight away and flies in from where it was played
+		# half takes its slot straight away and flies in from where it was played.
+		# It is a new card; the played copy leaves the deck.
+		var new_id := _new_card_id()
 		hand.insert(index, becomes)
+		hand_ids[team].insert(index, new_id)
 		for pn in panels:
 			if is_instance_valid(pn) and int(pn.player) == team:
-				pn.note_arrival(becomes, world)
+				pn.note_arrival(new_id, world, id)
 	else:
-		# no automatic draw: the card cycles to the back of the deck
+		# no automatic draw: the same copy cycles to the back of the deck
 		queues[team].append(kind)
+		queue_ids[team].append(id)
 	# only clear the selection that belongs to the player who played
 	if selected_player == team:
 		clear_selection()
@@ -1670,6 +1897,7 @@ func launch_hero(player: int) -> void:
 	if dragon == null or gold[player] < 3.0:
 		return
 	gold[player] -= 3.0
+	spend_gold_draw(player, 3.0)
 	var king: Node = _king_of(player)
 	var src: Vector2 = king.position if king != null else dragon.position + Vector2(0.0, 240.0)
 	var leapt := DDLeap.new()
@@ -1766,11 +1994,12 @@ func on_tower_destroyed(tower: Node) -> void:
 		if is_instance_valid(t) and int(t.team) == owner_team and not t.dead:
 			alive += 1
 	# the commander tower is the whole objective now: taking it ends the match
-	if bool(tower.get("crown")):
+	if bool(tower.get("crown")) and not match_over:
 		match_over = true
 		winner = 1 - owner_team
 		banner_text = "PLAYER %d WINS" % (winner + 1)
 		banner_timer = 999.0
+		_match_ended()
 
 
 # ---------------------------------------------------------------------- input
@@ -1802,20 +2031,30 @@ func _unhandled_input(event: InputEvent) -> void:
 	# debug cheats â€” only while both hands are on screen (Tab)
 	if event is InputEventKey and event.pressed and not event.echo and view_mode == 1:
 		if event.keycode == KEY_1:
-			_debug_gold(0, "+1 gold â†’ PLAYER 1")
+			_debug_gold(0, "+2 gold and a card: PLAYER 1")
 			return
 		if event.keycode == KEY_2:
-			_debug_gold(0, "+1 gold â†’ BOTH")
+			_debug_gold(0, "+2 gold and a card: BOTH")
 			_debug_gold(1, "")
 			return
 		if event.keycode == KEY_3:
-			_debug_gold(1, "+1 gold â†’ PLAYER 2")
+			_debug_gold(1, "+2 gold and a card: PLAYER 2")
 			return
 		if event.keycode == KEY_S:
 			start_spider_encounter()
 			return
 		if event.keycode == KEY_K:
 			start_kraken_encounter()
+			return
+	if event is InputEventKey and event.pressed and not event.echo and match_over and Run.active:
+		# in a run the result screen moves the run on; R does not replay a fight
+		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER or event.keycode == KEY_SPACE:
+			continue_run()
+			return
+		if event.keycode == KEY_R and Run.over:
+			continue_run()
+			return
+		if event.keycode == KEY_R:
 			return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_R and match_over:
 		get_tree().reload_current_scene()

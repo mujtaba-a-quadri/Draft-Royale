@@ -295,7 +295,7 @@ func _send_burrow() -> void:
 		var victim: Node = null
 		var best := INF
 		for u in arena.enemy_units(team):
-			if not is_instance_valid(u) or u.dead or not (u is DDUnit):
+			if not is_instance_valid(u) or u.dead or not (u is DDUnit or u is DDShiesty):
 				continue
 			if u.get("flying") == true or u.is_building() or float(u.stunned) > 0.0:
 				continue

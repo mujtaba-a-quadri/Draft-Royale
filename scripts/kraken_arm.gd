@@ -363,7 +363,9 @@ func _burst() -> void:
 	var victim: Node = null
 	var best := INF
 	for u in arena.enemy_units(team):
-		if not is_instance_valid(u) or u.dead or not (u is DDUnit):
+		# troops, and Shiesty on his run home (anything else in `units`, such as a
+		# hero tentacle, is not a body to grab)
+		if not is_instance_valid(u) or u.dead or not (u is DDUnit or u is DDShiesty):
 			continue
 		if u.get("flying") == true or u.is_building():
 			continue

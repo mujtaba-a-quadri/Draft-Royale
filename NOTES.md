@@ -63,7 +63,9 @@ extraction candidate.**
    `arena.spawn_troop` lands the partner `partner_gap` tiles across the lane;
    card face shows both HPs, `DDArt.gil_pair` draws both), `whip` (Gilgamesh: the
    plain hit, drawn as a snake lash), `spear` (Enkidu: `_try_throw` / `_spear_back`
-   swap dmg, reach, interval and `hits_air` while the spear is away), `chicken` + `kamikaze` (Hot Chicken,
+   swap dmg, reach, interval and `hits_air` while the spear is away), `frog` (Poison
+   Dart Frog: `_tick_frog` hops instead of `_move`, `_frog_prey` / `_tick_frog_leap` /
+   `_frog_burst`; no `_attack` at all), `chicken` + `kamikaze` (Hot Chicken,
    two phases), `spread` (Primal Aphid), `dodge` (Penny), `summon` (warren),
    `death_aoe` (snowman), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
    `stationary`, `lifetime`, `shoots` + `payload`, `greatsword` (Laniakea: owns its
@@ -75,9 +77,18 @@ extraction candidate.**
    Only touch `bot_matrix.ANSWER` if the new card genuinely counters a role.
 7. **`README.md`**: a row in the card table, and bump the deck-count line.
 
-Hand slots are bound **by card kind**, so a deck must not contain duplicates. That
-matters when adding cards: `ORDER` is per-player deck size (currently 26, hand 4,
-`HAND_MAX` 8, draw every 8 s).
+**Decks may contain duplicates.** Every copy has an id: `arena.hand_ids` /
+`queue_ids` run parallel to `hands` / `queues` (which stay lists of kinds, so
+bots and "what card is this" code are untouched). Hand nodes bind by id, the
+held card is `arena.selection_id()`, Firebolt charges are keyed by id, a played
+card cycles back as the same id, and a `becomes` card (Pen, Magma Whelp) is a new
+id. Anything that rewrites a hand or deck wholesale gets fresh ids from
+`_sync_ids()`; code that moves single cards must move the id with the kind.
+`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 27).
+Hand 4, `HAND_MAX` 8. Draws every `DRAW_INTERVAL` 16 s, and every gold spent
+takes `DRAW_PER_GOLD` 1 s off the wait (`spend_gold_draw()`; overflow carries).
+Debug keys 1-3 (Tab view) give 2 gold and a card. Scenario:
+`--scenario=dupes --bots=off`.
 
 ---
 
@@ -214,6 +225,13 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   the band. Gilgamesh's lash is ground only. The pair are two independent units
   after landing. Scenarios: `--scenario=gil --log --bots=off`, close-up
   `--scenario=gilart`.
+* **The dart frog's burst reaches any body the 0.5 tile circle touches**, not
+  centres within 0.5: bodies never overlap, so a centre rule would only ever
+  poison the one it landed on. It leaps at the nearest ground enemy of any kind
+  (troop, building or tower) whose edge is within 2 tiles, follows it in the air,
+  and the leap is committed (stuns and shoves wait for the landing). A hop, once
+  started, finishes; slow shortens hops. The bot reads it as a 0-damage card.
+  Scenarios: `--scenario=frog --bots=off`, close-up `--scenario=frogart`.
 * **Shiesty commits to one bridge.** `DDShiesty._pick_bridge()` runs once, on
   landing: it counts enemy `DDUnit`s that could target him (dmg > 0, not
   `buildings_only`, not a kamikaze Alchemist, not an airborne dragon) on each
@@ -221,6 +239,14 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   (nearer on a tie). `_route_home` is `arena.route_point` pinned to that
   `bridge_col`. Troops played afterwards do not change it.
   Scenario: `--scenario=shiestylane --log --bots=off`.
+* **Shiesty is immune to nothing but tower fire.** He is not a `DDUnit`, so he
+  carries his own copies of the troop hooks (`apply_burn`, `slow`, `add_poison`,
+  `apply_impulse`, `stunned`) with DDUnit's numbers and tick order: poison and
+  shoves run through stuns, burn and slow pause during them. In the air
+  (`untargetable`) nothing lands on him. The kraken's burrow grab accepts
+  `DDShiesty` as well as `DDUnit`. Anything new that touches troops through a
+  `has_method` check reaches him for free; anything that filters on `is DDUnit`
+  has to name him too. Scenario: `--scenario=shiestyfx --bots=off`.
 * **Towers are only decorative HP sinks** — the commander tower is the only win
   condition besides the clock.
 * **The hedgehog never targets air** (`hits_air` stays off) and its curl burst skips
@@ -315,7 +341,7 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 
 ## 7. Next steps, in order
 
-1. Add cards (fast now — §2); keep `ORDER` free of duplicate kinds.
+1. Add cards (fast now — §2). `ORDER` stays one of each; duplicates go in `deck_lists`.
 2. Bot: ability trigger → closing plan → matrix tuning → opponent-gold reading.
 3. Extract `unit.gd` (`unit_art`? `abilities`?) the way `board.gd`/`arena_draw.gd` were done.
 4. Consider a pixel-probe scenario (`--scenario=pixels`) so rendering checks become
@@ -415,6 +441,59 @@ Start it with **Tab, then K** (`arena.start_kraken_encounter()`), or
   five root tiles; "low health" for the spin is the tentacle's own HP; the slam
   hits air; revived tentacles need not be killed again; the burrow's mark stays
   on the ground instead of following the troop; the art.
+
+---
+
+## 11. Run layer: the first slice (built)
+
+`scripts/run_state.gd` is the autoload **`Run`** (project.godot), no
+class_name. It holds `deck`, `commander_hp`, `floor_index` into `ACT`, the run's
+`ability`, `history`, and `last` (the fight just played). Being an autoload it
+survives `reload_current_scene()`, which is how a run moves between fights.
+
+* **Start:** pressing play starts a run (`arena._apply_run()` calls
+  `Run.start()` if none is active). `--match` plays one plain match instead; the
+  bot sim and dev scenarios (`--botsim=`, `--scenario=`, `--shots=`, `--demo`)
+  never start one unless `--run` / `--run=<seed>` is also passed, so they are
+  untouched (`--botsim=3` is byte-identical before and after).
+* **Card reward** (`scripts/reward_screen.gd`, no class_name, preloaded): after a
+  won fight that is not the last, `_match_ended()` puts it on its own CanvasLayer
+  (50) and hides the hand panels. Three different cards from `DDCard.ORDER`,
+  seeded by run seed and fight (`Run.reward_choices()`), drawn with
+  `DDCardFace.draw_full` (the hand face plus the blurb, text size stepping down to
+  fit). Click / 1-3 picks (`Run.take_reward`), Skip / S skips; both then call
+  `arena.continue_run()`. It eats the keyboard while up, and `continue_run()`
+  refuses while `Run.reward_pending()`, so Enter cannot skip by accident.
+  Input waits for the 0.9 s appear delay.
+* **Setup** (`_apply_run`, in `arena._ready`): `deck_lists = [Run.deck,
+  encounter deck]`, a bot on side 1 only, abilities from the run, decks shuffled
+  from `Run.deck_seed()` (run seed × fight). After the board is built your
+  commander's `hp` is set to `Run.commander_hp`; side towers and the enemy are
+  fresh. An `elite` encounter calls `start_spider_encounter` /
+  `start_kraken_encounter` deferred.
+* **End:** both ways a match ends (`on_tower_destroyed` for a commander,
+  `_finish_on_towers` for the clock) call `_match_ended()` once, which reports
+  `winner` and your commander's HP (0 if it fell) to `Run.report()`.
+* **Result screen** (`arena_draw._result`): VICTORY / RUN OVER / RUN COMPLETE.
+  Enter (or Space) calls `arena.continue_run()`: next fight after a win, a new
+  run once over. R does nothing mid-run (no replaying a fight) and starts a new
+  run once it is over.
+* **Placeholder rules, mine:** any lost fight (including a time loss or a draw)
+  ends the run. That is not §8's design, where losing activates a relic and you
+  are out only when all of them are; when relics exist, `Run.report()` is where a
+  loss becomes "lose a relic" instead of "run over". The four `ACT` fights and the
+  `STARTER_DECK` are placeholders for steps 3 and 4.
+* The opening deal's sound stopper is a child `Timer` of `DDSfx`, not a
+  SceneTree timer: the latter outlived the scene on a quick reload and fired into
+  freed nodes.
+* **Time-up rule** (`_finish_on_towers`, all matches, not only runs): more
+  towers destroyed loses; level, more standing tower HP wins; level, draw. A
+  kraken tentacle counts once `down`. Scenario: `--scenario=timeout --bots=off`.
+* Scenario: `--scenario=run --run=7 --bots=off` plays a run by script: win with
+  the commander cut to 180, the reward screen is up and Enter does not skip it,
+  pick a card (deck 10 -> 11); fight 2 opens with the commander still at 180 and
+  the side towers full, win, skip the reward; the spider fight starts as the
+  elite and is lost, and Enter starts a fresh run.
 
 ---
 

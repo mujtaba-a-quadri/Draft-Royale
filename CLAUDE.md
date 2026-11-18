@@ -10,10 +10,12 @@ No build step, no linter, no unit test runner. Godot is invoked as `godot` on PA
 
 ```
 godot --path . --editor                         # open in the editor
-godot --path .                                  # play (main scene: scenes/arena.tscn)
+godot --path .                                  # play: starts a run (main scene: scenes/arena.tscn)
+godot --path . -- --match                       # one plain match instead of a run
 godot --path . -- --colors=#ff8800,#22ccaa      # recolour teams
 godot --path . -- --bots=both|off               # bot on both hands / off
 godot --path . -- --ability=tentacle|shiesty    # force hero ability assignment
+godot --path . -- --run=<seed>                  # a run with a fixed seed
 ```
 
 Bot A/B harness (headless, one match per run, byte-identical for a given seed):
@@ -41,7 +43,7 @@ Live evals run through the `addons/godot_ai` editor plugin (enabled in `project.
 
 **Scene hub.** `scripts/arena.gd` is the root of `scenes/arena.tscn` and owns all match state: towers, gold, hands and queues, deploy and staging rules, the match clock and win conditions, hero abilities, effect spawners, and input. It delegates geometry to `board.gd` (`DDBoard`, pure statics: grid and tile/screen maths) and painting to `arena_draw.gd` (`DDArenaDraw`). Every drawing primitive goes through `tile_rect()` / `tile_center()` / `tile_of()`; keep it that way.
 
-**Balance surface.** `scripts/card_db.gd` holds every card's data and the deck `ORDER`. Behaviour flags live here too (`roll`, `boomerang`, `chicken`, `kamikaze`, `spread`, `dodge`, `summon`, `death_aoe`, `troops_only`, `flying_unit`, `hits_air`, `stationary`, `lifetime`, `shoots`, `payload`, `cooldown_per_tile`, `greatsword`, `needle`, `guard`, `becomes`, `staff`, `beam`, `ritual`, `partner`, `whip`, `spear`). `unit.gd` reads these in `setup()` and branches in `_attack()` / `_physics_process()`. So a card is mostly data, and code is added only for a genuinely new mechanic. Hand slots bind by card kind, so a deck must never contain duplicate kinds.
+**Balance surface.** `scripts/card_db.gd` holds every card's data and the deck `ORDER`. Behaviour flags live here too (`roll`, `boomerang`, `chicken`, `kamikaze`, `spread`, `dodge`, `summon`, `death_aoe`, `troops_only`, `flying_unit`, `hits_air`, `stationary`, `lifetime`, `shoots`, `payload`, `cooldown_per_tile`, `greatsword`, `needle`, `guard`, `becomes`, `staff`, `beam`, `ritual`, `partner`, `whip`, `spear`, `frog`). `unit.gd` reads these in `setup()` and branches in `_attack()` / `_physics_process()`. So a card is mostly data, and code is added only for a genuinely new mechanic. Decks may hold duplicates: every card copy has an id (`arena.hand_ids` / `queue_ids`, parallel to `hands` / `queues`), and hand slots, the selection and charges bind by id; move the id along with the kind (`NOTES.md` §2).
 
 **Card presentation is split across two dispatch tables.** `art.gd` draws each card twice: `creature()` for board and card art, and `icon()` for the deploy preview. Missing `icon` renders as a magenta circle. `card_face.gd` maps attack names (`ATTACK_NAMES`) and the type-aware ribbon (troop / building / spell).
 
@@ -54,6 +56,8 @@ Live evals run through the `addons/godot_ai` editor plugin (enabled in `project.
 **Hero abilities.** `tentacle.gd` and `shiesty.gd` are the two abilities, each player gets one per match, and both pay a card draw only when their payload lands. The bot's trigger for them is the known weak spot in `NOTES.md` §3.
 
 **Elite encounter.** `spider.gd` (no `class_name`, preloaded by `arena.gd`) is a boss that duck-types a crown tower and replaces the whole enemy side; start it with Tab then S. Poison (a counter on units and towers, never cleared) came in with it. Details: `NOTES.md` §9. `kraken.gd` + `kraken_arm.gd` (same pattern, Tab then K) are the second: five tentacle "towers", then the body surfaces as the crown. Details: `NOTES.md` §10.
+
+**Run layer.** `run_state.gd` is the autoload `Run` (no `class_name`): deck, commander HP (carried between fights; side towers reset), position in a placeholder `ACT`. It survives `reload_current_scene()`, which is how a run moves to its next fight. `arena._apply_run()` sets a match up from it and `_match_ended()` reports back once, then shows `reward_screen.gd` (pick 1 of 3 cards or skip) after a won fight. Pressing play starts a run; `--match`, `--botsim=` and dev scenarios do not (unless `--run` is passed), so the bot sim and scenarios are unaffected. Details: `NOTES.md` §11.
 
 **Dev-only code.** `dev_capture.gd` is about 1150 lines of scenarios and GIF capture. It is never instantiated in normal play. `*_mock.gd` / `layout_mock.gd` / `card_mock.gd` / `iso_mock.gd` / `landscape_mock.gd` are preview scenes, not game code.
 

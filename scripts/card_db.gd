@@ -123,8 +123,8 @@ const CARDS := {
 		"cost": 1,
 		"type": "troop",
 		"blurb": "A baby black dragon in a coat of scales. Anything near, or any hit, and it curls up tight: 80 % less damage, but a melee blow still nudges it back. Playing it brings a Magma Whelp into your hand.",
-		"hp": 60.0, "dmg": 8.0, "speed": 0.8, "reach": 0.4, "interval": 1.2,
-		"radius": 0.36, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"hp": 20.0, "dmg": 8.0, "speed": 0.8, "reach": 0.4, "interval": 1.2,
+		"radius": 0.6, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		# curls when an enemy unit is within `sense` tiles (edge to edge) or it is
 		# hit; opens again once nothing is in sense AND it has gone `calm` s unhit
@@ -139,7 +139,7 @@ const CARDS := {
 		"blurb": "A bonobo who knuckle-walks up to you, then pulls a tiny staff from behind his ear that grows to full size in his hands. Poke, sweep, repeat. Every hit he lands banks rage; at a quarter of his health it all comes out at once.",
 		# dmg / reach / interval: each staff hit
 		"hp": 140.0, "dmg": 16.0, "speed": 1.0, "reach": 1.0, "interval": 1.4,
-		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"radius": 0.8, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"staff": {
 			# drawing the staff from behind his ear, before the first swing
@@ -190,8 +190,8 @@ const CARDS := {
 		"cost": 6,
 		"type": "troop",
 		"blurb": "The king and the wild man, side by side. Gilgamesh lashes with a living snake two and a half tiles long; Enkidu throws his spear at the first troop to come within four and a half tiles, then fights with a short sword until it comes back to him.",
-		"hp": 320.0, "dmg": 22.0, "speed": 1.3, "reach": 2.5, "interval": 1.3,
-		"radius": 0.5, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"hp": 200.0, "dmg": 22.0, "speed": 1.3, "reach": 2.5, "interval": 1.3,
+		"radius": 1, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		# the snake whip: an instant hit at reach, drawn as a lash in the owner's colour
 		"whip": true,
@@ -206,8 +206,8 @@ const CARDS := {
 		"type": "troop",
 		"blurb": "Horned, bull-legged, raised by the beasts. Never dealt alone: he comes with Gilgamesh.",
 		# dmg / reach / interval: the spear in hand (reaches air)
-		"hp": 280.0, "dmg": 24.0, "speed": 1.45, "reach": 1.1, "interval": 1.2,
-		"radius": 0.48, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"hp": 180.0, "dmg": 24.0, "speed": 1.45, "reach": 1.1, "interval": 1.2,
+		"radius": 0.9, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"hits_air": true,
 		"spear": {
@@ -219,13 +219,32 @@ const CARDS := {
 		},
 		"accent": Color(0.7, 0.52, 0.34),
 	},
+	"frog": {
+		"name": "Poison Dart Frog",
+		"cost": 1,
+		"type": "troop",
+		"blurb": "Hops along a tile at a time. It has no bite: the moment anything is within two tiles it leaps on it and bursts, leaving 10 poison on everything within half a tile.",
+		# no attack of its own: dmg / reach / interval are unused
+		"hp": 25.0, "dmg": 0.0, "speed": 1.0, "reach": 0.0, "interval": 1.0,
+		"radius": 0.5, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"frog": {
+			# moves only in hops: hop tiles over hop_time s, then sits for rest s
+			"hop": 0.7, "hop_time": 0.22, "rest": 0.45,
+			# leaps at the nearest ground enemy (troop, building or tower) whose edge
+			# is within leap_range tiles, lands on it and bursts
+			"leap_range": 2.0, "leap_time": 0.38,
+			"poison": 10.0, "burst": 0.5,
+		},
+		"accent": Color(0.98, 0.72, 0.15),
+	},
 	"magma": {
 		"name": "Magma Whelp",
 		"cost": 1,
 		"type": "troop",
 		"blurb": "The Obsidian Whelp's molten twin. Flies, and flicks flaming feathers at anything within two tiles, ground or air: no impact, just 5 burn each.",
 		"hp": 30.0, "dmg": 0.0, "speed": 1.3, "reach": 2.0, "interval": 1.4,
-		"radius": 0.34, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"radius": 0.6, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"hits_air": true,
 		"flying_unit": true,
@@ -421,7 +440,7 @@ const CARDS := {
 		"accent": Color(0.5, 0.3, 0.3),
 	},
 	"troll": {
-		"name": "Troll",
+		"name": "Humbaba",
 		"cost": 5,
 		"type": "troop",
 		"blurb": "A mossy old swamp troll dragging a whole tree. Slow, enormous, and only interested in knocking buildings down. He chokes up on the trunk, so the club reaches less far than it looks.",
@@ -570,7 +589,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog"]
 
 
 ## Every card in the game. Pen and the Magma Whelp are not in the deck — they
