@@ -6,7 +6,8 @@ var area: Node2D = null
 var max_hp := 250.0
 var hp := 250.0
 var dmg := 12.0
-var reach := 6.0
+## side towers: 7 tiles; the crown tower keeps 8 (setup)
+var reach := 7.0
 var interval := 1.0
 var radius_t := 0.9
 var crown := false
@@ -56,7 +57,7 @@ func setup(tm: int, ar: Node2D, is_crown: bool) -> void:
 	area = ar
 	crown = is_crown
 	if is_crown:
-		reach += 2.0
+		reach += 1.0
 	max_hp = 250.0
 	hp = max_hp
 	w = area.TILE * 1.75

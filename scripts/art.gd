@@ -14,11 +14,16 @@ const INK := Color(0.16, 0.13, 0.2)
 ## drawing team's colour for the length of one draw and restore it, so chrome
 ## (coins, card faces, UI) keeps the neutral outline.
 static var ink := OUTLINE
+## Draw without outlines: shapes skip their ink edge. Set around a unit drawn
+## small inside another card's art (the summon coin, the card badge), where the
+## outlines would swamp it. Ink strokes that are the body itself (legs,
+## antennae) still draw.
+static var bare := false
 
 
 static func circle(ci: CanvasItem, c: Vector2, r: float, fill: Color, w: float = OUTLINE_W) -> void:
 	ci.draw_circle(c, r, fill)
-	if w > 0.0:
+	if w > 0.0 and not bare:
 		ci.draw_arc(c, r, 0.0, TAU, 48, ink, w, true)
 
 
@@ -32,7 +37,7 @@ static func ellipse(ci: CanvasItem, c: Vector2, rx: float, ry: float, fill: Colo
 
 static func poly(ci: CanvasItem, pts: PackedVector2Array, fill: Color, w: float = OUTLINE_W) -> void:
 	ci.draw_colored_polygon(pts, fill)
-	if w > 0.0:
+	if w > 0.0 and not bare:
 		var loop := pts.duplicate()
 		loop.append(pts[0])
 		ci.draw_polyline(loop, ink, w, true)
@@ -40,7 +45,7 @@ static func poly(ci: CanvasItem, pts: PackedVector2Array, fill: Color, w: float 
 
 static func rect_outlined(ci: CanvasItem, r: Rect2, fill: Color, w: float = OUTLINE_W) -> void:
 	ci.draw_rect(r, fill, true)
-	if w > 0.0:
+	if w > 0.0 and not bare:
 		ci.draw_rect(r, ink, false, w)
 
 
@@ -87,6 +92,17 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			gilgamesh(ci, r, facing, t, {}, ink_col)
 		"enkidu":
 			enkidu(ci, r, facing, t, {}, ink_col)
+		"mantis":
+			mantis(ci, r, facing, t, {}, ink_col)
+		"mantisf":
+			mantis(ci, r, facing, t, {"female": true}, ink_col)
+		"elf":
+			elf_archer(ci, r, facing, t, 0.0, ink_col)
+		"militia":
+			militia(ci, r, facing, t, 0.0, ink_col)
+		"ballista":
+			# centred on the whole picture (engine and operator) for the card art
+			ballista(ci, r * 0.85, facing, t, {"draw": 1.0, "shift": 0.45}, ink_col)
 		"frog":
 			dart_frog(ci, r, facing, t, 0.0, ink_col)
 		"phalanx":
@@ -1555,6 +1571,203 @@ static func _pen(ci: CanvasItem, r: float, t: float, facing: float) -> void:
 	ci.draw_line(Vector2(-r * 1.35 * f, r * 0.22), Vector2(-r * 1.05 * f, r * 0.13), Color(0.78, 0.62, 0.3), r * 0.18, true)
 
 
+## The Elf Archer, side view: a slim figure in a green hood and tunic, a long
+## pointed ear out of the hood, a quiver on her back and a longbow held out in
+## front. draw 0..1 is how far the string is pulled back (an arrow nocked
+## from 0.15 on); the unit sets it from the shot clock.
+static func elf_archer(ci: CanvasItem, r: float, facing: float, t: float, draw: float = 0.0,
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var tunic := Color(0.36, 0.62, 0.32)
+	var cloak := Color(0.22, 0.42, 0.24)
+	var skin := Color(0.96, 0.84, 0.7)
+	var hair := Color(0.96, 0.86, 0.5)
+	var wood := Color(0.55, 0.36, 0.18)
+	var bob: float = sin(t * 3.0) * r * 0.03
+	# the cloak falling behind, then the quiver over it
+	poly(ci, PackedVector2Array([P.call(-0.15, -0.75), P.call(-0.75, 0.75), P.call(0.05, 0.75)]), cloak)
+	# (its rect's left edge is the back edge facing right, the front edge facing left)
+	rect_outlined(ci, Rect2(P.call(-0.62 if f > 0 else -0.38, -0.85), Vector2(r * 0.24, r * 0.8)), wood, 1.6)
+	for k in 3:
+		var fx: float = -0.56 + 0.07 * float(k)
+		ci.draw_line(P.call(fx, -0.85), P.call(fx - 0.05, -1.12), Color(0.92, 0.3, 0.25), r * 0.07, true)
+	# legs and boots
+	ci.draw_line(P.call(-0.12, 0.45), P.call(-0.2, 1.0), Color(0.36, 0.26, 0.18), r * 0.2, true)
+	ci.draw_line(P.call(0.18, 0.45), P.call(0.24, 1.0), Color(0.36, 0.26, 0.18), r * 0.2, true)
+	# tunic with a belt
+	poly(ci, PackedVector2Array([P.call(-0.38, -0.55), P.call(0.36, -0.55), P.call(0.5, 0.55), P.call(-0.5, 0.55)]), tunic)
+	ci.draw_line(P.call(-0.44, 0.12), P.call(0.44, 0.12), Color(0.45, 0.3, 0.16), r * 0.12, true)
+	# head: face, hair, the long ear, then the hood over it
+	var hc: Vector2 = P.call(0.06, -0.92) + Vector2(0.0, bob)
+	poly(ci, PackedVector2Array([hc + P.call(-0.12, -0.08), hc + P.call(-0.62, -0.32), hc + P.call(-0.2, 0.1)]), skin, 1.6)
+	ellipse(ci, hc, r * 0.34, r * 0.36, skin)
+	ci.draw_line(hc + P.call(-0.3, -0.05), hc + P.call(-0.22, 0.32), hair, r * 0.14, true)
+	ci.draw_arc(hc, r * 0.38, PI + 0.15 if f > 0 else -0.15, TAU - 0.5 if f > 0 else -PI + 0.5, 14, cloak, r * 0.18, true)
+	ci.draw_circle(hc + P.call(0.16, -0.04), r * 0.06, Color(0.15, 0.3, 0.2))
+	# the bow, held out in front; the string pulled back to the hand by `draw`
+	var bx: float = 0.72
+	var top: Vector2 = P.call(bx - 0.18, -1.15)
+	var mid: Vector2 = P.call(bx + 0.1, -0.35)
+	var bot: Vector2 = P.call(bx - 0.18, 0.45)
+	var bow := PackedVector2Array()
+	for i in 13:
+		var s: float = float(i) / 12.0
+		var a: Vector2 = top.lerp(mid, s)
+		var b: Vector2 = mid.lerp(bot, s)
+		bow.append(a.lerp(b, s))
+	ci.draw_polyline(bow, ink, r * 0.14 + 2.0, true)
+	ci.draw_polyline(bow, wood, r * 0.14, true)
+	var hand: Vector2 = P.call(lerpf(bx - 0.18, 0.0, clampf(draw, 0.0, 1.0)), -0.35)
+	ci.draw_polyline(PackedVector2Array([top, hand, bot]), Color(0.95, 0.93, 0.85), maxf(1.0, r * 0.04), true)
+	# the arms: one on the grip, one on the string
+	ci.draw_line(P.call(0.12, -0.45), mid + P.call(-0.06, 0.0), skin, r * 0.13, true)
+	ci.draw_line(P.call(-0.05, -0.42), hand, skin, r * 0.13, true)
+	if draw > 0.15:
+		ci.draw_line(hand, mid + P.call(0.25, 0.0), Color(0.82, 0.74, 0.55), maxf(1.0, r * 0.06), true)
+		ci.draw_colored_polygon(PackedVector2Array([mid + P.call(0.36, 0.0), mid + P.call(0.24, -0.07),
+			mid + P.call(0.24, 0.07)]), Color(0.75, 0.77, 0.82))
+	ink = keep
+
+
+## The Militia: a farmhand in a brown tunic and a straw-coloured cap, a spear
+## held upright and a pot-lid shield. jab 0..1 thrusts the spear forward.
+static func militia(ci: CanvasItem, r: float, facing: float, t: float, jab: float = 0.0,
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var tunic := Color(0.62, 0.45, 0.28)
+	var skin := Color(0.93, 0.76, 0.6)
+	var cap := Color(0.86, 0.76, 0.42)
+	var wood := Color(0.55, 0.38, 0.2)
+	# legs
+	ci.draw_line(P.call(-0.15, 0.45), P.call(-0.2, 1.0), Color(0.35, 0.3, 0.26), r * 0.2, true)
+	ci.draw_line(P.call(0.18, 0.45), P.call(0.22, 1.0), Color(0.35, 0.3, 0.26), r * 0.2, true)
+	# the spear behind the body, upright, pushed out on a jab
+	var j: float = clampf(jab, 0.0, 1.0)
+	var butt: Vector2 = P.call(0.45 + 0.5 * j, 0.75 - 0.6 * j)
+	var tip: Vector2 = P.call(0.55 + 1.3 * j, -1.6 + 1.1 * j)
+	ci.draw_line(butt, tip, wood, r * 0.12, true)
+	var dir: Vector2 = (tip - butt).normalized()
+	poly(ci, PackedVector2Array([tip + dir * r * 0.32, tip + dir.orthogonal() * r * 0.11,
+		tip - dir.orthogonal() * r * 0.11]), Color(0.75, 0.77, 0.82), 1.4)
+	# body
+	poly(ci, PackedVector2Array([P.call(-0.4, -0.5), P.call(0.38, -0.5), P.call(0.5, 0.55), P.call(-0.5, 0.55)]), tunic)
+	ci.draw_line(P.call(-0.46, 0.1), P.call(0.46, 0.1), Color(0.36, 0.25, 0.14), r * 0.1, true)
+	# head and cap
+	var hc: Vector2 = P.call(0.05, -0.9)
+	ellipse(ci, hc, r * 0.33, r * 0.34, skin)
+	poly(ci, PackedVector2Array([hc + P.call(-0.38, -0.05), hc + P.call(0.0, -0.48), hc + P.call(0.4, -0.05)]), cap, 1.6)
+	ci.draw_circle(hc + P.call(0.16, 0.0), r * 0.05, Color(0.15, 0.12, 0.1))
+	# the hand on the spear
+	ci.draw_line(P.call(0.2, -0.3), butt.lerp(tip, 0.45), skin, r * 0.13, true)
+	# the pot-lid shield on the near arm
+	circle(ci, P.call(-0.12, -0.05), r * 0.36, Color(0.6, 0.62, 0.66))
+	ci.draw_circle(P.call(-0.12, -0.05), r * 0.09, Color(0.42, 0.44, 0.48))
+	ink = keep
+
+
+## The Ballista and its lizardfolk operator, one unit, side view facing +x
+## (front = the bow). o: move (he has lifted the back of the stock and wheels it
+## forward like a barrow), draw 0..1 (string wound back along the stock, a bolt
+## laid in from 0.2), shift (move the whole picture this many r along +x, so
+## the card art centres it; the unit leaves it at 0, centred on the cart).
+static func ballista(ci: CanvasItem, r: float, facing: float, t: float, o: Dictionary = {},
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var moving: bool = bool(o.get("move", false))
+	var draw: float = clampf(float(o.get("draw", 0.0)), 0.0, 1.0)
+	var sx: float = float(o.get("shift", 0.0))
+	var wood := Color(0.72, 0.47, 0.25)
+	var wood_dk := Color(0.52, 0.32, 0.16)
+	var rope := Color(0.95, 0.93, 0.85)
+	# the engine pivots on its wheel axle: moving, the back comes up off the ground
+	var axle := Vector2(0.28, 0.42)
+	var bob: float = sin(t * 9.0) * 0.03 if moving else 0.0
+	var lift: float = 0.22 + bob if moving else 0.0
+	var Q := func(x: float, y: float) -> Vector2:
+		var v: Vector2 = axle + (Vector2(x, y) - axle).rotated(lift)
+		return Vector2((v.x + sx) * f * r, v.y * r)
+	var P := func(x: float, y: float) -> Vector2: return Vector2((x + sx) * f * r, y * r)
+	# the far wheel, dimmer, then the frame
+	var wheel_c: Vector2 = Q.call(axle.x + 0.08, axle.y)
+	ci.draw_circle(wheel_c, r * 0.36, wood_dk.darkened(0.3))
+	poly(ci, PackedVector2Array([Q.call(-0.15, 0.05), Q.call(0.62, 0.05), Q.call(0.62, 0.32), Q.call(-0.15, 0.32)]), wood_dk, 1.6)
+	# the stock: front tip to the back end; resting, a leg props the back
+	var front: Vector2 = Q.call(1.05, -0.18)
+	var back: Vector2 = Q.call(-1.05, 0.55)
+	if not moving:
+		ci.draw_line(Q.call(-0.95, 0.52), P.call(-0.95, 0.85), wood_dk, r * 0.1, true)
+	ci.draw_line(front, back, ink, r * 0.2 + 2.4, true)
+	ci.draw_line(front, back, wood, r * 0.2, true)
+	# the winch at the back, spokes turning while it winds
+	var winch: Vector2 = Q.call(-0.72, 0.42)
+	circle(ci, winch, r * 0.13, wood_dk, 1.4)
+	var spin: float = t * 3.0 if (not moving and draw < 1.0) else 0.0
+	for k in 4:
+		var a: float = spin + PI * 0.5 * float(k)
+		ci.draw_line(winch, winch + Vector2.from_angle(a) * r * 0.24, wood_dk, r * 0.06, true)
+	# the bow at the front, its arms swept back, and the string to the slider
+	var bow_top: Vector2 = Q.call(0.62, -0.78)
+	var bow_mid: Vector2 = Q.call(0.98, -0.2)
+	var bow_bot: Vector2 = Q.call(0.62, 0.32)
+	var arc := PackedVector2Array()
+	for i in 11:
+		var s: float = float(i) / 10.0
+		arc.append(bow_top.lerp(bow_mid, s).lerp(bow_mid.lerp(bow_bot, s), s))
+	ci.draw_polyline(arc, ink, r * 0.13 + 2.0, true)
+	ci.draw_polyline(arc, wood, r * 0.13, true)
+	var slider: Vector2 = Q.call(lerpf(0.6, -0.2, draw), lerpf(-0.07, 0.2, draw))
+	ci.draw_polyline(PackedVector2Array([bow_top, slider, bow_bot]), rope, maxf(1.0, r * 0.04), true)
+	if draw > 0.2:
+		ci.draw_line(slider, Q.call(1.15, -0.22), Color(0.4, 0.3, 0.2), maxf(1.5, r * 0.06), true)
+		ci.draw_colored_polygon(PackedVector2Array([Q.call(1.3, -0.24), Q.call(1.12, -0.31), Q.call(1.14, -0.15)]),
+			Color(0.75, 0.77, 0.82))
+	# the near wheel
+	var hub: Vector2 = Q.call(axle.x, axle.y)
+	circle(ci, hub, r * 0.38, wood, 1.8)
+	ci.draw_arc(hub, r * 0.28, 0.0, TAU, 20, wood_dk, r * 0.05, true)
+	var roll: float = t * 4.0 if moving else 0.0
+	for k in 6:
+		var a2: float = roll * f + PI / 3.0 * float(k)
+		ci.draw_line(hub, hub + Vector2.from_angle(a2) * r * 0.3, wood_dk, r * 0.05, true)
+	ci.draw_circle(hub, r * 0.08, wood_dk)
+	# the operator: a lizardfolk with a crest, behind the engine. Moving, his
+	# hands are on the lifted back end; resting, on the winch.
+	var step: float = sin(t * 9.0) * 0.12 if moving else 0.0
+	var lx: float = -1.45
+	var scale_c := Color(0.42, 0.6, 0.42)
+	var belly := Color(0.78, 0.82, 0.6)
+	var armour := Color(0.6, 0.62, 0.68)
+	ci.draw_polyline(PackedVector2Array([P.call(lx - 0.25, 0.4), P.call(lx - 0.7, 0.6), P.call(lx - 1.0, 0.5)]),
+		scale_c.darkened(0.15), r * 0.16, true)
+	ci.draw_line(P.call(lx - 0.1, 0.45), P.call(lx - 0.15 - step, 0.85), scale_c.darkened(0.2), r * 0.15, true)
+	ci.draw_line(P.call(lx + 0.12, 0.45), P.call(lx + 0.15 + step, 0.85), scale_c.darkened(0.2), r * 0.15, true)
+	ellipse(ci, P.call(lx, 0.1), r * 0.3, r * 0.45, scale_c)
+	ellipse(ci, P.call(lx + 0.08, 0.15), r * 0.16, r * 0.3, belly, 0.0)
+	# a chest plate, centred on his body
+	rect_outlined(ci, Rect2(P.call(lx, -0.25) - Vector2(r * 0.28, 0.0), Vector2(r * 0.56, r * 0.28)), armour, 1.4)
+	# head: snout forward, crest along the top
+	var head: Vector2 = P.call(lx + 0.08, -0.42)
+	ellipse(ci, head, r * 0.24, r * 0.2, scale_c)
+	poly(ci, PackedVector2Array([head + P.call(0.12, -0.1), head + P.call(0.42, 0.02), head + P.call(0.12, 0.12)]), scale_c, 1.4)
+	for k in 4:
+		var cx: float = -0.2 + 0.1 * float(k)
+		poly(ci, PackedVector2Array([head + P.call(cx - 0.05, -0.12), head + P.call(cx - 0.02, -0.36),
+			head + P.call(cx + 0.05, -0.14)]), Color(0.85, 0.45, 0.25), 1.0)
+	ci.draw_circle(head + P.call(0.08, -0.04), r * 0.045, Color(0.95, 0.8, 0.2))
+	# arms to the work
+	var grip: Vector2 = back if moving else winch
+	ci.draw_line(P.call(lx + 0.15, -0.05), grip, scale_c, r * 0.12, true)
+	ink = keep
+
+
 ## A slab of a sword from hilt to tip, w wide: one straight edge, one slanted
 ## point, a dark grip behind the guard. Used on Laniakea's back and, by the
 ## unit itself, for the blade in mid-swing.
@@ -2742,30 +2955,117 @@ static func ant(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Colo
 	ink = keep
 
 
-## The reverse symbol: two chunky arrows bent into an S, one pointing up and
-## right, one down and left, white with a black outline. `s` is half its size.
-static func reverse_arrows(ci: CanvasItem, at: Vector2, s: float) -> void:
-	var black := Color(0.05, 0.05, 0.07)
-	var white := Color(0.94, 0.94, 0.95)
-	for pass_i in 2:
-		var col: Color = black if pass_i == 0 else white
-		var grow: float = 1.6 if pass_i == 0 else 0.0
-		for sgn in [1.0, -1.0]:
-			# shaft: from the middle of the S out to the head, bending once
-			var shaft := PackedVector2Array([
-				at + Vector2(-0.05, 0.12) * s * sgn,
-				at + Vector2(0.22, -0.1) * s * sgn,
-				at + Vector2(0.42, -0.42) * s * sgn])
-			ci.draw_polyline(shaft, col, s * 0.32 + grow * 2.0, true)
-			var tip: Vector2 = at + Vector2(0.85, -0.85) * s * sgn
-			var base_c: Vector2 = at + Vector2(0.4, -0.4) * s * sgn
-			var side: Vector2 = Vector2(0.38, 0.38) * s
-			var head := PackedVector2Array([base_c + side, tip + (tip - base_c).normalized() * grow,
-				base_c - side])
-			if grow > 0.0:
-				head = PackedVector2Array([base_c + side * 1.25, tip + (tip - base_c).normalized() * grow * 1.2,
-					base_c - side * 1.25])
-			ci.draw_colored_polygon(head, col)
+const MANTIS_MALE := Color(0.58, 0.82, 0.34)
+const MANTIS_FEMALE := Color(0.42, 0.7, 0.27)
+
+
+## A mantis, side view: long abdomen trailing low behind, a thin upright
+## thorax, a triangular head with a big eye and two antennae, and the raptorial
+## forelegs folded in prayer. o: female (bigger, darker, a broad abdomen),
+## walk, strike 0..1 (the claws snap out), throw (one arm flung forward: the
+## scythe), leap (legs tucked), bite (head down on her mate), headless (his
+## body: no head, a dark stump, legs limp).
+static func mantis(ci: CanvasItem, r: float, facing: float, t: float, o: Dictionary = {},
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var fem: bool = bool(o.get("female", false))
+	var dead_body: bool = bool(o.get("headless", false))
+	var body: Color = MANTIS_FEMALE if fem else MANTIS_MALE
+	if dead_body:
+		body = body.darkened(0.2)
+	var light := body.lightened(0.35)
+	var strike: float = float(o.get("strike", 0.0))
+	var g: float = sin(t * 12.0) * 0.1 if bool(o.get("walk", false)) else 0.0
+	if bool(o.get("leap", false)):
+		g = 0.0
+	var lw: float = maxf(1.0, r * 0.07)
+	# walking legs: two pairs on the far side, then the near ones
+	var legs := [[-0.1, -0.35, -0.55], [0.05, 0.25, 0.42], [-0.3, -0.6, -0.85]]
+	for i in legs.size():
+		var L: Array = legs[i]
+		var s: float = g if i % 2 == 0 else -g
+		var foot_y: float = 0.45 if bool(o.get("leap", false)) else 0.72
+		if dead_body:
+			foot_y = 0.35 + 0.1 * float(i)
+		ci.draw_polyline(PackedVector2Array([P.call(float(L[0]), 0.02), P.call(float(L[1]) + s, -0.22),
+			P.call(float(L[2]) + s * 1.6, foot_y)]), ink, lw, true)
+	# the abdomen, long and low behind; hers broader, with the wing case on top
+	var ab_len: float = 0.78 if fem else 0.62
+	var ab_w: float = 0.3 if fem else 0.21
+	_mantis_oval(ci, P.call(-0.58, 0.12), ab_len * r, ab_w * r, f * 0.22, body)
+	_mantis_oval(ci, P.call(-0.5, 0.02), ab_len * 0.86 * r, ab_w * 0.55 * r, f * 0.18, light, 1.0)
+	# the thorax, up and forward
+	var neck: Vector2 = P.call(0.28, -0.72)
+	if bool(o.get("bite", false)):
+		neck = P.call(0.45, -0.45)
+	_mantis_seg(ci, P.call(-0.08, 0.0), neck, r * 0.2, body)
+	# head, antennae
+	if dead_body:
+		ci.draw_circle(neck, r * 0.11, Color(0.32, 0.42, 0.18))
+		ci.draw_circle(neck, r * 0.06, Color(0.55, 0.62, 0.3))
+	else:
+		var head: Vector2 = neck + P.call(0.08, -0.16)
+		ci.draw_line(head + P.call(0.04, -0.1), head + P.call(0.45, -0.72), ink, maxf(1.0, lw * 0.6), true)
+		ci.draw_line(head + P.call(-0.02, -0.1), head + P.call(0.28, -0.78), ink, maxf(1.0, lw * 0.6), true)
+		poly(ci, PackedVector2Array([head + P.call(-0.16, -0.08), head + P.call(0.1, -0.16),
+			head + P.call(0.24, 0.02), head + P.call(0.02, 0.14)]), body, 1.4)
+		ellipse(ci, head + P.call(0.08, -0.05), r * 0.085, r * 0.075, Color(0.88, 0.92, 0.5), 1.0)
+		ci.draw_circle(head + P.call(0.1, -0.05), r * 0.035, Color(0.08, 0.08, 0.06))
+	# the raptorial forelegs: folded in prayer, snapping out on a strike, one
+	# flung forward on a throw, slack on the dead
+	var sh: Vector2 = neck.lerp(P.call(-0.08, 0.0), 0.2)
+	var elbow: Vector2 = P.call(0.5, -0.32).lerp(P.call(0.82, -0.52), strike)
+	var claw: Vector2 = P.call(0.4, -0.66).lerp(P.call(1.2, -0.42), strike)
+	if bool(o.get("throw", false)):
+		elbow = P.call(0.55, -0.85)
+		claw = P.call(0.95, -0.8)
+	if dead_body:
+		elbow = P.call(0.45, -0.25)
+		claw = P.call(0.7, -0.05)
+	_mantis_seg(ci, sh, elbow, r * 0.12, body)
+	_mantis_seg(ci, elbow, claw, r * 0.085, light)
+	# the spines along the inside of the arm
+	for k in 3:
+		var at: Vector2 = elbow.lerp(claw, 0.25 + 0.25 * float(k))
+		ci.draw_circle(at, maxf(0.8, r * 0.025), Color(1.0, 1.0, 0.9, 0.85))
+	ink = keep
+
+
+## A rotated, outlined oval (the mantis abdomen).
+static func _mantis_oval(ci: CanvasItem, c: Vector2, rx: float, ry: float, ang: float, fill: Color,
+		w: float = OUTLINE_W) -> void:
+	var pts := PackedVector2Array()
+	for i in 28:
+		var a := TAU * float(i) / 28.0
+		pts.append(c + Vector2(cos(a) * rx, sin(a) * ry).rotated(ang))
+	poly(ci, pts, fill, w)
+
+
+## A limb segment: a thick stroke in `fill` over a slightly thicker ink one.
+static func _mantis_seg(ci: CanvasItem, a: Vector2, b: Vector2, width: float, fill: Color) -> void:
+	if not bare:
+		ci.draw_line(a, b, ink, width + 2.4, true)
+		ci.draw_circle(a, (width + 2.4) * 0.5, ink)
+		ci.draw_circle(b, (width + 2.4) * 0.5, ink)
+	ci.draw_line(a, b, fill, width, true)
+	ci.draw_circle(a, width * 0.5, fill)
+	ci.draw_circle(b, width * 0.5, fill)
+
+
+## The card / deploy-preview picture of the pair, centred on c: the male in
+## front on the right, the bigger female behind on the left. Sets the transform
+## itself (absolute), like gil_pair.
+static func mantis_pair(ci: CanvasItem, c: Vector2, r: float, t: float = 0.0) -> void:
+	ci.draw_set_transform(c + Vector2(-r * 0.75, r * 0.05), 0.0, Vector2.ONE)
+	mantis(ci, r * 1.05, 1.0, t, {"female": true})
+	ci.draw_set_transform(c + Vector2(r * 0.85, r * 0.12), 0.0, Vector2.ONE)
+	mantis(ci, r * 0.9, 1.0, t, {})
+	ci.draw_set_transform(c, 0.0, Vector2.ONE)
+
+
 
 
 ## The Ant Hill: a dome of packed earth with a dark entrance at the front and a
@@ -3109,6 +3409,17 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			gil_pair(ci, c, r * 0.8, t)
 		"enkidu":
 			creature(ci, "enkidu", r, 1.0, t)
+		"mantis":
+			mantis_pair(ci, c, r * 0.75, t)
+		"mantisf":
+			creature(ci, "mantisf", r, 1.0, t)
+		"elf":
+			# the hood and bow stand above her: shrink a little to keep them on the card
+			creature(ci, "elf", r * 0.85, 1.0, t)
+		"militia":
+			creature(ci, "militia", r * 0.85, 1.0, t)
+		"ballista":
+			creature(ci, "ballista", r, 1.0, t)
 		"frog":
 			creature(ci, "frog", r, 1.0, t)
 		"phalanx":

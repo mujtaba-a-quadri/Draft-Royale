@@ -65,6 +65,8 @@ func _decide() -> void:
 		var kind := String(hand[i])
 		if float(arena.gold[player]) < float(DDCard.cost(kind)):
 			continue
+		if arena.card_locked(player, i):
+			continue
 		for pos in _anchors(kind):
 			if not arena.can_deploy(player, kind, pos):
 				continue

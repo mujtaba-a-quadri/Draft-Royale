@@ -65,7 +65,15 @@ func setup(a: Node2D, tm: int, tower: Node, home: Node) -> void:
 	home_tower = home
 	from = home.position if home != null else Vector2.ZERO
 	position = from
-	speed_px = 1.8    * float(a.TILE)
+	# his numbers are the "shiesty" card's (card_db.gd is the balance surface; the
+	# values above are only fallbacks)
+	var d: Dictionary = DDCard.get_card("shiesty")
+	max_hp = float(d.get("hp", max_hp))
+	hp = max_hp
+	dmg = float(d.get("dmg", dmg))
+	interval = float(d.get("interval", interval))
+	radius_t = float(d.get("radius", radius_t))
+	speed_px = float(d.get("speed", 1.8)) * float(a.TILE)
 	z_index = 9
 
 
@@ -163,7 +171,8 @@ func _pick_bridge() -> float:
 	var split: float = (a + b) * 0.5 + 0.5
 	var threat := [0, 0]
 	for u in arena.units:
-		if not _can_hit_me(u):
+		# checked before the call: a freed entry cannot even be passed as a Node
+		if not is_instance_valid(u) or not _can_hit_me(u):
 			continue
 		var col: float = float(arena.tile_of(u.position).x) + 0.5
 		threat[0 if col < split else 1] += 1
@@ -195,11 +204,12 @@ func _route_home(from_p: Vector2, goal: Vector2) -> Vector2:
 	var bc: float = bridge_col
 	var top: float = float(arena.RIVER_TOP)
 	var bottom: float = float(arena.RIVER_BOTTOM)
-	var lane: Vector2 = arena.tile_center(bc + 0.5, top + 0.5).lerp(arena.tile_center(bc + 0.5, bottom + 0.5), 0.5)
-	var far_bank: Vector2 = arena.tile_center(bc + 0.5, top - 1.2) if toward_enemy else arena.tile_center(bc + 0.5, bottom + 1.2)
+	# the same crossing as arena.route_point: down the deck's middle line
+	var lane: Vector2 = arena.tile_center(bc, top + 0.5).lerp(arena.tile_center(bc, bottom + 0.5), 0.5)
+	var far_bank: Vector2 = arena.tile_center(bc, top - 1.2) if toward_enemy else arena.tile_center(bc, bottom + 1.2)
 	var off: float = absf(from_p.y - lane.y) if arena.LANDSCAPE else absf(from_p.x - lane.x)
-	if off > float(arena.TILE) * 0.7:
-		return arena.tile_center(bc + 0.5, bottom + 1.0) if toward_enemy else arena.tile_center(bc + 0.5, top - 1.0)
+	if off > float(arena.TILE) * (float(arena.BRIDGE_HALF) - 0.3):
+		return arena.tile_center(bc, bottom + 1.0) if toward_enemy else arena.tile_center(bc, top - 1.0)
 	return far_bank
 
 

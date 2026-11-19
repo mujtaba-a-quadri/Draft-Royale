@@ -56,8 +56,9 @@ static func _board(ci: CanvasItem, a) -> void:
 			var x2: float = river_span.position.x + fmod(phase * 26.0, river_span.size.x)
 			ci.draw_line(Vector2(x2, y2), Vector2(x2 + 34.0, y2), a.WATER_HI, 2.0, true)
 	# bridges
-	for bx in [int(a.BRIDGE_COL_A), int(a.BRIDGE_COL_B)]:
-		var br: Rect2 = a.tile_rect(bx - 1, a.RIVER_TOP).merge(a.tile_rect(bx, a.RIVER_BOTTOM))
+	for bx in [a.BRIDGE_COL_A, a.BRIDGE_COL_B]:
+		# 3 tiles wide: the two whole tiles and half a tile of water each side
+		var br: Rect2 = a.bridge_rect(float(bx))
 		ci.draw_rect(br, a.WOOD)
 		for k in 5:
 			if a.LANDSCAPE:
@@ -238,14 +239,15 @@ static func _hud(ci: CanvasItem, a) -> void:
 	var chip_w := 330.0
 	var chip := Rect2(a.ORIGIN.x + a.board_rect().size.x * 0.5 - chip_w * 0.5, 10.0, chip_w, 30.0)
 	ci.draw_rect(chip, Color(0.09, 0.08, 0.13, 0.92), true)
-	ci.draw_rect(chip, Color(1.0, 0.72, 0.3) if a.overtime else DDArt.OUTLINE, false, 2.0)
 	var left: int = int(ceil(a.match_time_left))
 	var mins: int = int(float(left) / 60.0)
-	var label := "%d:%02d" % [mins, left % 60]
-	var ink := Color(1.0, 0.93, 0.78)
-	if a.overtime:
-		label = "FINAL  %d:%02d   ·   DOUBLE GOLD" % [mins, left % 60]
-		ink = Color(1.0, 0.76, 0.42)
+	# the phase and the time left in it (arena.Phase: single, double, sudden death)
+	var names := ["SINGLE GOLD", "DOUBLE GOLD", "SUDDEN DEATH  ·  x4 GOLD"]
+	var inks := [Color(1.0, 0.93, 0.78), Color(1.0, 0.76, 0.42), Color(1.0, 0.45, 0.35)]
+	var ph: int = clampi(int(a.phase), 0, 2)
+	ci.draw_rect(chip, DDArt.OUTLINE if ph == 0 else Color(inks[ph]), false, 2.0)
+	var label := "%s   %d:%02d" % [names[ph], mins, left % 60]
+	var ink: Color = inks[ph]
 	ci.draw_string(ThemeDB.fallback_font, Vector2(chip.position.x + 12.0, chip.position.y + 21.0), label,
 		HORIZONTAL_ALIGNMENT_CENTER, chip_w - 24.0, 15, ink)
 	var run = a.get_node_or_null("/root/Run")
@@ -315,7 +317,7 @@ static func _result(ci: CanvasItem, a) -> void:
 			hint = "press Enter for a new run"
 		else:
 			verdict = "VICTORY"
-			var nxt: Dictionary = run.ACT[run.floor_index + 1]
+			var nxt: Dictionary = run.encounter_at(run.floor_index + 1)
 			sub = "commander %d / %d HP carries on  ·  next: %s" % [hp_left, int(run.COMMANDER_MAX), String(nxt["name"])]
 			hint = "choose a card to continue" if run.reward_pending() else "press Enter to continue"
 	ci.draw_string(ThemeDB.fallback_font, Vector2(board.position.x, board.position.y + 380.0), verdict,

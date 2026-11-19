@@ -241,7 +241,8 @@ func _layout_cards() -> void:
 		if c.visible and pending_arrivals.has(int(ids[i])):
 			var from: Vector2 = pending_arrivals[int(ids[i])]
 			pending_arrivals.erase(int(ids[i]))
-			c.fly_in_from(from)
+			c.fly_in_from(from, pending_face_down.has(int(ids[i])))
+			pending_face_down.erase(int(ids[i]))
 	# whatever is left over is either flying home or not in the hand at all
 	for c in pool:
 		c.visible = c.state == DDHandCard.S.RETURN
@@ -270,6 +271,14 @@ func gold_fraction(kind: String) -> float:
 	if arena == null or kind == "":
 		return 1.0
 	return clampf(float(arena.gold[player]) / float(maxi(DDCard.cost(kind), 1)), 0.0, 1.0)
+
+
+## Seconds before this copy can be played (0: free). A whelp that just swapped
+## in waits a few seconds (arena.card_lock).
+func lock_left_for(id: int) -> float:
+	if arena == null:
+		return 0.0
+	return float(arena.lock_left(id))
 
 
 ## Any living troop under this global rect (a hovered card's art window).
@@ -569,9 +578,16 @@ func is_rejected(i: int) -> bool:
 var pending_arrivals := {}
 
 
+## Arrivals that travel face down and flip over with a flash when they land (a
+## card drawn by playing the Hero, Hot Chicken or Snowman).
+var pending_face_down := {}
+
+
 ## `id` is the card arriving, `played_id` the copy it replaces.
-func note_arrival(id: int, world: Vector2, played_id: int = -1) -> void:
+func note_arrival(id: int, world: Vector2, played_id: int = -1, face_down: bool = false) -> void:
 	pending_arrivals[id] = world
+	if face_down:
+		pending_face_down[id] = true
 	# the card being replaced does not fly home as well
 	if drag_card != null:
 		drag_card.retire_play()

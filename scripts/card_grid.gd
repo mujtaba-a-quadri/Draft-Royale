@@ -21,6 +21,10 @@ const FILTERS := ["building", "troop", "spell"]
 
 var kinds: Array = []
 var active := {}
+## columns and card height / width: the debug shelf keeps COLS and 0.82; the
+## collection screen uses fewer, taller cards
+var cols := COLS
+var aspect := 0.82
 var selected_kind := "":
 	set(value):
 		if value == selected_kind:
@@ -84,11 +88,11 @@ func toggle_filter(f: String) -> void:
 # ------------------------------------------------------------------- geometry
 
 func cell_width() -> float:
-	return (size.x - PAD * 2.0 - float(COLS - 1) * GAP) / float(COLS)
+	return (size.x - PAD * 2.0 - float(cols - 1) * GAP) / float(cols)
 
 
 func cell_height() -> float:
-	return cell_width() * 0.82
+	return cell_width() * aspect
 
 
 func list_top() -> float:
@@ -100,7 +104,7 @@ func list_height() -> float:
 
 
 func rows() -> int:
-	return int(ceil(float(filtered().size()) / float(COLS)))
+	return int(ceil(float(filtered().size()) / float(cols)))
 
 
 func content_height() -> float:
@@ -117,8 +121,8 @@ func max_scroll() -> float:
 func cell_rect(i: int) -> Rect2:
 	var cw := cell_width()
 	var ch := cell_height()
-	var col := i % COLS
-	var row: int = int(float(i) / float(COLS))
+	var col := i % cols
+	var row: int = int(float(i) / float(cols))
 	return Rect2(PAD + float(col) * (cw + GAP), list_top() + float(row) * (ch + GAP) - scroll, cw, ch)
 
 

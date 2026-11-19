@@ -21,18 +21,29 @@ extends Node
 
 const COMMANDER_MAX := 250.0
 
-## What you start with: eight cards, repeats allowed.
-const STARTER_DECK := ["troll", "hero", "neko", "anthill", "meerkats", "chicken",
-	"fireball", "firebolt"]
+## What you start with: ten cards, repeats allowed. Deliberately plain basics
+## (Militia, Elf Archers, a Firebolt, the Alchemist), two that draw a card (Hot
+## Chicken, Snowman) and one blunt win condition, Humbaba: weak enough that every
+## card you draft is a visible step up, but always with a way to take a tower.
+## Every card not in it can be drafted (draft_pool).
+const STARTER_DECK := ["troll", "alchemist", "chicken", "snowman", "militia", "militia", "militia",
+	"elf", "elf", "firebolt"]
+
+## The elite pool: which boss an "elite" fight can be, and its name. One is
+## picked per run and fight from the run seed (encounter_at).
+const ELITES := {"spider": "Ballista Matriarch", "kraken": "South Sea Kraken"}
 
 ## Placeholder act. type "battle" is a bot with `deck`; "elite" swaps the enemy
-## side for a boss (`elite`: spider or kraken) as Tab+S / Tab+K do.
+## side for a boss (`elites`: drawn from that list, spider or kraken) as Tab+S /
+## Tab+K do.
 const ACT := [
+	# the first fight is on basics too, with the same blunt win condition, so the
+	# starter can win it; the decks climb from here
 	{"name": "Border Skirmish", "type": "battle",
-		"deck": ["hero", "hero", "lizard", "snowman", "fireball", "hedgehog", "zombie", "firebolt"]},
+		"deck": ["militia", "militia", "militia", "elf", "snowman", "firebolt", "hero", "troll"]},
 	{"name": "Swamp Patrol", "type": "battle",
 		"deck": ["troll", "frog", "frog", "fu", "penny", "aphid", "snowball", "idol"]},
-	{"name": "Momma Ballista Spider", "type": "elite", "elite": "spider", "deck": []},
+	{"name": "Elite", "type": "elite", "elites": ["spider", "kraken"], "deck": []},
 	{"name": "The Chained Keep", "type": "battle",
 		"deck": ["dragon", "alchemist", "warren", "ovomachine", "laniakea", "femme", "gilgamesh", "wu", "neko"]},
 ]
@@ -55,6 +66,10 @@ var won_run := false
 ## different cards, or skip. `rewarded` is set once it has been taken or skipped.
 const REWARD_CHOICES := 3
 var rewarded := false
+## What the title screen asked for: "match" (a plain match with the whole
+## collection), "run" (a fresh run), or "" (launched straight into the arena:
+## the old default, a run unless --match / a dev flag says otherwise).
+var menu_choice := ""
 
 
 func start(p_seed: int = -1) -> void:
@@ -82,9 +97,39 @@ func stop() -> void:
 
 
 func encounter() -> Dictionary:
-	if floor_index < 0 or floor_index >= ACT.size():
+	return encounter_at(floor_index)
+
+
+## How many regular (non-elite) fights come before fight i: each one adds
+## arena.SINGLE_STEP seconds to the next regular fight's single-gold period.
+func battles_before(i: int) -> int:
+	var n := 0
+	for k in mini(i, ACT.size()):
+		if String((ACT[k] as Dictionary).get("type", "battle")) == "battle":
+			n += 1
+	return n
+
+
+## Fight i of the act. An elite fight draws its boss from its `elites` pool,
+## seeded by the run seed and the fight, so it is the same boss every time it
+## is asked for (the "next:" line, the fight itself, the summary).
+func encounter_at(i: int) -> Dictionary:
+	if i < 0 or i >= ACT.size():
 		return {}
-	return ACT[floor_index]
+	var e: Dictionary = ACT[i]
+	if not e.has("elites"):
+		return e
+	var pool: Array = e["elites"]
+	if pool.is_empty():
+		return e
+	var rng := RandomNumberGenerator.new()
+	# hashed, so neighbouring run seeds do not draw in lockstep
+	rng.seed = hash("elite:%d:%d" % [run_seed, i])
+	var pick := String(pool[rng.randi_range(0, pool.size() - 1)])
+	e = e.duplicate()
+	e["elite"] = pick
+	e["name"] = String(ELITES.get(pick, pick))
+	return e
 
 
 ## The enemy's ability for this fight: whichever one you do not have.
@@ -132,11 +177,17 @@ func reward_pending() -> bool:
 	return can_continue() and not rewarded
 
 
+## Every card a reward can offer: the whole deck order less the starter deck.
+func draft_pool() -> Array:
+	return DDCard.draft_pool(STARTER_DECK)
+
+
 ## The cards offered for the fight just won: REWARD_CHOICES different cards from
-## the deck pool (DDCard.ORDER), the same ones every time for this run and fight.
-## A card already in the deck can be offered again (duplicates are allowed).
+## the draft pool (draft_pool(): every card not in the starter deck), the same
+## ones every time for this run and fight. A card already in the deck can be
+## offered again (duplicates are allowed).
 func reward_choices() -> Array:
-	var pool: Array = DDCard.ORDER.duplicate()
+	var pool: Array = draft_pool()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(run_seed % 1000000) * 31 + floor_index * 7 + 3
 	for i in range(pool.size() - 1, 0, -1):

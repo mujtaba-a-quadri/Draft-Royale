@@ -1,6 +1,6 @@
 extends Node2D
 
-## The Momma Ballista Spider: the first elite encounter (NOTES §9).
+## The Ballista Matriarch (the ballista spider): the first elite encounter (NOTES §9).
 ##
 ## She stands in for all three enemy towers. To everything else in the game she
 ## *is* a tower: she sits in arena.towers, answers is_tower() / is_building(),
@@ -555,7 +555,8 @@ func lay_web_ahead_of(walker: Node) -> void:
 	for dy in [-1, 0]:
 		for dx in [-1, 0]:
 			var nt := Vector2i(t.x + dx, t.y + dy)
-			if not arena.valid_tile(nt) or webs.has(nt):
+			# never on water, which includes the bridge decks' outer half tiles
+			if not arena.valid_tile(nt) or webs.has(nt) or arena.is_water(nt):
 				continue
 			webs[nt] = true
 			laid = true
@@ -760,8 +761,8 @@ func _draw_river() -> void:
 		return
 	var tile: float = float(arena.TILE)
 	var gaps: Array = []
-	for bx in [int(arena.BRIDGE_COL_A), int(arena.BRIDGE_COL_B)]:
-		gaps.append([float(bx - 1), float(bx + 1)])
+	for bx in [float(arena.BRIDGE_COL_A), float(arena.BRIDGE_COL_B)]:
+		gaps.append([bx - float(arena.BRIDGE_HALF), bx + float(arena.BRIDGE_HALF)])
 	# split the wet span around the bridges
 	var spans: Array = [[river_a, river_b]]
 	for g in gaps:

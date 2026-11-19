@@ -9,7 +9,9 @@ const CARDS := {
 		"name": "Hero",
 		"cost": 3,
 		"type": "troop",
-		"blurb": "Armoured duelist. Enormous HP for 3 gold. Also rides the dragon down.",
+		"blurb": "Armoured duelist. Enormous HP for 3 gold. Also rides the dragon down. Playing him draws you a card.",
+		# playing it draws this many cards at once; the draw clock is left alone
+		"draws": 1,
 		"hp": 150.0, "dmg": 15.0, "speed": 1.05, "reach": 0.4, "interval": 1.0,
 		"radius": 0.45, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -19,7 +21,8 @@ const CARDS := {
 		"name": "Snowman",
 		"cost": 2,
 		"type": "building",
-		"blurb": "Immobile decoy. Soaks hits, hits nothing.",
+		"blurb": "Immobile decoy. Soaks hits, hits nothing. Playing it draws you a card.",
+		"draws": 1,
 		"hp": 90.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 1.0,
 		"radius": 0.5, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 60.0,
 		"buildings_only": false,
@@ -94,7 +97,8 @@ const CARDS := {
 		"name": "Hot Chicken",
 		"cost": 2,
 		"type": "troop",
-		"blurb": "Pecks fireballs from range. Three hits on one target and it takes to the air: a flying fire spirit that rams in and sets everything nearby alight with 30 burn, taking itself with it. Shoot it down before it lands.",
+		"blurb": "Pecks fireballs from range. Three hits on one target and it takes to the air: a flying fire spirit that rams in and sets everything nearby alight with 30 burn, taking itself with it. Shoot it down before it lands. Playing it draws you a card.",
+		"draws": 1,
 		"hp": 45.0, "dmg": 5.0, "speed": 1.35, "reach": 3.5, "interval": 0.75,
 		"radius": 0.4, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -109,15 +113,21 @@ const CARDS := {
 		"name": "Penny",
 		"cost": 3,
 		"type": "troop",
-		"blurb": "Calico blur. Only ever goes after troops. Three quick swipes, then she fades out, backs off and circles around them.",
+		"blurb": "Calico blur. Goes for anything in the air first: she leaps up to two and a half tiles to snatch it. On the ground, three quick swipes, then she fades out, backs off and circles around them. Playing her brings Pen into your hand (Pen is used up when played).",
 		"hp": 90.0, "dmg": 10.0, "speed": 2.5, "reach": 0.45, "interval": 0.7,
 		"radius": 0.51, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
-		"troops_only": true,
+		# she reaches flyers only by leaping at them (never a swipe)
+		"hits_air": true,
+		# air_first: the nearest flyer in sight outranks every ground target; within
+		# jump_reach tiles of it she leaps (jump_time s, jump_mult x her hit, carrying
+		# it), then waits air_leap_cd s before the next leap
 		"dodge": {"after_hits": 2, "time": 0.9, "back": 0.5, "sweep_deg": 90.0,
-			"jump_time": 0.35, "jump_reach": 2.5, "jump_mult": 2.0},
-		# playing her puts this card in her hand slot
-		"becomes": "pen",
+			"jump_time": 0.35, "jump_reach": 2.5, "jump_mult": 2.0,
+			"air_first": true, "air_leap_cd": 1.4},
+		# playing her puts a Pen in her hand slot; Penny herself cycles to the back
+		# of the deck as usual (Pen is "spent": played once, it is gone)
+		"gives": "pen",
 		"accent": Color(0.95, 0.62, 0.28),
 	},
 	"obsidian": {
@@ -132,6 +142,8 @@ const CARDS := {
 		# hit; opens again once nothing is in sense AND it has gone `calm` s unhit
 		"guard": {"sense": 3.0, "damage_mult": 0.2, "melee_push": 0.25, "push_time": 0.12, "calm": 2.0},
 		"becomes": "magma",
+		# swapped into the hand by the Magma Whelp, it cannot be played for this long
+		"arrive_lock": 3.0,
 		"accent": Color(0.42, 0.36, 0.5),
 	},
 	"wu": {
@@ -171,8 +183,10 @@ const CARDS := {
 		# an instant single-target hit, drawn as a beam in the owner's colour
 		"beam": true,
 		# every `every` s: two pentagrams `dist` tiles out on the forward diagonals,
-		# and `delay` s later a `unit` climbs out of each (even if she has died)
-		"ritual": {"unit": "ratbones", "every": 4.0, "dist": 1.2, "delay": 1.0},
+		# and `delay` s later a `unit` climbs out of each (even if she has died).
+		# The first opens `first` s after she is played. `ahead` pushes both a
+		# further that many tiles forward, so the rats climb out in front of her.
+		"ritual": {"unit": "ratbones", "every": 4.0, "first": 1.5, "dist": 1.2, "ahead": 1.0, "delay": 1.0},
 		"accent": Color(0.55, 0.78, 0.36),
 	},
 	"ratbones": {
@@ -183,6 +197,8 @@ const CARDS := {
 		"hp": 20.0, "dmg": 6.0, "speed": 1.4, "reach": 0.35, "interval": 0.8,
 		"radius": 0.39, "splash": 0.0, "aggro": 5.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
+		# holds no ground: never counts toward presence (arena._tick_control)
+		"no_presence": true,
 		"accent": Color(0.9, 0.87, 0.78),
 	},
 	# one card, two bodies: Gilgamesh is the card's own unit and `partner` lands
@@ -221,18 +237,99 @@ const CARDS := {
 		},
 		"accent": Color(0.7, 0.52, 0.34),
 	},
+	# a starter basic: cheap, plain, and meant to be replaced by what you draft
+	"militia": {
+		"name": "Militia",
+		"cost": 2,
+		"type": "troop",
+		"blurb": "A farmhand with a spear and a pot lid for a shield. Cheap, willing, and not very good at this.",
+		"hp": 80.0, "dmg": 9.0, "speed": 1.0, "reach": 0.6, "interval": 1.0,
+		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.7, 0.58, 0.42),
+	},
+	# the first building that moves: a building in every rule (troops that hunt
+	# buildings go for it, shoves do nothing, it takes no tile), but it is not
+	# stationary, so it walks like a troop. Its reach outranges a side tower: it
+	# stops on the middle of the bridge (9 tiles from the tower's centre) and
+	# shoots from there.
+	"ballista": {
+		"name": "Ballista",
+		"cost": 5,
+		"type": "building",
+		"blurb": "A lizardfolk siege engineer and his ballista. He lifts the back and wheels it forward, sets it down at the river, and shoots at towers from further than they can shoot back. Only ever aims at buildings and towers.",
+		"hp": 220.0, "dmg": 25.0, "speed": 0.45, "reach": 7.5, "interval": 3.0,
+		"radius": 0.7, "splash": 0.0, "aggro": 9.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"shoots": "ballista",
+		"accent": Color(0.72, 0.5, 0.3),
+	},
+	"elf": {
+		"name": "Elf Archer",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "A hooded elf with a longbow. Picks off anything on the ground or in the air from five and a half tiles, and is happy to stay that far away.",
+		"hp": 110.0, "dmg": 20.0, "speed": 1.0, "reach": 5.5, "interval": 1.3,
+		"radius": 0.45, "splash": 0.0, "aggro": 6.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"shoots": "arrow",
+		"accent": Color(0.4, 0.66, 0.36),
+	},
+	# one card, two bodies: the male is the card's own unit and lands on the
+	# deploy tile; his mate lands `partner_behind` tiles behind him (towards
+	# his own side) instead of across the lane (arena.spawn_troop)
+	"mantis": {
+		"name": "Mated Mantises",
+		"cost": 5,
+		"type": "troop",
+		"blurb": "A pair of mantises. He goes in front with his claws; she follows three and a half tiles back, throwing a spinning scythe. When he drops to a quarter of his health she leaps on him and bites his head off, and comes away healed, enraged, and fighting both up close and at range.",
+		# dmg / reach / interval: his claws
+		"hp": 150.0, "dmg": 14.0, "speed": 1.0, "reach": 0.8, "interval": 1.0,
+		"radius": 0.55, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"partner": "mantisf",
+		"partner_behind": 3.5,
+		"accent": Color(0.5, 0.78, 0.3),
+	},
+	"mantisf": {
+		"name": "Female Mantis",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Never dealt alone: she comes with her mate, and outlives him.",
+		# dmg / reach / interval: the thrown scythe (reaches air)
+		"hp": 120.0, "dmg": 12.0, "speed": 0.9, "reach": 4.0, "interval": 1.6,
+		"radius": 0.6, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"hits_air": true,
+		"shoots": "scythe",
+		"devour": {
+			# her mate under at_hp of his HP: she leaps to him (leap_time s, from any
+			# distance) and spends bite_time s eating his head; his body lies there
+			# for corpse_time s
+			"at_hp": 0.25, "leap_time": 0.55, "bite_time": 0.45, "corpse_time": 3.0,
+			# then: +heal of her max HP, up to overheal x her max (the bar runs past
+			# its end), and Wu's rage without the regen: faster walk and attacks
+			"heal": 0.5, "overheal": 1.25,
+			"rage_time": 5.0, "rage_speed": 1.25, "rage_attack": 1.25,
+			# and from then on claws as well as the scythe, for anything this close
+			"melee_dmg": 18.0, "melee_reach": 0.8, "melee_interval": 1.0,
+		},
+		"accent": Color(0.42, 0.68, 0.28),
+	},
 	"frog": {
 		"name": "Poison Dart Frog",
 		"cost": 1,
 		"type": "troop",
 		"blurb": "Hops along a tile at a time. It has no bite: the moment anything is within two tiles it leaps on it and bursts, leaving 10 poison on everything within half a tile.",
 		# no attack of its own: dmg / reach / interval are unused
+		"draws": 1,
 		"hp": 25.0, "dmg": 0.0, "speed": 1.0, "reach": 0.0, "interval": 1.0,
 		"radius": 0.5, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"frog": {
 			# moves only in hops: hop tiles over hop_time s, then sits for rest s
-			"hop": 0.7, "hop_time": 0.22, "rest": 0.45,
+			"hop": 1.2, "hop_time": 0.22, "rest": 0.45,
 			# leaps at the nearest ground enemy (troop, building or tower) whose edge
 			# is within leap_range tiles, lands on it and bursts
 			"leap_range": 2.0, "leap_time": 0.38,
@@ -265,8 +362,9 @@ const CARDS := {
 		"name": "Wolf Pack",
 		"cost": 4,
 		"type": "troop",
-		"blurb": "Four wolves in a diamond that move as one. They pick out the loneliest troop in reach (or head for a tower), ring it two tiles out, and take turns darting in to bite: one bite every 0.4 seconds with four left, every 0.8 with two.",
-		# dmg: one bite. interval: each wolf's own turn (the pack bites every interval / alive)
+		"blurb": "Four wolves in a diamond that move as one. They pick out the loneliest troop in reach (or head for a tower), ring it two tiles out, and take turns darting in to bite: one bite every 0.4 seconds, however many are left.",
+		# dmg: one bite. interval / the pack's size: the pack's steady beat (0.4 s),
+		# which does not slow down as wolves die
 		"hp": 55.0, "dmg": 10.0, "speed": 1.6, "reach": 0.35, "interval": 1.6,
 		"radius": 0.4, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -285,7 +383,8 @@ const CARDS := {
 		"hp": 22.0, "dmg": 5.0, "speed": 1.9, "reach": 0.35, "interval": 0.6,
 		"radius": 0.3, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
-		"swarm_offsets": [[0.4, 0.4], [0.4, -0.4], [-0.4, 0.4], [-0.4, -0.4]],
+		"no_presence": true,
+		"swarm_offsets": [[0.6, 0.6], [0.6, -0.6], [-0.6, 0.6], [-0.6, -0.6]],
 		"accent": Color(0.86, 0.68, 0.42),
 	},
 	"anthill": {
@@ -305,18 +404,15 @@ const CARDS := {
 		"name": "Ant",
 		"cost": 0,
 		"type": "troop",
-		"blurb": "Out of the Ant Hill. Slow, tiny, and barely bites, but there is always another. Ants march on buildings and leave troops alone, until a troop kills one: then every ant that can see it swarms it for 10 seconds. Ants that walk where another ant died turn round and take the other lane, and turn every ant they meet on the way.",
+		"blurb": "Out of the Ant Hill. Slow, tiny, and barely bites, but there is always another. Ants march on buildings and leave troops alone, until a troop kills one: then every ant that can see it swarms it for 10 seconds.",
 		"hp": 8.0, "dmg": 2.0, "speed": 0.55, "reach": 0.3, "interval": 1.0,
 		"radius": 0.22, "splash": 0.0, "aggro": 4.0, "stationary": false, "lifetime": 0.0,
 		# troops are ignored... unless they kill an ant (trail.mark_time below)
 		"buildings_only": true,
-		# walking into a tile where one of their own ants died in the last
-		# grave_time s turns an ant to the other lane's tower; a turned ant that
-		# touches (edges within `touch` tiles) an ant walking the other way turns it
-		# too. A turning ant first walks `back` tiles back down its own trail.
+		"no_presence": true,
 		# Whatever kills an ant is marked for mark_time s: ants with a marked
 		# killer within aggro tiles go for the closest one instead of buildings.
-		"trail": {"grave_time": 7.0, "touch": 1.02, "back": 1.5, "mark_time": 10.0},
+		"trail": {"mark_time": 10.0},
 		"accent": Color(0.35, 0.2, 0.14),
 	},
 	"goatrider": {
@@ -339,7 +435,11 @@ const CARDS := {
 		"name": "Magma Whelp",
 		"cost": 1,
 		"type": "troop",
-		"blurb": "The Obsidian Whelp's molten twin. Flies, and flicks flaming feathers at anything within two tiles, ground or air: no impact, just 5 burn each.",
+		"blurb": "The Obsidian Whelp's molten twin. Flies, and flicks flaming feathers at anything within two tiles, ground or air: no impact, just 5 burn each. Playing it brings the Obsidian Whelp back into your hand.",
+		# the twins swap in the hand every play and never go back into the deck;
+		# each one swapped in waits arrive_lock s before it can be played
+		"becomes": "obsidian",
+		"arrive_lock": 3.0,
 		"hp": 30.0, "dmg": 0.0, "speed": 1.3, "reach": 2.0, "interval": 1.4,
 		"radius": 0.6, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -373,6 +473,8 @@ const CARDS := {
 		"hits_air": true,
 		"shoots": "dart",
 		"payload": {"stun": 0.5},
+		# Penny's gift: played once, it never goes into the deck
+		"spent": true,
 		"accent": Color(0.86, 0.72, 0.24),
 	},
 	"lizard": {
@@ -406,13 +508,16 @@ const CARDS := {
 		"name": "Snowball",
 		"cost": 4,
 		"type": "spell",
-		"blurb": "Thrown in an arc out of your nearest tower onto the tile you pick, then rolls forward from there: one tile of snow, a tile taller for every two it covers, 10 damage per tile of height with a shove to match, then a 30 damage burst and a 3.5 second slow when it reaches the river.",
+		"blurb": "Thrown in an arc out of your nearest tower onto the tile you pick, then rolls eight tiles forward, river and all: one tile of snow, a tile taller for every two it covers, 10 damage per tile of height with a shove to match (once per enemy), then a 30 damage burst and a 3.5 second slow.",
 		"hp": 0.0, "dmg": 30.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
 		"radius": 0.6, "splash": 1.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
 		"buildings_only": false,
 		"slow": 0.32, "slow_time": 3.5,
 		"launch": "closest",
-		"roll": {"speed": 4.2, "dmg": 10.0, "push": 1.0},
+		# rolls `distance` tiles from where it lands (over the river too) and bursts;
+		# the roll hits each enemy once, the burst reaches burst_ahead tiles past
+		# the ball's front so it catches what the roll shoved ahead of it
+		"roll": {"speed": 4.2, "dmg": 10.0, "push": 1.0, "distance": 8.0, "burst_ahead": 1.5},
 		"accent": Color(0.72, 0.86, 1.0),
 	},
 	"ovomachine": {
@@ -553,7 +658,7 @@ const CARDS := {
 	# scripts/spider.gd standing in for all three enemy towers. Its numbers live
 	# here anyway so this stays the one balance surface.
 	"spider": {
-		"name": "Momma Ballista Spider",
+		"name": "Ballista Matriarch",
 		"cost": 0,
 		"type": "troop",
 		"blurb": "Elite. Takes the place of all three towers. Skitters forward, seeps a pool of poison that runs down into the river and spits venom from behind it, lays an egg, then builds a slingshot trap on a bridge before her parting shot at your towers. Stabs with her front legs and webs the ground ahead of your troops.",
@@ -575,7 +680,7 @@ const CARDS := {
 			# way, mouth first, once she leaves. Enemy ground troops standing in the
 			# pool or stream take pool_poison every pool_every s.
 			"seep_speed": 2.5, "pool_len": 1.8, "pool_wide": 1.8, "stream_wide": 0.22,
-			"river_speed": 6.0, "pool_poison": 2.0, "pool_every": 1.0,
+			"river_speed": 6.0, "pool_poison": 5.0, "pool_every": 0.5,
 			# spits reach anywhere: one every forward_spit_every s at the closest
 			# unit while forward, once the pool has formed; and the parting shot at
 			# the nearest tower / building after the trap, her eye glinting for
@@ -593,7 +698,7 @@ const CARDS := {
 		"name": "Spider Egg",
 		"cost": 0,
 		"type": "building",
-		"blurb": "Laid by the ballista spider on a patch of web. However it goes, timer or blade, spiderlings climb out: one more for every eighth of its life it lasted, eight if it runs its full course.",
+		"blurb": "Laid by the Ballista Matriarch on a patch of web. However it goes, timer or blade, spiderlings climb out: one more for every eighth of its life it lasted, eight if it runs its full course.",
 		"hp": 60.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
 		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 30.0,
 		"buildings_only": false,
@@ -608,7 +713,7 @@ const CARDS := {
 		"cost": 0,
 		"type": "troop",
 		"blurb": "Small, fast, and every bite leaves poison that never wears off.",
-		"hp": 40.0, "dmg": 6.0, "speed": 1.6, "reach": 0.4, "interval": 0.8,
+		"hp": 26.0, "dmg": 6.0, "speed": 1.6, "reach": 0.4, "interval": 0.8,
 		"radius": 0.3, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"poison": 5.0,
@@ -700,12 +805,18 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider", "mantis", "elf", "militia", "ballista"]
+
+
+## The pool a run's card reward draws from: ORDER less `exclude` (the run passes
+## its starter deck, so every card you do not start with can be drafted).
+static func draft_pool(exclude: Array = []) -> Array:
+	return ORDER.filter(func(k): return not exclude.has(k))
 
 
 ## Every card in the game. Pen and the Magma Whelp are not in the deck — they
-## only arrive when Penny / the Obsidian Whelp is played (card key "becomes") —
-## but the debug overlay should still be able to show them.
+## only arrive when Penny (card key "gives") / the Obsidian Whelp ("becomes") is
+## played — but the debug overlay should still be able to show them.
 static func all_kinds() -> Array:
 	return ORDER + ["pen", "magma"]
 

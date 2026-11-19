@@ -25,11 +25,22 @@ const CLAIM_TIME := 4.0
 const TOWER_BUFFER := 3.5
 const ABILITY_COST := 2
 const ABILITY_COOLDOWN := 15.0
-## 150 second matches. The last 60 are the closing window: double gold, half
-## ability cooldowns, draws two seconds faster (the cut doubled with the draw).
-const MATCH_TIME := 150.0
-const OVERTIME := 60.0
-const OVERTIME_GOLD := 2.0
+## The match clock runs in three phases (`phase`, Phase):
+##   SINGLE  single gold, `single_len` s (a plain match and run fight 1: 90 s;
+##           each later regular run fight +SINGLE_STEP; an elite ELITE_SINGLE)
+##   DOUBLE  double gold, half as long. If either side has a tower lead when it
+##           ends, the lead wins. Otherwise (and always in an elite fight)...
+##   SUDDEN  sudden death, quadruple gold, half as long again (SUDDEN_MIN at the
+##           least): the next tower to fall loses the match for its owner. In
+##           an elite fight only the commander or the boss ends it.
+## From DOUBLE on (`overtime`): half ability cooldowns, draws two seconds faster.
+## match_time_left is the time left in the current phase.
+enum Phase { SINGLE, DOUBLE, SUDDEN }
+const SINGLE_TIME := 90.0
+const SINGLE_STEP := 15.0
+const ELITE_SINGLE := 120.0
+const SUDDEN_MIN := 30.0
+const PHASE_GOLD := [1.0, 2.0, 4.0]
 const OVERTIME_DRAW_CUT := 2.0
 const TENTACLE_HP := 35.0
 ## the hold squeezes: TENTACLE_DMG on the grab and every TENTACLE_INTERVAL after
@@ -98,10 +109,6 @@ const TEAM_INK_DARKEN := 0.45
 
 var towers: Array = []
 var units: Array = []
-## Where ants have died: [{"tile": Vector2i, "team": int, "frame": physics frame}].
-## Ants that walk into one of their own side's fresh graves change lanes
-## (DDUnit._tick_ant). Nothing draws them.
-var ant_graves: Array = []
 ## enemies that killed an ant lately: "antteam:id" -> {node, team, until (frame)}
 var ant_marks: Dictionary = {}
 var gold := [4.2, 4.2]
@@ -121,9 +128,17 @@ var next_card_id := 1
 var deck_lists := [[], []]
 
 ## Seconds left in the match, and whether the closing window is live.
-var match_time_left := MATCH_TIME
+var match_time_left := SINGLE_TIME
 var overtime := false
-const HAND_MAX := 8
+var phase: int = Phase.SINGLE
+var single_len := SINGLE_TIME
+## an elite fight: a side tower lead never ends it, it always goes to sudden death
+var elite_fight := false
+const PHASE_CALL_SCRIPT := preload("res://scripts/phase_call.gd")
+var phase_call: Node2D = null
+const HAND_MAX := 6
+## Cards dealt into each hand at the start of a match.
+const OPENING_HAND := 3
 ## A draw every DRAW_INTERVAL seconds, and every gold spent takes DRAW_PER_GOLD
 ## seconds off the wait for the next one (spend 5, draw 5 s sooner).
 const DRAW_INTERVAL := 12.0
@@ -174,6 +189,8 @@ var reservations := {}
 
 
 func _ready() -> void:
+	# a pause survives reload_current_scene (R, or a run moving on): never start paused
+	get_tree().paused = false
 	for t in 2:
 		var arr: Array = []
 		arr.resize(GRID_W * GRID_H)
@@ -226,6 +243,12 @@ func _ready() -> void:
 	_build_hud()
 	_build_shelf()
 	_setup_bots()
+	# the clock: run fights get longer by SINGLE_STEP per regular fight before
+	# this one (an elite resets it to its own as it starts)
+	var single := SINGLE_TIME
+	if in_run:
+		single += SINGLE_STEP * float(Run.battles_before(Run.floor_index))
+	setup_clock(single)
 	_dev_hook()
 	if in_run:
 		var elite := String(Run.encounter().get("elite", ""))
@@ -246,7 +269,8 @@ func _ready() -> void:
 ## abilities from the run. Returns whether this match is part of a run.
 func _apply_run() -> bool:
 	if not Run.active:
-		var want := true
+		# the title screen's choice wins; launched straight in, a run is the default
+		var want := Run.menu_choice != "match"
 		var run_seed := -1
 		for a in OS.get_cmdline_user_args():
 			if a == "--match" or a.begins_with("--botsim=") or a.begins_with("--scenario=") \
@@ -301,6 +325,36 @@ func _match_ended() -> void:
 
 const REWARD_SCRIPT := preload("res://scripts/reward_screen.gd")
 var reward_screen: Control = null
+
+const PAUSE_SCRIPT := preload("res://scripts/pause_menu.gd")
+var pause_layer: CanvasLayer = null
+
+
+## Esc pauses the match: the whole tree stops (clock, troops, bots, gold, the
+## hand) and pause_menu.gd, which alone keeps processing, offers Resume and the
+## volume. Not once the match is over or the reward screen is up.
+func set_paused(on: bool) -> void:
+	if on and (match_over or get_tree().paused):
+		return
+	if on:
+		clear_selection()
+		pause_layer = CanvasLayer.new()
+		pause_layer.layer = 60
+		pause_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+		add_child(pause_layer)
+		var menu: Control = PAUSE_SCRIPT.new()
+		menu.setup(self)
+		pause_layer.add_child(menu)
+		get_tree().paused = true
+	else:
+		get_tree().paused = false
+		if pause_layer != null and is_instance_valid(pause_layer):
+			pause_layer.queue_free()
+		pause_layer = null
+
+
+func is_paused() -> bool:
+	return get_tree().paused
 
 
 ## The card reward after a won fight: its own CanvasLayer, above the board and
@@ -444,8 +498,8 @@ func _build_decks(seed_value: int = -1) -> void:
 			var tmp = deck[i]
 			deck[i] = deck[j]
 			deck[j] = tmp
-		hands[p] = deck.slice(0, 4)
-		queues[p] = deck.slice(4)
+		hands[p] = deck.slice(0, OPENING_HAND)
+		queues[p] = deck.slice(OPENING_HAND)
 		hand_ids[p] = []
 		queue_ids[p] = []
 		_sync_ids(p)
@@ -490,17 +544,17 @@ func selection_id() -> int:
 	return hand_id(selected_player, selected_index)
 
 
-## One sound node for the whole match; it also owns the deal sound so the four
-## cards that start the hand are audible.
+## One sound node for the whole match; it also owns the deal sound so the
+## OPENING_HAND cards that start the hand are audible.
 func _build_sfx() -> void:
 	sfx = DDSfx.new()
 	add_child(sfx)
 	DDSfx.get_volume()
-	sfx.draw_hand(4)
-	# the song comes in once the four-card deal has finished
+	sfx.draw_hand(OPENING_HAND)
+	# the song comes in once the deal has finished
 	# (not headless: the bot sim and checks have no one to hear it)
 	if DisplayServer.get_name() != "headless":
-		sfx.start_music(4.0 * float(sfx.slice_seconds) + 0.3)
+		sfx.start_music(float(OPENING_HAND) * float(sfx.slice_seconds) + 0.3)
 
 
 func _build_hud() -> void:
@@ -749,6 +803,31 @@ func aim_point(world: Vector2) -> Vector2:
 	return tile_center(float(t.x) + 0.5, float(t.y) + 0.5)
 
 
+## Cards that cannot be played yet: card id -> physics frame they free up. A
+## card with `arrive_lock` in its data gets it when another card's play puts it
+## in the hand (the whelps swapping: 3 s before the new one can go).
+var card_lock := {}
+
+
+func lock_left(id: int) -> float:
+	if not card_lock.has(id):
+		return 0.0
+	var left := float(int(card_lock[id]) - Engine.get_physics_frames()) / float(Engine.physics_ticks_per_second)
+	if left <= 0.0:
+		card_lock.erase(id)
+		return 0.0
+	return left
+
+
+func card_locked(player: int, index: int) -> bool:
+	return lock_left(hand_id(player, index)) > 0.0
+
+
+func _lock_card(id: int, seconds: float) -> void:
+	if seconds > 0.0:
+		card_lock[id] = Engine.get_physics_frames() + int(ceilf(seconds * float(Engine.physics_ticks_per_second)))
+
+
 ## Every placement lands here: the board click, the dragged release and a queued
 ## placement all go through the same affordability rules.
 func try_deploy_at(world: Vector2) -> void:
@@ -760,6 +839,10 @@ func try_deploy_at(world: Vector2) -> void:
 		deploy_debug(world)
 		return
 	if selected_player < 0 or selected_index < 0:
+		return
+	if card_locked(selected_player, selected_index):
+		# still settling into the hand (a whelp that just swapped in)
+		reject_placement(selected_player, selected_index)
 		return
 	var kind := selection_kind()
 	# a unit-locking card casts on the troop it is aimed at, not on the tile
@@ -851,7 +934,7 @@ func set_view_mode(m: int) -> void:
 
 ## Gold per second a player earns right now.
 func gold_rate_now() -> float:
-	return gold_rate * (OVERTIME_GOLD if overtime else 1.0)
+	return gold_rate * float(PHASE_GOLD[clampi(phase, 0, PHASE_GOLD.size() - 1)])
 
 
 ## How long a card draw takes right now (one second faster in the closing window).
@@ -880,17 +963,80 @@ func _reset_charges(team: int, id: int) -> void:
 		(charges[team] as Dictionary).erase(id)
 
 
+## Seconds each phase lasts: [single, double, sudden death].
+func phase_lengths() -> Array:
+	return [single_len, single_len * 0.5, maxf(SUDDEN_MIN, single_len * 0.25)]
+
+
+## Start the clock over at SINGLE with `single` seconds of single gold.
+func setup_clock(single: float) -> void:
+	single_len = single
+	phase = Phase.SINGLE
+	overtime = false
+	match_time_left = single
+	_call_phase()
+
+
 func _tick_clock(delta: float) -> void:
 	match_time_left = maxf(0.0, match_time_left - delta)
-	if not overtime and match_time_left <= OVERTIME:
+	if match_time_left > 0.0:
+		return
+	if phase == Phase.SINGLE:
+		_enter_phase(Phase.DOUBLE)
+	elif phase == Phase.DOUBLE:
+		# a tower lead at the end of double gold wins it (never in an elite fight)
+		if not elite_fight:
+			var lost := towers_lost()
+			if lost[0] != lost[1]:
+				_finish_on_towers()
+				return
+		_enter_phase(Phase.SUDDEN)
+	else:
+		_finish_on_towers()
+
+
+func _enter_phase(p: int) -> void:
+	phase = p
+	match_time_left = float(phase_lengths()[p])
+	if not overtime:
 		overtime = true
 		# a cooldown already running gets shortened too, so the switch is felt
 		ability_cd = [minf(float(ability_cd[0]), ability_cooldown_time()),
 			minf(float(ability_cd[1]), ability_cooldown_time())]
-		banner_flash("FINAL MINUTE  â€”  DOUBLE GOLD")
-		return
-	if match_time_left <= 0.0:
-		_finish_on_towers()
+	_call_phase()
+
+
+## Towers each side has lost: [team 0, team 1]. A kraken tentacle counts once it
+## is `down` (its `dead` flickers while it burrows).
+func towers_lost() -> Array:
+	var lost := [0, 0]
+	for tw in towers:
+		if not is_instance_valid(tw):
+			continue
+		var gone: bool = bool(tw.get("down")) if tw.get("down") != null else bool(tw.dead)
+		if gone:
+			lost[int(tw.team)] += 1
+	return lost
+
+
+## The phase announced in the middle of the board (phase_call.gd).
+func _call_phase() -> void:
+	if phase_call == null or not is_instance_valid(phase_call):
+		phase_call = PHASE_CALL_SCRIPT.new()
+		phase_call.name = "PhaseCall"
+		phase_call.arena = self
+		add_child(phase_call)
+	var secs := int(round(float(phase_lengths()[phase])))
+	var dur := "%d:%02d" % [int(floorf(float(secs) / 60.0)), secs % 60]
+	match phase:
+		Phase.SINGLE:
+			phase_call.show_call("SINGLE GOLD", dur, Color(1.0, 0.93, 0.7))
+		Phase.DOUBLE:
+			phase_call.show_call("DOUBLE GOLD", dur + "  ·  a tower lead wins at the end" if not elite_fight else dur,
+				Color(1.0, 0.78, 0.35))
+		_:
+			var sub := "next tower to fall loses" if not elite_fight else "commander or boss"
+			phase_call.show_call("SUDDEN DEATH", "quadruple gold  ·  " + sub + "  ·  " + dur, Color(1.0, 0.4, 0.3))
 
 
 ## Time up: whoever has had more towers destroyed loses. Only if that is level
@@ -912,6 +1058,24 @@ func _finish_on_towers() -> void:
 			hp[int(tw.team)] += float(tw.hp)
 	match_over = true
 	banner_timer = 999.0
+	if elite_fight:
+		# an elite has to be killed: sudden death running out is the boss's win,
+		# whatever towers or tentacles fell on the way
+		winner = 1
+		banner_text = "TIME  —  THE BOSS HOLDS: KILL IT BEFORE SUDDEN DEATH RUNS OUT"
+		_match_ended()
+		return
+	if Run.active:
+		# a run fight has to be won, not waited out: on the clock you win only if
+		# you have taken more towers than you have lost. Level is a loss, and
+		# tower HP never decides it.
+		winner = 0 if lost[1] > lost[0] else 1
+		if winner == 0:
+			banner_text = "TIME  —  YOU WIN: %d TOWERS TAKEN TO %d LOST" % [lost[1], lost[0]]
+		else:
+			banner_text = "TIME  —  YOU LOSE: TAKE MORE TOWERS THAN YOU LOSE (%d TAKEN, %d LOST)" % [lost[1], lost[0]]
+		_match_ended()
+		return
 	if lost[0] != lost[1]:
 		winner = 0 if lost[0] < lost[1] else 1
 		banner_text = "TIME  —  PLAYER %d WINS: %d TOWERS DOWN TO %d" % [winner + 1, maxi(lost[0], lost[1]), mini(lost[0], lost[1])]
@@ -1172,8 +1336,41 @@ func controlled(team: int, t: Vector2i) -> bool:
 	return bool(control[team][band_index(t)])
 
 
-## River water: the two river rows except the bridge decks. Nothing is placed
-## there and no presence reaches it.
+## A bridge deck runs BRIDGE_HALF tiles either side of its middle line x = bx:
+## 3 tiles wide, the whole tiles bx-1 and bx plus half of bx-2 and bx+1. Those
+## two half tiles are still water for placing and presence (is_water), but
+## ground for walking on (on_bridge_deck), so a body shoved a little off the
+## middle of the bridge stays on it instead of being sent back to its bank.
+const BRIDGE_HALF := 1.5
+
+
+## The bridge's middle in tile columns (x = bx), for a world position.
+func col_f(world: Vector2) -> float:
+	return (world.y - ORIGIN.y) / TILE if LANDSCAPE else (world.x - ORIGIN.x) / TILE
+
+
+## On a bridge deck (inside the river rows, within BRIDGE_HALF of a bridge's middle).
+func on_bridge_deck(world: Vector2) -> bool:
+	var t := tile_of(world)
+	if t.y < RIVER_TOP or t.y > RIVER_BOTTOM:
+		return false
+	var c := col_f(world)
+	for bx in [BRIDGE_COL_A, BRIDGE_COL_B]:
+		if absf(c - float(bx)) <= BRIDGE_HALF:
+			return true
+	return false
+
+
+## The deck's screen rect, for drawing.
+func bridge_rect(bx: float) -> Rect2:
+	var p0: Vector2 = tile_center(bx - BRIDGE_HALF, float(RIVER_TOP))
+	var p1: Vector2 = tile_center(bx + BRIDGE_HALF, float(RIVER_BOTTOM) + 1.0)
+	return Rect2(Vector2(minf(p0.x, p1.x), minf(p0.y, p1.y)), (p1 - p0).abs())
+
+
+## River water: the two river rows except the bridge decks' whole tiles. Nothing
+## is placed there and no presence reaches it (the decks' outer half tiles
+## count as water here, so nothing is played on them).
 func is_water(t: Vector2i) -> bool:
 	if t.y < RIVER_TOP or t.y > RIVER_BOTTOM:
 		return false
@@ -1441,15 +1638,17 @@ func route_point(from: Vector2, goal: Vector2, bridge_col: float = -1.0) -> Vect
 	if not toward_enemy and not toward_home:
 		return goal
 	var bc := nearest_bridge_col(f.x) if bridge_col < 0.0 else bridge_col
-	var lane: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) + 0.5).lerp(tile_center(bc + 0.5, float(RIVER_BOTTOM) + 0.5), 0.5)
-	var far_bank: Vector2 = tile_center(bc + 0.5, float(RIVER_TOP) - 1.2) if toward_enemy else tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.2)
+	# the crossing runs down the deck's middle line (x = bc)
+	var lane: Vector2 = tile_center(bc, float(RIVER_TOP) + 0.5).lerp(tile_center(bc, float(RIVER_BOTTOM) + 0.5), 0.5)
+	var far_bank: Vector2 = tile_center(bc, float(RIVER_TOP) - 1.2) if toward_enemy else tile_center(bc, float(RIVER_BOTTOM) + 1.2)
 	# line up with the bridge lane first (the axis the bridge runs along),
 	# then step across; never aim at the lane from the wrong side or units
-	# oscillate on the bank forever
+	# oscillate on the bank forever. Anything still over the deck counts as
+	# lined up, so a shove sideways on the bridge does not send it back.
 	var off := absf(from.y - lane.y) if LANDSCAPE else absf(from.x - lane.x)
-	if off > TILE * 0.7:
+	if off > TILE * (BRIDGE_HALF - 0.3):
 		# aim at the bridge mouth on our own bank so the walk in is diagonal
-		var bank: Vector2 = tile_center(bc + 0.5, float(RIVER_BOTTOM) + 1.0) if toward_enemy else tile_center(bc + 0.5, float(RIVER_TOP) - 1.0)
+		var bank: Vector2 = tile_center(bc, float(RIVER_BOTTOM) + 1.0) if toward_enemy else tile_center(bc, float(RIVER_TOP) - 1.0)
 		return bank
 	return far_bank
 
@@ -1904,11 +2103,16 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 	var kind: String = hand[index]
 	if gold[team] < DDCard.cost(kind):
 		return
+	if card_locked(team, index):
+		return
 	if not can_deploy(team, kind, world):
 		banner_flash("Claim the middle to deploy there")
 		return
 	gold[team] -= DDCard.cost(kind)
-	spend_gold_draw(team, float(DDCard.cost(kind)))
+	# a card that draws when played (Hero, Hot Chicken, Snowman) gives exactly
+	# that card and nothing more: its gold does not pull the next draw closer
+	if int(DDCard.get_card(kind).get("draws", 0)) <= 0:
+		spend_gold_draw(team, float(DDCard.cost(kind)))
 	if sfx != null:
 		sfx.place_card()
 	spawn_troop(kind, team, world)
@@ -1925,21 +2129,36 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 		charges[team].erase(id)
 	hand.remove_at(index)
 	hand_ids[team].remove_at(index)
-	var becomes := String(DDCard.get_card(kind).get("becomes", ""))
-	if becomes != "":
-		# a card that changes (Penny -> Pen, Obsidian -> Magma Whelp): the other
-		# half takes its slot straight away and flies in from where it was played.
-		# It is a new card; the played copy leaves the deck.
+	var cd: Dictionary = DDCard.get_card(kind)
+	var becomes := String(cd.get("becomes", ""))
+	var gives := String(cd.get("gives", ""))
+	var arrives := becomes if becomes != "" else gives
+	if arrives != "":
+		# "becomes" (the whelps, which swap every play) or "gives" (Penny -> Pen):
+		# the new card takes the played one's slot straight away and flies in from
+		# where it was played. It is a new card with its own id.
 		var new_id := _new_card_id()
-		hand.insert(index, becomes)
+		hand.insert(index, arrives)
 		hand_ids[team].insert(index, new_id)
+		_lock_card(new_id, float(DDCard.get_card(arrives).get("arrive_lock", 0.0)))
 		for pn in panels:
 			if is_instance_valid(pn) and int(pn.player) == team:
 				pn.note_arrival(new_id, world, id)
-	else:
-		# no automatic draw: the same copy cycles to the back of the deck
+	if becomes == "" and not bool(cd.get("spent", false)):
+		# no automatic draw: the same copy cycles to the back of the deck. A card
+		# that became another leaves the deck, and a spent one (Pen) is just gone.
 		queues[team].append(kind)
 		queue_ids[team].append(id)
+	# a card that draws when played (Hero, Hot Chicken, Snowman): the next card
+	# comes in now, and the draw clock stays exactly where it was
+	for _i in int(cd.get("draws", 0)):
+		if draw_card(team):
+			# the drawn card flies in face down from the play and flips over in the
+			# hand with a flash, so the draw is seen as the card's doing
+			var drawn_id: int = int((hand_ids[team] as Array).back())
+			for pn in panels:
+				if is_instance_valid(pn) and int(pn.player) == team:
+					pn.note_arrival(drawn_id, world, id, true)
 	# only clear the selection that belongs to the player who played
 	if selected_player == team:
 		clear_selection()
@@ -1971,6 +2190,22 @@ func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) 
 	else:
 		# a building under our feet shoves the body off to the nearest free tile
 		snapped = free_spot_near(snapped)
+	if data.has("partner") and not single and data.has("partner_behind"):
+		# a pair in file (the Mated Mantises): the card's own unit on the deploy
+		# tile, the partner partner_behind tiles back towards its own side (team 0
+		# holds the high rows). Kept on the board and pulled forward off water.
+		var lead_m: Node = spawn_troop(kind, team, snapped, true)
+		var back: float = float(data["partner_behind"]) * (1.0 if team == 0 else -1.0)
+		var row: float = clampf(float(world_tile.y) + 0.5 + back, 0.5, float(GRID_H) - 0.5)
+		while is_water(Vector2i(world_tile.x, int(floorf(row)))) and absf(row - (float(world_tile.y) + 0.5)) >= 1.0:
+			row -= signf(back)
+		var mate_at := free_spot_near(tile_center(float(world_tile.x) + 0.5, row))
+		var mate_m: Node = spawn_troop(String(data["partner"]), team, mate_at, true)
+		# spawn_troop snaps to a tile centre: put her back on the exact spot
+		mate_m.position = mate_at
+		lead_m.mate = mate_m
+		mate_m.mate = lead_m
+		return lead_m
 	if data.has("partner") and not single:
 		# a pair card (Gilgamesh & Enkidu): the card's own unit and its partner
 		# land side by side across the lane, half the gap each way
@@ -2111,7 +2346,15 @@ func start_spider_encounter() -> void:
 	towers.append(s)
 	add_child(s)
 	spider = s
-	banner_flash("ELITE  —  the Momma Ballista Spider")
+	_start_elite_clock()
+	banner_flash("ELITE  —  the Ballista Matriarch")
+
+
+## An elite fight starts the clock over with ELITE_SINGLE of single gold, and
+## never ends on a side-tower lead: it always goes to sudden death.
+func _start_elite_clock() -> void:
+	elite_fight = true
+	setup_clock(ELITE_SINGLE)
 
 
 ## The second elite encounter (Tab, then K): the same swap, but what takes the
@@ -2152,6 +2395,7 @@ func start_kraken_encounter() -> void:
 		towers.append(arm)
 		add_child(arm)
 	kraken = k
+	_start_elite_clock()
 	banner_flash("ELITE  —  the South Sea Kraken")
 
 
@@ -2169,13 +2413,28 @@ func on_tower_destroyed(tower: Node) -> void:
 		banner_text = "PLAYER %d WINS" % (winner + 1)
 		banner_timer = 999.0
 		_match_ended()
+		return
+	# sudden death: the next tower to fall loses the match for its owner (an
+	# elite fight is only ever ended by the commander or the boss)
+	if phase == Phase.SUDDEN and not elite_fight and not match_over:
+		match_over = true
+		winner = 1 - owner_team
+		banner_text = "SUDDEN DEATH  —  PLAYER %d WINS" % (winner + 1)
+		banner_timer = 999.0
+		_match_ended()
 
 
 # ---------------------------------------------------------------------- input
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		clear_selection()
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		# a held card is dropped first; with nothing held, Esc pauses
+		if selected_index >= 0 or debug_kind != "":
+			clear_selection()
+		else:
+			set_paused(true)
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 		clear_selection()
 		return

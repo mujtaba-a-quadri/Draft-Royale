@@ -38,6 +38,7 @@ const TIPS := {
 	"ranged": ["Ranged attack", "Hits from a distance."],
 	"spell": ["Spell", "Cast where you aim it; there is no unit."],
 	"special": ["Special", "An ability rather than a plain hit."],
+	"draw": ["Draws a card", "Playing it draws you %s card straight away."],
 	"flag": ["Targets buildings", "Walks past troops and only hits towers and buildings."],
 	"troops": ["Targets troops only", "Ignores towers and buildings."],
 	"weakest": ["Goes for the weakest", "Picks the enemy in range with the least HP."],
@@ -61,7 +62,7 @@ const TIPS := {
 	"hourglass": ["Lifetime", "Lasts %s, then crumbles."],
 	"death": ["On death", "Does something when it dies."],
 	"boom": ["Self-destructs", "Blows itself up on its target."],
-	"transform": ["Transforms", "Turns into another card during the fight."],
+	"transform": ["Brings a card", "Playing it puts another card into your hand."],
 	"casts": ["Several casts", "Can be cast %s times before it leaves your hand."],
 	"lockon": ["Locks on", "Must be aimed at a target, and always lands on it."],
 	"taunt": ["Taunt", "Draws enemies to it."],
@@ -84,7 +85,7 @@ static func tip_for(hit: Dictionary) -> Array:
 	return [String(tip[0]), body]
 
 const ATTACK_NAMES := {
-	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "frog": "Poison Leap", "phalanx": "Spear", "wolves": "Bite", "meerkats": "Bite", "ant": "Bite", "anthill": "Ants", "goatrider": "Tomahawk","ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
+	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "mantis": "Claws", "mantisf": "Scythe", "elf": "Longbow", "militia": "Spear", "ballista": "Siege Bolt", "frog": "Poison Leap", "phalanx": "Spear", "wolves": "Bite", "meerkats": "Bite", "ant": "Bite", "anthill": "Ants", "goatrider": "Tomahawk","ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
@@ -105,7 +106,7 @@ const ICON_INFO := {
 	"spell": ["Spell effect", "cast, not attacked with"],
 	"special": ["Special", "an ability that is not a hit (a ritual, a hatch, a ram)"],
 	"flag": ["Targets buildings", "buildings_only: walks at towers and buildings, ignores troops"],
-	"troops": ["Targets troops only", "troops_only (Penny)"],
+	"troops": ["Targets troops only", "troops_only (no card uses it at the moment)"],
 	"weakest": ["Goes for the weakest", "targets_weakest (Lizard Soldiers)"],
 	"flies": ["Flies", "flying_unit, or a flying phase (Hot Chicken, the Dragon)"],
 	"antiair": ["Hits air", "hits_air"],
@@ -127,7 +128,7 @@ const ICON_INFO := {
 	"hourglass": ["Lifetime", "lifetime: how long it lasts, in the corner"],
 	"death": ["On death", "death_aoe, on_death summon, hatch"],
 	"boom": ["Self-destructs", "kamikaze, the frog's burst"],
-	"transform": ["Becomes another card", "becomes (Penny -> Pen, Obsidian -> Magma)"],
+	"transform": ["Brings another card", "becomes (the whelps swap) / gives (Penny -> Pen)"],
 	"casts": ["Several casts", "uses > 1: the count goes in the corner"],
 	"lockon": ["Locks on", "unit_lock: homes on its target"],
 	"taunt": ["Taunts", "draws enemies to it (Golden Idol)"],
@@ -168,7 +169,7 @@ const SHORT_LABEL := {
 	"swarm": "%s bodies", "spawner": "Spawner", "burn": "Burn", "poison": "Poison", "slow": "Slow",
 	"stun": "Stun", "knock": "Knockback", "splash": "Area", "pierce": "Pierces", "leap": "Leaps",
 	"charge": "Charges", "shield": "Armour", "regen": "Heals", "evasive": "Evasive", "giant": "Giant",
-	"hourglass": "%s life", "death": "On death", "boom": "Self-destruct", "transform": "Transforms",
+	"hourglass": "%s life", "death": "On death", "boom": "Self-destruct", "transform": "Brings a card",
 	"casts": "%s casts", "lockon": "Lock-on", "taunt": "Taunt",
 }
 
@@ -321,9 +322,38 @@ static func _card(ci: CanvasItem, kind: String, r: Rect2, with_desc: bool, cost_
 		ci.draw_circle(mc, mr + maxf(1.0, 2.0 * s), _c(trim_dark()))
 		ci.draw_circle(mc, mr, _c(trim))
 		ci.draw_circle(mc, mr * 0.86, _c(accent.lightened(0.8)))
+		# a unit shown on another card is drawn without outlines (DDArt.bare)
+		DDArt.bare = true
 		DDArt.icon(ci, minion, mc + Vector2(0, mr * 0.08), mr * 0.62)
+		DDArt.bare = false
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		ci.draw_arc(mc, mr * 0.86, 0.0, TAU, 32, _c(Color(0, 0, 0, 0.25)), maxf(1.0, 1.0 * s), true)
+	# "draws a card": hung under the cost coin, over the art window's corner
+	var draws := int(d.get("draws", 0))
+	if draws > 0:
+		_draw_badge(ci, font, cost_c, cost_r, draws)
+	# the card it brings into the hand (Penny's Pen, the other whelp), in the same
+	# spot: a little upright card rather than a coin, since it is a card
+	var brings := String(d.get("gives", d.get("becomes", "")))
+	if minion == "" and brings != "":
+		var bh: float = clampf(50.0 * s, 13.0, art.size.y * 0.66)
+		var bw: float = bh * 0.74
+		var br := Rect2(art.end.x - bw - 4.0 * s, art.position.y + 4.0 * s, bw, bh)
+		var edge := maxf(1.0, 2.0 * s)
+		var bsb := StyleBoxFlat.new()
+		bsb.bg_color = _c(trim)
+		bsb.border_color = _c(trim_dark())
+		bsb.set_border_width_all(int(ceilf(edge)))
+		bsb.set_corner_radius_all(int(maxf(1.0, 4.0 * s)))
+		bsb.draw(ci.get_canvas_item(), br.grow(edge))
+		var bacc: Color = DDCard.get_card(brings).get("accent", accent)
+		var inner := br.grow(-maxf(1.0, 2.5 * s))
+		ci.draw_rect(inner, _c(bacc.lightened(0.7)))
+		ci.draw_rect(inner, _c(Color(0, 0, 0, 0.25)), false, maxf(1.0, 1.0 * s))
+		DDArt.bare = true
+		DDArt.icon(ci, brings, inner.get_center() + Vector2(0, bh * 0.04), inner.size.x * 0.27)
+		DDArt.bare = false
+		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# the middle line under the art
 	var strip := Rect2(x0 + 14.0 * s, art.end.y + 5.0 * s, pw - 28.0 * s, 13.0 * s)
 	var atk_top := art.end.y + strip_room
@@ -405,6 +435,28 @@ static func _hp_text(d: Dictionary) -> String:
 	return str(hp)
 
 
+## "Draws a card" (Hero, Hot Chicken, Snowman): a little upright card-back with
+## "+N" on it, hung right under the gold cost, so it is read in the same glance
+## as the price. Logged as icon "draw" for the tooltip.
+const DRAW_BACK := Color(0.2, 0.32, 0.62)
+static func _draw_badge(ci: CanvasItem, font: Font, cost_c: Vector2, cost_r: float, n: int) -> void:
+	var h: float = cost_r * 2.5
+	var w: float = h * 0.74
+	var r := Rect2(cost_c.x - w * 0.5, cost_c.y + cost_r * 0.85, w, h)
+	var edge: float = maxf(1.0, cost_r * 0.14)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = _c(DRAW_BACK)
+	sb.border_color = _c(OUT)
+	sb.set_border_width_all(int(ceilf(edge)))
+	sb.set_corner_radius_all(int(maxf(1.0, cost_r * 0.22)))
+	sb.draw(ci.get_canvas_item(), r)
+	ci.draw_rect(r.grow(-edge * 2.2), _c(Color(0.55, 0.68, 0.95, 0.55)), false, maxf(1.0, edge * 0.7))
+	ci.draw_string(font, Vector2(r.position.x, r.get_center().y + h * 0.19), "+%d" % n, HORIZONTAL_ALIGNMENT_CENTER,
+		w, maxi(8, int(h * 0.52)), _c(Color(1.0, 0.97, 0.88)))
+	if hit_log != null:
+		hit_log.append({"c": r.get_center(), "r": h * 0.5, "id": "draw", "count": str(n)})
+
+
 ## The unit a card makes over time (a summoner building's spawn, the
 ## Nekomancer's ritual), or "" if it makes none.
 static func _minion_of(d: Dictionary) -> String:
@@ -420,6 +472,9 @@ static func _info_text(d: Dictionary) -> String:
 		"spell":
 			return "Spell  -  from your %s tower" % ("king" if String(d.get("launch", "")) == "king" else "nearest")
 		"building":
+			if float(d.get("speed", 0.0)) > 0.0:
+				# a moving building (the Ballista)
+				return "Moving building  -  speed %.2f  -  range %.1f tiles" % [float(d["speed"]), float(d.get("reach", 0.0))]
 			var fp: Array = d.get("footprint", [1, 1])
 			return "Building  -  %dx%d  -  lasts %ds" % [int(fp[0]), int(fp[1]), int(d.get("lifetime", 0))]
 	return "Troop  -  speed %.2f  -  sight %.1f tiles" % [float(d.get("speed", 0.0)), float(d.get("aggro", 0.0))]
@@ -437,7 +492,9 @@ static func traits_of(kind: String) -> Array:
 		out.append(["weakest", ""])
 	if bool(d.get("flying_unit", false)) or d.has("chicken") or kind == "dragon":
 		out.append(["flies", ""])
-	if bool(d.get("hits_air", false)):
+	# a pair card also shows what its partner brings (Enkidu's spear, her scythe)
+	var pd: Dictionary = DDCard.get_card(String(d["partner"])) if d.has("partner") else {}
+	if bool(d.get("hits_air", false)) or bool(pd.get("hits_air", false)):
 		out.append(["antiair", ""])
 	var n: int = (d.get("swarm_offsets", []) as Array).size()
 	if d.has("partner"):
@@ -462,8 +519,10 @@ static func traits_of(kind: String) -> Array:
 		out.append(["splash", ""])
 	if d.has("boomerang") or d.has("staff"):
 		out.append(["pierce", ""])
-	if d.has("needle") or d.has("greatsword") or d.has("frog") or d.has("dodge"):
+	if d.has("needle") or d.has("greatsword") or d.has("frog") or d.has("dodge") or pd.has("devour"):
 		out.append(["leap", ""])
+	if pd.has("devour"):
+		out.append(["regen", ""])
 	if d.has("roll") and kind != "snowball":
 		out.append(["charge", ""])
 	if d.has("guard") or d.has("curl") or d.has("shield"):
@@ -481,7 +540,7 @@ static func traits_of(kind: String) -> Array:
 		out.append(["death", ""])
 	if d.has("kamikaze") or d.has("frog"):
 		out.append(["boom", ""])
-	if d.has("becomes"):
+	if d.has("becomes") or d.has("gives"):
 		out.append(["transform", ""])
 	if int(d.get("uses", 1)) > 1:
 		out.append(["casts", "%d" % int(d["uses"])])
@@ -516,6 +575,17 @@ static func attacks_of(kind: String) -> Array:
 		var n_pack := (d["swarm_offsets"] as Array).size()
 		return [["melee", nm, dmg, "in turns: one every %.1f s" % (float(d["interval"]) / float(n_pack))]]
 	var note2 := "every %.1f s, %.1f tiles" % [float(d.get("interval", 1.0)), reach]
+	if d.has("partner_behind"):
+		# the Mated Mantises: his claws, her scythe, and her meal, from the data
+		var fd: Dictionary = DDCard.get_card(String(d["partner"]))
+		var dv: Dictionary = fd.get("devour", {})
+		var rows := [["melee", nm, dmg, "him, %.1f tiles" % reach],
+			["ranged", String(ATTACK_NAMES.get(String(d["partner"]), "Attack")), int(fd.get("dmg", 0)),
+				"her, %.0f tiles, spins" % float(fd.get("reach", 0.0))]]
+		if not dv.is_empty():
+			rows.append(["special", "Devour", int(dv["melee_dmg"]),
+				"at %d %%: +%d %% HP, rage, claws" % [int(float(dv["at_hp"]) * 100.0), int(float(dv["heal"]) * 100.0)]])
+		return rows
 	if d.has("ram"):
 		return [["special", "Ram", int((d["ram"] as Dictionary)["dmg"]), "first hit on each building"],
 			["melee", nm, dmg, "every %.1f s after the ram" % float(d.get("interval", 1.0))]]
@@ -637,6 +707,8 @@ static func _draw_art(ci: CanvasItem, kind: String, art: Rect2) -> void:
 		ci.draw_set_transform(art.get_center() + Vector2(0, art.size.y * 0.14), 0.0, Vector2.ONE)
 		if kind == "gilgamesh":
 			DDArt.gil_pair(ci, art.get_center() + Vector2(0, art.size.y * 0.14), art.size.y * 0.3)
+		elif kind == "mantis":
+			DDArt.mantis_pair(ci, art.get_center() + Vector2(0, art.size.y * 0.1), art.size.y * 0.3)
 		elif kind == "dragon":
 			DDArt.dragon(ci, art.size.y * 0.30, 1.0, 0.0, false)
 		elif kind == "hawk":

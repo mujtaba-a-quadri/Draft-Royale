@@ -10,8 +10,8 @@ No build step, no linter, no unit test runner. Godot is invoked as `godot` on PA
 
 ```
 godot --path . --editor                         # open in the editor
-godot --path .                                  # play: starts a run (main scene: scenes/arena.tscn)
-godot --path . -- --match                       # one plain match instead of a run
+godot --path .                                  # play: the title screen (main scene: scenes/title.tscn)
+godot --path . -- --match                       # one plain match, straight past the title
 godot --path . -- --colors=#ff8800,#22ccaa      # recolour teams
 godot --path . -- --trim=#9aa6b8 --line=#3b4a66 # card face trim and middle line
 godot --path . -- --towers=diamond              # trial art: diamond princess towers
@@ -43,9 +43,11 @@ Live evals run through the `addons/godot_ai` editor plugin (enabled in `project.
 
 ## Architecture
 
+**Title screen.** The game is now called Draft Quadrint (`project.godot` `config/name`; folder, `DD` class prefixes and docs elsewhere keep "Deep Draft"). The main scene is `scenes/title.tscn` (`title_screen.gd`): a graph-paper coordinate plane whose four quadrants are Play a match / Start a run / Collection / Exit. It sets `Run.menu_choice` ("match" or "run") and changes to `arena.tscn`; `arena._apply_run()` reads that choice. Any of `--match`, `--run`, `--botsim=`, `--scenario=`, `--shots=`, `--demo` on the command line skips the title, so the bot sim and dev scenarios start as before. The pause menu's Title screen button goes back (abandoning a run).
+
 **Scene hub.** `scripts/arena.gd` is the root of `scenes/arena.tscn` and owns all match state: towers, gold, hands and queues, deploy and staging rules, the match clock and win conditions, hero abilities, effect spawners, and input. It delegates geometry to `board.gd` (`DDBoard`, pure statics: grid and tile/screen maths) and painting to `arena_draw.gd` (`DDArenaDraw`). Every drawing primitive goes through `tile_rect()` / `tile_center()` / `tile_of()`; keep it that way.
 
-**Balance surface.** `scripts/card_db.gd` holds every card's data and the deck `ORDER`. Behaviour flags live here too (`roll`, `boomerang`, `chicken`, `kamikaze`, `spread`, `dodge`, `summon`, `death_aoe`, `troops_only`, `flying_unit`, `hits_air`, `stationary`, `lifetime`, `shoots`, `payload`, `cooldown_per_tile`, `greatsword`, `needle`, `guard`, `becomes`, `staff`, `beam`, `ritual`, `partner`, `whip`, `spear`, `frog`, `shield`, `dagger`, `pack`, `trail`, `ram`, `wool`). `unit.gd` reads these in `setup()` and branches in `_attack()` / `_physics_process()`. So a card is mostly data, and code is added only for a genuinely new mechanic. Decks may hold duplicates: every card copy has an id (`arena.hand_ids` / `queue_ids`, parallel to `hands` / `queues`), and hand slots, the selection and charges bind by id; move the id along with the kind (`NOTES.md` §2).
+**Balance surface.** `scripts/card_db.gd` holds every card's data and the deck `ORDER`. Behaviour flags live here too (`roll`, `boomerang`, `chicken`, `kamikaze`, `spread`, `dodge`, `summon`, `death_aoe`, `troops_only`, `flying_unit`, `hits_air`, `stationary`, `lifetime`, `shoots`, `payload`, `cooldown_per_tile`, `greatsword`, `needle`, `guard`, `becomes`, `gives`, `spent`, `draws`, `devour`, `no_presence`, `staff`, `beam`, `ritual`, `partner`, `whip`, `spear`, `frog`, `shield`, `dagger`, `pack`, `trail`, `ram`, `wool`). `unit.gd` reads these in `setup()` and branches in `_attack()` / `_physics_process()`. So a card is mostly data, and code is added only for a genuinely new mechanic. Decks may hold duplicates: every card copy has an id (`arena.hand_ids` / `queue_ids`, parallel to `hands` / `queues`), and hand slots, the selection and charges bind by id; move the id along with the kind (`NOTES.md` §2).
 
 **Card presentation is split across two dispatch tables.** `art.gd` draws each card twice: `creature()` for board and card art, and `icon()` for the deploy preview. Missing `icon` renders as a magenta circle. `card_face.gd` (`DDCardFace`) is the trading-card face: attack rows (`ATTACK_NAMES`, multi-hit `ATTACKS`), attribute icons derived from card data (`traits_of()`), the summon coin, and a trim / middle-line colour pair (`trim` / `line`, set from the arena's `card_trim` / `card_line` exports). Colours in it go through `_c()` so the face fades.
 
@@ -61,9 +63,9 @@ Live evals run through the `addons/godot_ai` editor plugin (enabled in `project.
 
 **Run layer.** `run_state.gd` is the autoload `Run` (no `class_name`): deck, commander HP (carried between fights; side towers reset), position in a placeholder `ACT`. It survives `reload_current_scene()`, which is how a run moves to its next fight. `arena._apply_run()` sets a match up from it and `_match_ended()` reports back once, then shows `reward_screen.gd` (pick 1 of 3 cards or skip) after a won fight. Pressing play starts a run; `--match`, `--botsim=` and dev scenarios do not (unless `--run` is passed), so the bot sim and scenarios are unaffected. Details: `NOTES.md` §11.
 
-**Dev-only code.** `dev_capture.gd` is about 1150 lines of scenarios and GIF capture. It is never instantiated in normal play. `*_mock.gd` / `layout_mock.gd` / `card_mock.gd` / `iso_mock.gd` / `landscape_mock.gd` are preview scenes, not game code.
+**Dev-only code.** `dev_capture.gd` is about 1150 lines of scenarios and GIF capture. It is never instantiated in normal play. `*_mock.gd` / `layout_mock.gd` / `card_mock.gd` / `iso_mock.gd` / `landscape_mock.gd` are preview scenes, not game code (`title_mock.tscn` renders the title screen's states into `mockups/title/`).
 
-**Rules that look like bugs but are not.** `NOTES.md` §6 lists design intent that must not be "fixed" (hedgehog has no jab, Penny ignores buildings, the dragon's breath burns friendly troops, Pen never reverts to Penny, the commander tower is the only win besides the clock). Check there before changing a card's behaviour.
+**Rules that look like bugs but are not.** `NOTES.md` §6 lists design intent that must not be "fixed" (hedgehog has no jab, Penny only reaches flyers by leaping, the dragon's breath burns friendly troops, Pen is used up when played, the commander tower is the only win besides the clock). Check there before changing a card's behaviour.
 
 ## Conventions
 

@@ -104,6 +104,26 @@ var whip_to := Vector2.ZERO
 ## back he fights with the short sword.
 var spear_cfg: Dictionary = {}
 var spear_away := 0.0
+## the Mated Mantises: each holds the other (arena.spawn_troop). The female's
+## devour block: when he drops to devour.at_hp she leaps on him (devour_phase
+## 1), bites his head off on landing and chews (2), and fights on healed,
+## overhealed (hp may pass max_hp) and enraged, with claws as well as the
+## scythe. While she is in the air he is `held`: frozen and unkillable. His
+## headless body stays on the board for corpse_t seconds, out of the fight.
+var mate: Node = null
+## False for summoned swarm fodder (the Nekomancer's rats, Meerkats, ants): it
+## holds no ground (arena._tick_control skips it). Card key "no_presence".
+var gives_presence := true
+var devour_cfg: Dictionary = {}
+var devoured := false
+var devour_phase := 0
+var devour_t := 0.0
+var devour_from := Vector2.ZERO
+var held := false
+var corpse_t := 0.0
+var headless := false
+const CLAW_SHOW := 0.22
+var claw_t := 0.0
 var base_dmg := 0.0
 var base_interval := 0.0
 ## Poison dart frog: moves only in hops (frog_hop_t > 0 in the air, then
@@ -141,8 +161,6 @@ var pack: Dictionary = {}
 var wolf_lunge := false
 var wolf_lunge_t := 0.0
 
-## ants: the tile they last stood in, and once turned by a grave or another ant,
-## the other lane's tower they now walk at
 ## the Goat Rider: the targets the goat has already rammed (instance id ->
 ## true), and the picture timers for the ram, the chop and the wool puff
 var ram_cfg: Dictionary = {}
@@ -156,12 +174,7 @@ var chop_t := 0.0
 var puff_t := 0.0
 
 var trail_cfg: Dictionary = {}
-var ant_tile := Vector2i(-999, -999)
-var ant_turned := false
-var ant_goal: Node = null
-## just turned: it first walks back down its own trail to here (INF: done)
-var ant_back := Vector2.INF
-## which way it last walked (for "going opposite directions")
+## which way it last walked
 var move_dir := Vector2.ZERO
 
 var chicken_cfg: Dictionary = {}
@@ -204,6 +217,8 @@ var dodge_start_r := 0.0
 var dodge_angle0 := 0.0
 ## the leap that ends the dodge: air first, then whatever is closest
 var jumping := false
+## this leap is Penny's at a flyer (not the end of her circle): a cooldown follows
+var jump_air := false
 var jump_t := 0.0
 var jump_from := Vector2.ZERO
 var jump_to := Vector2.ZERO
@@ -336,6 +351,8 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 			summon_cd = maxf(0.0, float(summon_cfg["first"]) - DEPLOY_DELAY)
 	whip = bool(d.get("whip", false))
 	spear_cfg = d.get("spear", {})
+	devour_cfg = d.get("devour", {})
+	gives_presence = not bool(d.get("no_presence", false))
 	frog_cfg = d.get("frog", {})
 	shield_cfg = d.get("shield", {})
 	shield_hp = float(shield_cfg.get("hp", 0.0))
@@ -350,6 +367,10 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	ritual_cfg = d.get("ritual", {})
 	if not ritual_cfg.is_empty():
 		ritual_cd = float(ritual_cfg["every"])
+		if ritual_cfg.has("first"):
+			# the first ritual comes `first` s after she is played; the clock only
+			# runs once the deploy drop is over, so that is taken off
+			ritual_cd = maxf(0.0, float(ritual_cfg["first"]) - DEPLOY_DELAY)
 	shoots = String(d.get("shoots", ""))
 	shoot_payload = d.get("payload", {})
 	troops_only = bool(d.get("troops_only", false))
@@ -461,6 +482,17 @@ func catch_projectile() -> void:
 
 func _physics_process(delta: float) -> void:
 	if dead:
+		if corpse_t > 0.0:
+			# the male mantis's body: out of the fight, it lies there and fades
+			corpse_t = maxf(0.0, corpse_t - delta)
+			modulate.a = clampf(corpse_t / 0.8, 0.0, 1.0)
+			if corpse_t <= 0.0:
+				queue_free()
+		return
+	if held:
+		# the male mantis while his mate is in the air: frozen where he stands
+		clock += delta
+		queue_redraw()
 		return
 	moved_this_frame = false
 	clock += delta
@@ -497,10 +529,18 @@ func _physics_process(delta: float) -> void:
 	if rage_t > 0.0:
 		# the rage runs its clock and heals him through stuns and shoves alike
 		rage_t = maxf(0.0, rage_t - delta)
-		hp = minf(max_hp, hp + rage_regen * delta)
+		# (a rage with no regen, the mantis's, must not clamp away her overheal)
+		if rage_regen > 0.0:
+			hp = minf(max_hp, hp + rage_regen * delta)
 		if rage_t <= 0.0:
 			speed = ground_speed
 	needle_t = maxf(0.0, needle_t - delta)
+	claw_t = maxf(0.0, claw_t - delta)
+	if devour_phase != 0:
+		# committed like a leap: stuns and shoves wait until she has eaten
+		_tick_devour(delta)
+		queue_redraw()
+		return
 	if dash_phase != 0:
 		# a stun or a shove knocks her out of it; otherwise the dash runs to its end
 		if stunned > 0.0 or knock_time > 0.0 or arena.match_over:
@@ -605,6 +645,11 @@ func _physics_process(delta: float) -> void:
 		if slow_time <= 0.0:
 			clear_status()
 
+	if not devour_cfg.is_empty() and not devoured and _mate_ready_to_eat():
+		_start_devour()
+		queue_redraw()
+		return
+
 	if not summon_cfg.is_empty():
 		_tick_summon(delta)
 	if not ritual_cfg.is_empty():
@@ -705,6 +750,9 @@ func _physics_process(delta: float) -> void:
 		return
 	if stationary:
 		state = S.IDLE
+		queue_redraw()
+		return
+	if not dodge_cfg.is_empty() and bool(dodge_cfg.get("air_first", false)) and _tick_penny_air(delta):
 		queue_redraw()
 		return
 	if not sword_cfg.is_empty():
@@ -808,6 +856,9 @@ func _attack() -> void:
 	if not shield_cfg.is_empty():
 		_attack_spartan()
 		return
+	if not devour_cfg.is_empty():
+		_attack_mantis()
+		return
 	if shoots != "":
 		_mark_attack()
 		atk_cd = interval
@@ -835,6 +886,8 @@ func _attack() -> void:
 		roll_timer = 0.0
 		speed = ground_speed
 	_mark_attack()
+	if kind == "mantis":
+		claw_t = CLAW_SHOW
 	if whip:
 		# Gilgamesh's snake: the hit is instant, this is only its picture
 		whip_t = WHIP_SHOW
@@ -934,7 +987,45 @@ func _penny_hop() -> float:
 	return 0.0
 
 
-## End of the leap: back to ordinary swipes.
+## Penny against air: the nearest flyer in sight outranks every ground target.
+## She never swipes a flyer: she runs in under it and, once it is within
+## jump_reach tiles and her leap is ready, leaps at it (the same grab-and-carry
+## leap that ends her circle). Returns true when it ran her tick.
+func _tick_penny_air(delta: float) -> bool:
+	var flyer: Node = null
+	var best := INF
+	for e in arena.enemy_units(team):
+		if not is_instance_valid(e) or e.dead or e.get("flying") != true:
+			continue
+		if e.get("untargetable") == true or arena.is_doomed(e):
+			continue
+		var d: float = arena.tiles_between(position, e.position)
+		if d <= aggro and d < best:
+			best = d
+			flyer = e
+	if flyer == null:
+		# no flyer in sight: a flying target left over from before is dropped
+		if target != null and is_instance_valid(target) and target.get("flying") == true:
+			target = null
+		return false
+	target = flyer
+	if absf(flyer.position.x - position.x) > 1.0:
+		facing = signf(flyer.position.x - position.x)
+	if best <= float(dodge_cfg.get("jump_reach", 2.5)) and atk_cd <= 0.0:
+		jump_air = true
+		_begin_jump()
+		return true
+	if best > float(dodge_cfg.get("jump_reach", 2.5)) * 0.8:
+		state = S.APPROACH
+		_move(delta)
+	else:
+		# close enough: wait under it for the leap to come ready
+		state = S.ATTACK
+	return true
+
+
+## End of the leap: back to ordinary swipes. A leap at a flyer leaves her a
+## moment (air_leap_cd) before the next one, or she would chain them.
 func _end_dash() -> void:
 	dodging = false
 	jumping = false
@@ -942,7 +1033,8 @@ func _end_dash() -> void:
 	jump_victim = null
 	untargetable = false
 	invincible = false
-	atk_cd = 0.0
+	atk_cd = float(dodge_cfg.get("air_leap_cd", 0.0)) if jump_air else 0.0
+	jump_air = false
 
 
 ## After the spin she grabs whatever she can reach and carries it with her: a full
@@ -1649,6 +1741,105 @@ func _curl_up() -> void:
 	atk_cd = 0.0
 
 
+## The female mantis's hit. Before she has eaten her mate: the thrown scythe
+## only. After: claws for anything within melee_reach, the scythe for the rest.
+## Both come faster while the rage lasts.
+func _attack_mantis() -> void:
+	var faster: float = float(devour_cfg["rage_attack"]) if rage_t > 0.0 else 1.0
+	if absf(target.position.x - position.x) > 1.0:
+		facing = signf(target.position.x - position.x)
+	var gap: float = arena.gap_between(position, target.position, radius_t, float(target.get_radius_t()))
+	_mark_attack()
+	if devoured and gap <= float(devour_cfg["melee_reach"]):
+		atk_cd = float(devour_cfg["melee_interval"]) / faster
+		claw_t = CLAW_SHOW
+		var hit_dmg := float(devour_cfg["melee_dmg"])
+		if target.has_method("take_damage"):
+			arena.reserve_damage(get_instance_id(), target, hit_dmg)
+			target.take_damage(hit_dmg, position, self)
+			arena.release_reservation(get_instance_id())
+		return
+	atk_cd = interval / faster
+	arena.spawn_projectile(position, target.position, team, dmg, 0.0, shoots,
+		get_instance_id(), "bolt", false, self, 620.0, target, shoot_payload)
+
+
+## Her mate is alive, on the board, and down to devour.at_hp of his HP.
+func _mate_ready_to_eat() -> bool:
+	if mate == null or not is_instance_valid(mate) or mate.dead or mate.hp <= 0.0:
+		return false
+	return mate.hp <= mate.max_hp * float(devour_cfg["at_hp"])
+
+
+## Off the ground towards him, from wherever she is. He is held (frozen and
+## unkillable) until she lands, so the meal always happens.
+func _start_devour() -> void:
+	devour_phase = 1
+	devour_t = 0.0
+	devour_from = position
+	target = null
+	state = S.APPROACH
+	mate.held = true
+	mate.invincible = true
+	if absf(mate.position.x - position.x) > 1.0:
+		facing = signf(mate.position.x - position.x)
+
+
+func _tick_devour(delta: float) -> void:
+	devour_t += delta
+	if devour_phase == 1:
+		var lt: float = maxf(0.05, float(devour_cfg["leap_time"]))
+		var goal := devour_from
+		if mate != null and is_instance_valid(mate) and not mate.dead:
+			# she lands at his shoulder, on the side she came from
+			var side: float = -facing
+			goal = mate.position + Vector2(side * (radius_t + float(mate.radius_t)) * 0.55 * arena.TILE, 0.0)
+		position = devour_from.lerp(goal, clampf(devour_t / lt, 0.0, 1.0))
+		if devour_t >= lt:
+			_eat_mate()
+			devour_phase = 2
+			devour_t = 0.0
+		return
+	# chewing: she stays put for bite_time, then fights on
+	if devour_t >= float(devour_cfg["bite_time"]):
+		devour_phase = 0
+		atk_cd = 0.0
+		state = S.APPROACH
+
+
+## His head comes off: he drops out of the fight as a corpse, and she is healed
+## (past her max, up to overheal), enraged and armed with claws.
+func _eat_mate() -> void:
+	if mate != null and is_instance_valid(mate) and not mate.dead:
+		mate.lose_head(float(devour_cfg["corpse_time"]))
+	mate = null
+	devoured = true
+	hp = maxf(hp, minf(hp + max_hp * float(devour_cfg["heal"]), max_hp * float(devour_cfg["overheal"])))
+	rage_used = true
+	rage_regen = 0.0
+	rage_t = float(devour_cfg["rage_time"])
+	speed = ground_speed * float(devour_cfg["rage_speed"])
+	claw_t = CLAW_SHOW
+	arena.shake(2.0)
+	arena.banner_flash("She bites his head off!")
+
+
+## The male mantis's end: out of `units` at once (nothing targets or counts him),
+## but his headless body is drawn where he fell for `seconds`, then fades.
+func lose_head(seconds: float) -> void:
+	if dead:
+		return
+	dead = true
+	hp = 0.0
+	held = false
+	invincible = false
+	headless = true
+	corpse_t = maxf(0.05, seconds)
+	z_index = 3
+	arena.unregister(self)
+	queue_redraw()
+
+
 func _mark_attack() -> void:
 	if target == null or not is_instance_valid(target):
 		return
@@ -1976,7 +2167,8 @@ func _tick_ritual(delta: float) -> void:
 	var fwd := 1.0 if team == 0 else -1.0
 	var dist_px: float = float(ritual_cfg["dist"]) * float(arena.TILE)
 	for side in [-1.0, 1.0]:
-		var spot: Vector2 = position + Vector2(fwd, side).normalized() * dist_px
+		var spot: Vector2 = position + Vector2(fwd, side).normalized() * dist_px \
+			+ Vector2(fwd, 0.0) * float(ritual_cfg.get("ahead", 0.0)) * float(arena.TILE)
 		# off the board or under a building: pulled back toward her until it fits
 		for i in 6:
 			var tl: Vector2i = arena.tile_of(spot)
@@ -2034,16 +2226,13 @@ func _pack_alive() -> Array:
 
 
 ## Ground a body can stand on: on the board, and out of the river unless on a
-## bridge (two tiles wide, ending on BRIDGE_COL).
+## bridge deck (3 tiles wide, arena.on_bridge_deck).
 func _ground_ok(at: Vector2) -> bool:
 	var tl: Vector2i = arena.tile_of(at)
 	if not arena.valid_tile(tl):
 		return false
 	if tl.y >= arena.RIVER_TOP and tl.y <= arena.RIVER_BOTTOM:
-		for bx in [int(arena.BRIDGE_COL_A), int(arena.BRIDGE_COL_B)]:
-			if tl.x == bx or tl.x == bx - 1:
-				return true
-		return false
+		return arena.on_bridge_deck(at)
 	return true
 
 
@@ -2110,7 +2299,8 @@ func _tick_pack(delta: float) -> void:
 		w.wolf_lunge = true
 		w.wolf_lunge_t = 0.0
 		pack["next"] = (idx + 1) % n
-		pack["turn"] = float(pack["turn"]) + interval / float(alive.size())
+		# one steady beat, however many are left: interval / the full pack
+		pack["turn"] = float(pack["turn"]) + interval / float(n)
 		return
 	pack["turn"] = 0.0
 
@@ -2252,35 +2442,11 @@ func _tick_wolf(delta: float) -> void:
 	_step_to(spot, spd, delta, engaged)
 
 
-## An ant. It walks the shortest way to the tower like anyone, until it steps
-## into a tile where one of its own ants died in the last grave_time s: then it
-## turns for the other lane's tower (crossing by that lane's bridge). A turned
-## ant that touches one walking the other way turns that one too, so the turn
-## runs down the whole column. Troops are ignored, except one that has killed an
-## ant in the last mark_time s: the closest such killer in sight is chased for
-## as long as its mark lasts. Otherwise an enemy building in range comes first,
-## whichever way the ant is going.
+## An ant. It walks the shortest way to the tower like anyone. Troops are
+## ignored, except one that has killed an ant in the last mark_time s: the
+## closest such killer in sight is chased for as long as its mark lasts.
+## Otherwise an enemy building in range comes first.
 func _tick_ant(delta: float) -> void:
-	var tl: Vector2i = arena.tile_of(position)
-	if tl != ant_tile:
-		ant_tile = tl
-		if _ant_grave_at(tl):
-			_ant_turn()
-	if ant_turned:
-		var touch: float = float(trail_cfg["touch"])
-		for o in arena.units:
-			if o == self or not is_instance_valid(o) or o.dead or int(o.team) != team:
-				continue
-			if o.get("trail_cfg") == null or (o.trail_cfg as Dictionary).is_empty() or o.ant_turned:
-				continue
-			if o.move_dir.dot(move_dir) >= 0.0:
-				continue
-			if arena.gap_between(position, o.position, radius_t, o.radius_t) <= touch:
-				o._ant_turn()
-	if ant_goal != null and (not is_instance_valid(ant_goal) or ant_goal.dead):
-		# the other lane's tower fell: back to the ordinary shortest way
-		ant_goal = null
-		ant_turned = false
 	# a marked ant-killer in sight comes first (the closest, not the latest);
 	# then a building in range (the card is buildings_only); otherwise the lane
 	var foe: Node = _ant_marked_foe()
@@ -2290,8 +2456,6 @@ func _tick_ant(delta: float) -> void:
 			foe = null
 	if foe != null:
 		target = foe
-	elif ant_turned:
-		target = ant_goal
 	elif target == null or not _target_valid(target) or not target.is_tower():
 		target = arena.nearest_enemy_tower(team, position)
 	if target == null:
@@ -2303,14 +2467,7 @@ func _tick_ant(delta: float) -> void:
 		_attack()
 		return
 	state = S.APPROACH
-	if ant_turned and target == ant_goal and ant_back != Vector2.INF:
-		_move(delta, ant_back)
-		if position.distance_to(ant_back) < 2.0:
-			ant_back = Vector2.INF
-	elif ant_turned and target == ant_goal:
-		_move(delta, _ant_waypoint())
-	else:
-		_move(delta)
+	_move(delta)
 
 
 ## The closest enemy that killed one of this team's ants in the last mark_time s
@@ -2341,63 +2498,6 @@ func _ant_marked_foe() -> Node:
 			best = n
 			best_d = d
 	return best
-
-
-func _ant_grave_at(tl: Vector2i) -> bool:
-	var keep: int = int(float(trail_cfg["grave_time"]) * float(Engine.physics_ticks_per_second))
-	var now: int = Engine.get_physics_frames()
-	var hit := false
-	var fresh: Array = []
-	for g in arena.ant_graves:
-		if now - int(g["frame"]) > keep:
-			continue
-		fresh.append(g)
-		if int(g["team"]) == team and g["tile"] == tl:
-			hit = true
-	arena.ant_graves = fresh
-	return hit
-
-
-## Turn for the other lane: the enemy side tower on the lane this ant is not
-## in. With that one gone (or no side towers, as against a boss) it does not turn.
-func _ant_turn() -> void:
-	var here: float = float(arena.tile_of(position).x)
-	var mid: float = (float(arena.BRIDGE_COL_A) + float(arena.BRIDGE_COL_B)) * 0.5
-	var pick: Node = null
-	var best := INF
-	for tw in arena.towers:
-		if not is_instance_valid(tw) or tw.dead or int(tw.team) == team or bool(tw.get("crown")):
-			continue
-		var col: float = float(arena.tile_of(tw.position).x)
-		if (col < mid) == (here < mid):
-			continue
-		var d: float = position.distance_to(tw.position)
-		if d < best:
-			best = d
-			pick = tw
-	if pick == null:
-		return
-	ant_goal = pick
-	ant_turned = true
-	target = pick
-	# turning round: back down the trail first, into whoever is following
-	if move_dir.length() > 0.01:
-		ant_back = position - move_dir.normalized() * float(trail_cfg.get("back", 1.5)) * float(arena.TILE)
-
-
-## The next point on the way to the other lane's tower: crossing by that
-## lane's bridge. Caught on a bridge when it turned, it first backs off onto
-## the bank it came from.
-func _ant_waypoint() -> Vector2:
-	var goal: Vector2 = ant_goal.position
-	var mid: float = (float(arena.BRIDGE_COL_A) + float(arena.BRIDGE_COL_B)) * 0.5
-	var bc: float = float(arena.BRIDGE_COL_A) if float(arena.tile_of(goal).x) < mid else float(arena.BRIDGE_COL_B)
-	var tl: Vector2i = arena.tile_of(position)
-	var g: Vector2i = arena.tile_of(goal)
-	if tl.y >= arena.RIVER_TOP and tl.y <= arena.RIVER_BOTTOM and absf(float(tl.x) - bc) > 1.5:
-		var back_row: float = float(arena.RIVER_BOTTOM) + 1.0 if g.y < arena.RIVER_TOP else float(arena.RIVER_TOP) - 1.0
-		return arena.tile_center(float(tl.x) + 0.5, back_row + 0.5)
-	return arena.route_point(position, goal, bc)
 
 
 ## Walk toward `goal` at `spd` tiles a second along the river-aware route,
@@ -2595,14 +2695,19 @@ func _die() -> void:
 	if dead:
 		return
 	dead = true
+	if devour_phase == 1 and mate != null and is_instance_valid(mate):
+		# shot down in mid-leap: he is let go and fights on
+		mate.held = false
+		mate.invincible = false
 	if not trail_cfg.is_empty():
-		# an ant's death marks its tile for its nest-mates (not drawn)
-		arena.ant_graves.append({"tile": arena.tile_of(position), "team": team,
-			"frame": Engine.get_physics_frames()})
-		# ...and whoever killed it, for mark_time s (towers are fought anyway)
-		if last_attacker != null and is_instance_valid(last_attacker) and not bool(last_attacker.get("dead")) \
+		# an ant's death marks whoever killed it, for mark_time s (towers are
+		# fought anyway)
+		# get() returns null for a property the attacker lacks (a rolling snowball has no
+		# "dead"), and bool()/int() of null is a runtime error, so compare instead
+		if last_attacker != null and is_instance_valid(last_attacker) \
+				and last_attacker.get("dead") != true \
 				and last_attacker.has_method("is_tower") and not last_attacker.is_tower() \
-				and int(last_attacker.get("team")) != team:
+				and last_attacker.get("team") != null and int(last_attacker.get("team")) != team:
 			var ticks := int(float(trail_cfg.get("mark_time", 10.0)) * float(Engine.physics_ticks_per_second))
 			arena.ant_marks["%d:%d" % [team, last_attacker.get_instance_id()]] = {
 				"node": last_attacker, "team": team, "until": Engine.get_physics_frames() + ticks}
@@ -2656,6 +2761,12 @@ func _die() -> void:
 
 func _draw() -> void:
 	var px: float = radius_t * arena.TILE
+	if headless:
+		# the male mantis's body, fallen on its side where he was eaten
+		draw_set_transform(Vector2(0.0, px * 0.35), -facing * PI * 0.42, Vector2.ONE)
+		DDArt.mantis(self, px, facing, 0.0, {"headless": true}, arena.team_ink(int(team)))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if kind == "dragon" and flying:
 		_draw_fire_breath(px)
 	var lift := 0.0
@@ -2688,6 +2799,12 @@ func _draw() -> void:
 		lift = sin(ff * PI) * height
 		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
 		draw_circle(Vector2.ZERO, px * (0.9 - 0.3 * sin(ff * PI)), Color(0.05, 0.06, 0.1, 0.3))
+	elif devour_phase == 1:
+		# the female mantis leaping on her mate: one big arc, shadow on the ground
+		var df: float = clampf(devour_t / maxf(0.05, float(devour_cfg["leap_time"])), 0.0, 1.0)
+		lift = sin(df * PI) * float(arena.TILE) * 1.4
+		draw_set_transform(Vector2(0, px * 0.6), 0.0, Vector2(1.0, 0.4))
+		draw_circle(Vector2.ZERO, px * (0.9 - 0.4 * sin(df * PI)), Color(0.05, 0.06, 0.1, 0.3))
 	elif leaping:
 		# Laniakea going up to meet a flyer: an arc that ends at flying height
 		var lf: float = clampf(leap_t / maxf(0.1, float(sword_cfg["leap_time"])), 0.0, 1.0)
@@ -2767,11 +2884,34 @@ func _draw() -> void:
 			"ram": 1.0 - ram_t / RAM_SHOW if ram_t > 0.0 else 0.0,
 			"chop": 1.0 - chop_t / CHOP_SHOW if chop_t > 0.0 else 0.0,
 			"puff": puff_t / PUFF_SHOW}, ink)
+	elif kind == "ballista":
+		# wheeled forward with the back lifted while it walks; set down, the
+		# winch draws the string back as the next shot comes due
+		var wind := 0.0
+		if state == S.ATTACK and interval > 0.0:
+			wind = clampf(1.0 - atk_cd / interval, 0.0, 1.0)
+		DDArt.ballista(self, px, facing, clock, {"move": moved_this_frame, "draw": wind}, ink)
+	elif kind == "militia":
+		DDArt.militia(self, px, facing, clock, attack_stretch / ATTACK_STRETCH, ink)
+	elif kind == "elf":
+		# picture only: the string comes back as the next shot comes due
+		var pull := 0.0
+		if state == S.ATTACK and interval > 0.0:
+			pull = clampf(1.0 - atk_cd / interval, 0.0, 1.0)
+		DDArt.elf_archer(self, px, facing, clock, pull, ink)
+	elif kind == "mantis" or kind == "mantisf":
+		if rage_t > 0.0:
+			var mp: float = 0.5 + 0.5 * sin(clock * 14.0)
+			draw_circle(Vector2.ZERO, px * (1.25 + 0.1 * mp), Color(1.0, 0.15, 0.1, 0.18 + 0.14 * mp))
+		var strike := 0.0
+		if claw_t > 0.0:
+			strike = sin((1.0 - claw_t / CLAW_SHOW) * PI)
+		DDArt.mantis(self, px, facing, clock, {"female": kind == "mantisf",
+			"walk": state == S.APPROACH and moved_this_frame, "strike": strike,
+			"leap": devour_phase == 1, "bite": devour_phase == 2,
+			"throw": kind == "mantisf" and attack_stretch > 0.0 and claw_t <= 0.0}, ink)
 	elif kind == "ant":
 		DDArt.ant(self, px, facing, clock, ink)
-		if ant_turned and target == ant_goal:
-			# turned for the other lane: the reverse arrows over its head
-			DDArt.reverse_arrows(self, Vector2(0.0, -px - 9.0), 7.0)
 	elif kind == "anthill":
 		DDArt.anthill(self, px, clock, ink)
 	elif kind == "spideregg":
@@ -2955,7 +3095,7 @@ func _draw() -> void:
 		for i in 3:
 			var a := clock * 4.0 + float(i) * TAU / 3.0
 			draw_circle(Vector2(cos(a), sin(a)) * px * 0.9 + Vector2(0, -px - 16.0 - lift), 3.0, Color(1.0, 0.9, 0.35))
-	if hp < max_hp or not staff_cfg.is_empty():
+	if hp < max_hp or hp > max_hp or not staff_cfg.is_empty() or rage_t > 0.0:
 		var w: float = px * 2.2
 		var y2: float = -px - 10.0 - lift
 		if not staff_cfg.is_empty():
@@ -2965,8 +3105,18 @@ func _draw() -> void:
 		var frac := clampf(hp / max_hp, 0.0, 1.0)
 		var col2 := Color(0.45, 0.9, 0.55) if team == 0 else Color(0.95, 0.45, 0.45)
 		draw_rect(Rect2(-w * 0.5 + 1.0, y2 + 1.0, (w - 2.0) * frac, 3.0), col2, true)
+		if hp > max_hp:
+			# overheal (the female mantis after her meal): a brighter run of bar past
+			# where the bar normally ends, as long as the extra is
+			var over: float = (hp - max_hp) / max_hp * (w - 2.0)
+			draw_rect(Rect2(w * 0.5, y2, over + 1.0, 5.0), Color(0.08, 0.07, 0.1, 0.85), true)
+			draw_rect(Rect2(w * 0.5 - 1.0, y2 + 1.0, over + 1.0, 3.0), col2.lightened(0.6), true)
 		if not staff_cfg.is_empty():
 			_draw_rage_bars(w, y2)
+		elif rage_t > 0.0 and not devour_cfg.is_empty():
+			# her rage: a red line under the bar, draining with the time left
+			draw_rect(Rect2(-w * 0.5, y2 + 6.0, w * rage_t / float(devour_cfg["rage_time"]), 1.5),
+				Color(1.0, 0.2, 0.15), true)
 	if not shield_cfg.is_empty() and shield_hp > 0.0 and shield_hp < float(shield_cfg["hp"]):
 		# a dented shield: its own bar, steel grey, just above where the HP bar sits
 		var sw: float = px * 2.2

@@ -4,8 +4,10 @@ extends Node2D
 ## The Snowball spell. It leaves the caster's nearest tower as a single tile of
 ## packed snow and rolls along the row it was cast on, gaining a tile of height
 ## for every two tiles it covers. Everything enemy in its lane takes 10 damage per
-## tile of height and is shoved that many tiles. When it reaches the river or the
-## back of the board it bursts: 30 damage and a slow.
+## tile of height and is shoved that many tiles, once per enemy (`hit`). After
+## `roll.distance` tiles (it rolls straight over the river) or at the back of
+## the board it bursts: 30 damage and a slow on everything in its lane out to
+## `roll.burst_ahead` tiles past its front, roll victims included.
 
 enum P { FLY, ROLL }
 
@@ -32,7 +34,10 @@ var slow_amount := 0.32
 var slow_time := 3.5
 var dir := 1.0
 var row_y := 0.0
+## enemies the roll has already hit: never hit by the roll again (the burst can)
 var hit: Dictionary = {}
+var roll_tiles := 8.0
+var burst_ahead := 1.5
 var done := false
 const GROWTH_TILES := 2.0
 
@@ -47,6 +52,8 @@ func setup(a: Node2D, tm: int, at: Vector2) -> void:
 	speed_px = float(roll.get("speed", 4.2)) * float(a.TILE)
 	roll_dmg = float(roll.get("dmg", 10.0))
 	push_t = float(roll.get("push", 1.0))
+	roll_tiles = float(roll.get("distance", 8.0))
+	burst_ahead = float(roll.get("burst_ahead", 1.5))
 	burst_dmg = float(data.get("dmg", 30.0))
 	slow_amount = float(data.get("slow", 0.32))
 	slow_time = float(data.get("slow_time", 3.5))
@@ -128,9 +135,8 @@ func _sweep() -> void:
 
 
 func _should_burst() -> bool:
-	var river: Rect2 = area.tile_rect(area.col_min(area.RIVER_TOP), area.RIVER_TOP).merge(
-		area.tile_rect(area.col_max(area.RIVER_BOTTOM), area.RIVER_BOTTOM))
-	if position.x >= river.position.x - float(area.TILE) * 0.5 and position.x <= river.end.x + float(area.TILE) * 0.5:
+	# its full run is done (the river does not stop it any more)
+	if tiles_rolled() >= roll_tiles:
 		return true
 	var board: Rect2 = area.board_rect()
 	if dir > 0.0 and position.x >= board.end.x - float(area.TILE) * 0.4:
@@ -142,8 +148,17 @@ func _should_burst() -> bool:
 
 func _burst() -> void:
 	done = true
+	# behind it as far as its own size; ahead of it burst_ahead tiles past its
+	# front, where the roll's shove has thrown what it hit
+	var half_t: float = height_t * 0.5
 	for u in area.enemy_units(team).duplicate():
-		if not _in_lane(u, 1.2):
+		if not is_instance_valid(u) or u.dead:
+			continue
+		var r: float = float(u.get_radius_t()) * float(area.TILE)
+		if absf(u.position.y - row_y) > _lane_half() + r * 0.5:
+			continue
+		var ahead: float = (u.position.x - position.x) * dir
+		if ahead < -(half_t + 1.2) * float(area.TILE) - r or ahead > (half_t + burst_ahead) * float(area.TILE) + r:
 			continue
 		u.take_damage(burst_dmg, position)
 		if u.has_method("slow"):
@@ -199,4 +214,3 @@ func _ball(r: float, spin: float) -> void:
 		var t2: float = clock * 4.0 + float(i) * 2.1
 		draw_line(Vector2(cos(t2) * r * 0.72, sin(t2) * r * 0.72),
 			Vector2(cos(t2 + 0.5) * r * 0.94, sin(t2 + 0.5) * r * 0.94), Color(0.55, 0.72, 0.95, 0.5), 1.6, true)
-

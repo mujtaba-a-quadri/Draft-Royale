@@ -5,7 +5,8 @@ Read this plus `README.md` before touching anything. The README is the *product*
 reference (rules, cards, numbers); this file is the *working* reference (where code
 lives, how to verify, what is half-done and why).
 
-State at handoff: 33 cards (31 dealt), 150 s matches with a final-minute surge,
+State at handoff: 38 cards (36 dealt), a three-phase clock (single, double,
+sudden death),
 commander-tower wins, threat-driven bot with a measurement harness, arena split
 into rules / geometry / painting. Everything below was verified; nothing is
 half-finished in the tree.
@@ -55,13 +56,32 @@ extraction candidate.**
    `card_db.gd` read in `unit.setup()` and a branch in `_attack()` or
    `_physics_process()`. Existing hooks:
    `boomerang` (Fu), `roll` (Slate), `curl` (hedgehog), `guard` (Obsidian Whelp: shares `curled`, opens on
-   `guard_calm`), `becomes` (the card that takes this one's hand slot when played:
-   Penny → Pen, Obsidian → Magma), `staff` (Wu Cheng'en: `_tick_staff`, staff
+   `guard_calm`), `becomes` (the card that takes this one's hand slot when played,
+   the played one leaving the deck: Obsidian ↔ Magma, both ways), `gives` (the
+   same, but the played card still cycles to the deck: Penny → Pen), `spent`
+   (played once, never cycles back: Pen), `draws` (that many `draw_card()` calls
+   right after the play, leaving `draw_timer` alone: Hero, Hot Chicken, Snowman;
+   the card face hangs a "+N" card-back under the cost, `DDCardFace._draw_badge`,
+   tooltip id "draw"; the drawn card goes through `note_arrival(..., face_down)`
+   and `DDHandCard.fly_in_from` flies it in face down, `land_flash` on landing;
+   `--scenario=drawfx`),
+   all handled in `arena.deploy()`; `ritual.first` (the Nekomancer's first ritual,
+   seconds after the play) and `ritual.ahead` (tiles both pentagrams are pushed
+   forward; `--scenario=tweaks` checks it, the draws and the Wolf
+   Pack's steady bite); `staff` (Wu Cheng'en: `_tick_staff`, staff
    draw-out, poke / sweep combo, rage on `take_damage`), `beam` (Nekomancer: the
    plain hit, drawn as a beam), `ritual` (Nekomancer: `_tick_ritual` spawns
    `pentagram.gd` nodes that raise the unit themselves), `partner` (a pair card:
    `arena.spawn_troop` lands the partner `partner_gap` tiles across the lane;
-   card face shows both HPs, `DDArt.gil_pair` draws both), `whip` (Gilgamesh: the
+   card face shows both HPs, `DDArt.gil_pair` draws both; with `partner_behind`
+   the partner lands that many tiles behind instead, and the two get `mate`
+   references: the Mated Mantises), `devour` (the female mantis: `_mate_ready_to_eat`
+   / `_start_devour` / `_tick_devour` / `_eat_mate`; he is `held` + `invincible`
+   while she is in the air, `lose_head()` unregisters him and keeps him drawn as
+   a corpse for `corpse_time`; her `hp` may exceed `max_hp` (overheal, drawn past
+   the bar's end), her rage reuses Wu's `rage_t` with `rage_regen` 0 (the rage
+   tick only clamps to max_hp when it regens), `_attack_mantis` picks claws or
+   scythe; `--scenario=mantis`), `whip` (Gilgamesh: the
    plain hit, drawn as a snake lash), `spear` (Enkidu: `_try_throw` / `_spear_back`
    swap dmg, reach, interval and `hits_air` while the spear is away), `frog` (Poison
    Dart Frog: `_tick_frog` hops instead of `_move`, `_frog_prey` / `_tick_frog_leap` /
@@ -75,20 +95,24 @@ extraction candidate.**
    hit per target, `rammed` keyed by instance id; `take_damage` calls
    `_wool_hit`, which shoves a melee attacker whose blow came from its own body;
    `--scenario=goat`, `--scenario=goatart`),
-   `trail` (ants: `_die` records a grave in `arena.ant_graves` stamped with
-   `Engine.get_physics_frames()`; `_tick_ant` turns on entering a fresh grave
-   tile, `_ant_turn` picks the other lane's side tower and backs `back` tiles
-   down the trail, turned ants turn any ant they touch whose `move_dir` points
-   the other way, and `_ant_waypoint` crosses by the goal lane's bridge through
-   `arena.route_point(from, goal, bridge_col)`; `--scenario=antlane`. Ants are
-   `buildings_only`; `_die` also marks the killer (`last_attacker`, never a
+   `trail` (ants: the old grave / lane-reversal rule is gone. Ants are
+   `buildings_only`; `_die` marks the killer (`last_attacker`, never a
    tower) in `arena.ant_marks` until frame + `mark_time` s, and
    `_ant_marked_foe()` picks the closest marked killer within `aggro`, keeping
    one it already chases even out of sight until the mark ends;
    `--scenario=antaggro`),
    `chicken` + `kamikaze` (Hot Chicken,
    two phases), `spread` (Primal Aphid), `dodge` (Penny), `summon` (warren),
-   `death_aoe` (snowman), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
+   `death_aoe` (snowman), `arrive_lock` (seconds a card swapped into the hand by
+   `becomes` / `gives` cannot be played: both whelps, 3 s; `arena.card_lock` by
+   id in physics frames, enforced in `deploy()` and `try_deploy_at()`, skipped
+   by both bots, drawn by `DDHandCard._draw_lock`; `--scenario=lockbridge`), a **moving building** (the Ballista: `type` "building"
+   with `stationary` false, so `is_building()` is true but it walks the
+   generic path; `building_at()` only counts stationary units, so it blocks no
+   tile; `card_face._info_text` reads its speed; `DDArt.ballista` lifts the back
+   while `moved_this_frame`; `--scenario=ballista`), `no_presence` (sets `DDUnit.gives_presence` false, which
+   `arena._tick_control` / `_rebuild_control` already skip: Rat Skeletons,
+   Meerkats, ants; `--scenario=nopres`), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
    `stationary`, `lifetime`, `shoots` + `payload`, `greatsword` (Laniakea: owns its
    own targeting in `_tick_greatsword`, cleave + leap/slam), `needle` (Femme Fatale:
    `_tick_needle`, wind-up dash + three hit combo).
@@ -102,12 +126,14 @@ extraction candidate.**
 `queue_ids` run parallel to `hands` / `queues` (which stay lists of kinds, so
 bots and "what card is this" code are untouched). Hand nodes bind by id, the
 held card is `arena.selection_id()`, Firebolt charges are keyed by id, a played
-card cycles back as the same id, and a `becomes` card (Pen, Magma Whelp) is a new
-id. Anything that rewrites a hand or deck wholesale gets fresh ids from
+card cycles back as the same id, and a `becomes` / `gives` card (Pen, either
+whelp) is a new id. `--scenario=cardcycle` checks the Penny / Pen / whelp hand
+and deck, the draft pool and Esc pause. Anything that rewrites a hand or deck wholesale gets fresh ids from
 `_sync_ids()`; code that moves single cards must move the id with the kind.
-`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 31).
-Hand 4, `HAND_MAX` 8. Draws every `DRAW_INTERVAL` 16 s, and every gold spent
-takes `DRAW_PER_GOLD` 1 s off the wait (`spend_gold_draw()`; overflow carries).
+`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 36).
+Opening hand `OPENING_HAND` 3, `HAND_MAX` 6. Draws every `DRAW_INTERVAL` 12 s, and every gold spent
+takes `DRAW_PER_GOLD` 1 s off the wait (`spend_gold_draw()`; overflow carries) —
+except a `draws` card, whose gold pulls nothing: its one drawn card is all it gives.
 Debug keys 1-3 (Tab view) give 2 gold and a card. Scenario:
 `--scenario=dupes --bots=off`.
 
@@ -206,8 +232,14 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   so nothing leaves quill reach.
 * **Firebolt keeps its second charge after a right-click**, and only the second cast
   consumes the card.
-* **Penny ignores buildings and towers entirely** (`troops_only`) — that is the card.
-* **Pen does not turn back into Penny** — no second Pen ever enters the deck.
+* **Penny reaches flyers only by leaping** (`dodge.air_first`, `_tick_penny_air`):
+  the nearest flyer in sight outranks any ground target, she never swipes one,
+  and leaps from within `jump_reach` 2.5 tiles with `air_leap_cd` 1.4 s between
+  leaps. She attacks buildings and towers too (her old `troops_only` is gone).
+  `--scenario=pennyair`.
+* **Pen is used up when played** — Penny stays in the deck and gives a fresh Pen
+  each play; Pen itself never enters the deck. The whelps swap in the hand
+  forever and never return to the deck either.
 * **Hot Chicken pecks first**: three fireballs on one target, *then* the kamikaze ram.
 * **The ability card draws are payload-gated**: tentacle on death, and Shiesty on
   *either* outcome — he pays a card when he gets home **and** when he is caught. Only
@@ -294,6 +326,11 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   pick never touches a bot sim's global RNG. The volume slider (`arena._build_volume`)
   has `FOCUS_NONE` so it never eats arrow keys or hotkeys; it drives the Master
   bus through `DDSfx.set_volume`, which also writes `user://settings.cfg`.
+  Esc pause: `arena.set_paused()` pauses the whole tree and adds
+  `pause_menu.gd` (no `class_name`, `PROCESS_MODE_ALWAYS`, its own Esc / Resume /
+  volume) on CanvasLayer 60. `arena._ready` always unpauses, because
+  `paused` survives `reload_current_scene()`. A scenario that has to act while
+  paused sets its own `process_mode` to ALWAYS (`cardcycle` does).
   Hand cards poll the viewport mouse, so a scenario hovers them with
   `viewport.warp_mouse`, not pushed motion events (`--scenario=hovervol`).
 * **Burning ground** (`scripts/ground_fire.gd`, no `class_name`, preloaded by
@@ -315,7 +352,10 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   from `attacks_of()`, which derives one row from `dmg` / `reach` / `interval`, a
   summon row from `summon`, and Ram + Tomahawk from `ram`. A card with more than
   one hit needs a hand-written entry in `ATTACKS`, and those numbers do not follow
-  balance changes. The summon coin comes from `summon.unit` / `ritual.unit`. The
+  balance changes. Units drawn inside another card's art (the coin, the badge) go through
+  `DDArt.bare`, which drops shape outlines. The summon coin comes from `summon.unit` / `ritual.unit`; the
+  card-shaped badge in the same spot from `gives` / `becomes` (the coin wins if a
+  card ever has both). The
   trim and the middle line are the static vars `trim` / `line`, set from the
   arena's `card_trim` / `card_line` exports (or `--trim=` / `--line=`). Opacity
   goes through `_c()`; any new colour in the face must go through it too, or it
@@ -388,10 +428,20 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 
 ---
 
-## 9. Elite encounter: the Momma Ballista Spider (built)
+## 9. Elite encounter: the Ballista Matriarch (built)
+
+(Called "spider" in code: `spider.gd`, card key `spider`. In a run the elite
+fight draws her or the Kraken from `Run.ELITES` via `Run.encounter_at()`,
+seeded by run seed and fight. Her pool and stream give `pool_poison` 5 every
+`pool_every` 0.5 s.)
 
 Start it with **Tab, then S** (`arena.start_spider_encounter()`), or
 `--scenario=spider --log --bots=off --shots=<abs dir>` for the scripted check.
+Both elites restart the three-phase clock with `ELITE_SINGLE` (120 s single,
+60 double, 30 sudden death) and set `elite_fight` (`_start_elite_clock()`): a
+side-tower lead never ends an elite fight, sudden death is only ended by the
+commander or the boss, and sudden death running out is the boss's win.
+`--scenario=elitetime` checks it and the tower reach (side 7, crown 8).
 
 * **`scripts/spider.gd` is a tower by duck typing, not a `DDUnit`.** It sits in
   `arena.towers` with `crown = true`, so every existing rule applies unchanged:
@@ -514,7 +564,9 @@ survives `reload_current_scene()`, which is how a run moves between fights.
   untouched (`--botsim=3` is byte-identical before and after).
 * **Card reward** (`scripts/reward_screen.gd`, no class_name, preloaded): after a
   won fight that is not the last, `_match_ended()` puts it on its own CanvasLayer
-  (50) and hides the hand panels. Three different cards from `DDCard.ORDER`,
+  (50) and hides the hand panels. Three different cards from `Run.draft_pool()`
+  (`DDCard.draft_pool(STARTER_DECK)`: every card in `ORDER` that is not in the
+  starter deck, so changing the starter deck changes the pool with it),
   seeded by run seed and fight (`Run.reward_choices()`), drawn with
   `DDCardFace.draw_full` (the trading-card face with the description, text size
   stepping down to fit). Click / 1-3 picks (`Run.take_reward`), Skip / S skips; both then call
@@ -527,6 +579,36 @@ survives `reload_current_scene()`, which is how a run moves between fights.
   `DDCardFace.hit_log` collects every badge drawn that frame (`TIPS` holds the
   player-facing text, `tip_for()` reads it). `--scenario=rewardui --run=7` drives
   the mouse through hover, tooltip, Skip and a click (`push_input`).
+* **Snowball** (`snowball.gd`): bursts after `roll.distance` 8 tiles from its
+  landing (it no longer stops at the river) or at the board's back edge. The
+  roll's `hit` dictionary keeps it to one strike per enemy; the burst reaches
+  from its own size behind to `roll.burst_ahead` 1.5 tiles past its front and
+  hits roll victims too. `--scenario=snowroll`.
+* **Title screen** (`scenes/title.tscn`, `title_screen.gd`, the main scene):
+  graph paper anchored on the screen centre (minor line every `CELL` 25 px, major
+  every 5), axes with a tick across them per cell, the quadrant colours of a
+  textbook plane. A hovered quadrant (mouse or arrow keys) lerps `lift` 0..1:
+  pushed `LIFT_PX` away from the origin, grown `GROW`, shadowed, drawn over the
+  axes. Match / Run set `Run.menu_choice` and change scene; Collection opens a
+  `DDCardGrid` (now with `cols` / `aspect` vars: 6 columns, 1.4 tall) plus a
+  large `draw_full` preview on click; Exit quits. CLI flags in `SKIP_FLAGS` jump
+  straight to the arena. Preview: `res://scenes/title_mock.tscn` writes
+  `mockups/title/*.png`. Renaming the project (`config/name`) moves `user://`,
+  so the saved volume starts fresh once.
+* **Shiesty** (`shiesty.gd`, not a DDUnit) takes hp, dmg, interval, radius and
+  speed from the "shiesty" card in `setup()`; the values at the top of the file
+  are only fallbacks. (It used to hard-code 40 HP and 1.8 tiles/s, so the card
+  showed 32 / 2.2 while the game ran 40 / 1.8.) The spider's webs skip water
+  (`is_water`), which keeps them off the bridges' outer half tiles;
+  `--scenario=shiestyweb`.
+* **Bridges** are `BRIDGE_HALF` 1.5 tiles either side of `BRIDGE_COL` (3 wide).
+  Tiles stay whole for placing and presence (`is_water` still marks cols bx-2
+  and bx+1), but walking and drawing use the true deck: `on_bridge_deck()`,
+  `bridge_rect()`, `unit._ground_ok`, the spider's poisoned river. Crossings
+  (`route_point`, Shiesty's `_route_home`) run down the deck's middle line
+  x = bx (it used to be bx + 0.5) and count anything within `BRIDGE_HALF - 0.3`
+  as lined up, so a sideways shove on the deck no longer sends a troop back to
+  its bank. This moved every crossing path: bot-sim lines differ from before.
 * **Lane pocket** (`arena.POCKET`, `pocket_tiles`, `in_pocket()`): rebuilt by
   `_tick_pockets()` only when the set of fallen DDTower side towers changes; the
   taker can deploy there regardless of presence (still subject to the 3.5-tile
@@ -546,11 +628,25 @@ survives `reload_current_scene()`, which is how a run moves between fights.
   Enter (or Space) calls `arena.continue_run()`: next fight after a win, a new
   run once over. R does nothing mid-run (no replaying a fight) and starts a new
   run once it is over.
+* **The match clock** (`arena.Phase`, `_tick_clock`, `setup_clock`,
+  `phase_lengths()`): SINGLE `single_len` s (`SINGLE_TIME` 90, +`SINGLE_STEP` 15
+  per regular fight before this one in the run, `Run.battles_before()`), DOUBLE
+  half that, SUDDEN half again (`SUDDEN_MIN` 30 at least); gold x`PHASE_GOLD`
+  1/2/4; `overtime` is true from DOUBLE on (draw cut, half ability cooldowns).
+  End of DOUBLE with `towers_lost()` uneven -> `_finish_on_towers()`; level ->
+  SUDDEN, where `on_tower_destroyed` ends the match on the next tower. SUDDEN
+  running out -> `_finish_on_towers()`: elite = boss wins; run = the player wins
+  only with more towers taken; plain = tower HP, then a draw. Each phase is
+  announced by `phase_call.gd` (z 6 over troops; it lifts buildings and real
+  `DDTower`s to z 7 while it shows, then puts them back). `--scenario=phases`,
+  `phaselead`, `phaseelite`. Changing the match length moves every bot-sim line.
 * **Placeholder rules, mine:** any lost fight (including a time loss or a draw)
   ends the run. That is not §8's design, where losing activates a relic and you
   are out only when all of them are; when relics exist, `Run.report()` is where a
   loss becomes "lose a relic" instead of "run over". The four `ACT` fights and the
-  `STARTER_DECK` are placeholders for steps 3 and 4.
+  `STARTER_DECK` (10 plain cards: 3 Militia, 2 Elf Archers, Firebolt, Alchemist,
+  Hot Chicken, Snowman, and Humbaba as the one win condition; Border Skirmish's bot
+  plays basics too) are placeholders for steps 3 and 4.
 * The opening deal's sound stopper is a child `Timer` of `DDSfx`, not a
   SceneTree timer: the latter outlived the scene on a quick reload and fired into
   freed nodes.

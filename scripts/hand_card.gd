@@ -41,6 +41,17 @@ const FILL_EDGE := Color(0.96, 0.97, 1.0, 0.85)
 const COST_RED := Color(0.88, 0.2, 0.16)
 const COST_FLASH := Color(1.0, 0.93, 0.45)
 
+## A card drawn by a play (Hero, Hot Chicken, Snowman) travels face down and
+## flashes as it turns over in its slot.
+const LAND_FLASH := 0.45
+var arrive_back := false
+var land_flash := 0.0
+## a card that cannot be played yet (a whelp just swapped in) is drawn dark with
+## a draining clock and the seconds left (arena.card_lock); the clock's full
+## turn is the card's arrive_lock (this if it has none)
+const LOCK_FOR := 3.0
+var _lock_shown := false
+
 ## Seconds a lifted card takes to fly back into its slot.
 const RETURN_TIME := 0.34
 
@@ -156,10 +167,11 @@ func end_drag() -> void:
 ## A card arriving into the hand: it starts out where the play happened and flies
 ## into its slot, the same way a cancelled card flies home — just slower, and with
 ## a little longer to travel when it comes from across the board.
-func fly_in_from(world: Vector2) -> void:
+func fly_in_from(world: Vector2, face_down: bool = false) -> void:
 	if panel == null:
 		return
 	_kill_tween()
+	arrive_back = face_down
 	state = S.RETURN
 	z_index = LIFT_Z
 	var travel: float = world.distance_to(panel.global_position + home.get_center())
@@ -191,6 +203,10 @@ func _on_returned() -> void:
 	z_index = 0
 	_set_rect(home)
 	alpha = 1.0
+	if arrive_back:
+		# a drawn card turns face up as it lands, with a flash
+		arrive_back = false
+		land_flash = LAND_FLASH
 	queue_redraw()
 
 
@@ -198,6 +214,13 @@ func _process(delta: float) -> void:
 	if panel == null or not visible:
 		return
 	_t += delta
+	if land_flash > 0.0:
+		land_flash = maxf(0.0, land_flash - delta)
+		queue_redraw()
+	var lock := _panel_float("lock_left_for", card_id, 0.0)
+	if lock > 0.0 or _lock_shown:
+		_lock_shown = lock > 0.0
+		queue_redraw()
 	var flash := _panel_bool("is_rejected", index)
 	if flash != rejected:
 		rejected = flash
@@ -299,7 +322,7 @@ func _draw() -> void:
 	if kind == "" or size.x < 26.0:
 		return
 	var r := Rect2(Vector2.ZERO, size)
-	if back:
+	if back or arrive_back:
 		_draw_back(r)
 		return
 	var paid := _panel_float("gold_fraction", kind, 1.0)
@@ -314,6 +337,8 @@ func _draw() -> void:
 	if paid >= 1.0:
 		DDCardFace.draw(self, kind, r, alpha, cost_col, hide_art)
 		_draw_used_charge(r)
+		_draw_lock(r)
+		_draw_land_flash(r)
 		return
 	# unplayable: dark, see-through, filling from the bottom with the gold held.
 	# The two fades never stack — a hovered or ghosted card keeps the stronger one.
@@ -331,6 +356,43 @@ func _draw() -> void:
 		# "you cannot place that": a red pulse around the whole card
 		draw_rect(r, Color(1.0, 0.3, 0.24, 0.35 + 0.55 * absf(sin(_t * 16.0))), false, 3.0)
 	_draw_used_charge(r)
+	_draw_lock(r)
+	_draw_land_flash(r)
+
+
+## Not playable yet: a dark wash, a clock face that drains, and the seconds.
+func _draw_lock(r: Rect2) -> void:
+	var left := _panel_float("lock_left_for", card_id, 0.0)
+	if left <= 0.0:
+		return
+	draw_rect(r, Color(0.05, 0.05, 0.08, 0.55), true)
+	var c := r.get_center()
+	var rad: float = minf(r.size.x, r.size.y) * 0.22
+	var full: float = maxf(0.1, float(DDCard.get_card(kind).get("arrive_lock", LOCK_FOR)))
+	var f: float = clampf(left / full, 0.0, 1.0)
+	draw_circle(c, rad + 3.0, Color(0.05, 0.05, 0.08, 0.8))
+	var pts := PackedVector2Array([c])
+	for i in 25:
+		pts.append(c + Vector2.from_angle(-PI * 0.5 + TAU * f * float(i) / 24.0) * rad)
+	if f > 0.01:
+		draw_colored_polygon(pts, Color(0.95, 0.75, 0.35, 0.85))
+	draw_arc(c, rad, 0.0, TAU, 32, Color(1.0, 0.95, 0.85, 0.9), 2.0, true)
+	var font := ThemeDB.fallback_font
+	var sz := int(rad * 0.95)
+	draw_string_outline(font, Vector2(c.x - rad, c.y + sz * 0.36), "%d" % int(ceilf(left)), HORIZONTAL_ALIGNMENT_CENTER,
+		rad * 2.0, sz, 5, Color(0.05, 0.05, 0.08))
+	draw_string(font, Vector2(c.x - rad, c.y + sz * 0.36), "%d" % int(ceilf(left)), HORIZONTAL_ALIGNMENT_CENTER,
+		rad * 2.0, sz, Color(1.0, 0.97, 0.9))
+
+
+## A drawn card's landing: a white flash over the face and a gold ring that
+## spreads out from the edge and fades.
+func _draw_land_flash(r: Rect2) -> void:
+	if land_flash <= 0.0:
+		return
+	var f: float = land_flash / LAND_FLASH
+	draw_rect(r, Color(1.0, 1.0, 0.92, 0.8 * f * f), true)
+	draw_rect(r.grow(2.0 + 12.0 * (1.0 - f)), Color(1.0, 0.88, 0.4, f), false, 4.0)
 
 
 ## A multi-use card that has spent a charge (Firebolt after its first throw) is

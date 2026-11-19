@@ -285,6 +285,45 @@ func _draw() -> void:
 		draw_line(Vector2(-9, 0), Vector2(3, 0), Color(1.0, 0.86, 0.5, 0.9), 2.0, true)
 		draw_circle(Vector2(4, 0), 2.2, Color(1.0, 0.95, 0.7))
 		return
+	if kind == "ballista":
+		# the Ballista's bolt: a long heavy shaft, iron head, wooden flights
+		var ba := (to - from).angle()
+		draw_set_transform(Vector2.ZERO, ba, Vector2.ONE)
+		draw_line(Vector2(-22, 0), Vector2(14, 0), DDArt.OUTLINE, 5.0, true)
+		draw_line(Vector2(-22, 0), Vector2(14, 0), Color(0.6, 0.42, 0.22), 3.2, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(22, 0), Vector2(12, -5), Vector2(12, 5)]), Color(0.62, 0.64, 0.7))
+		draw_colored_polygon(PackedVector2Array([Vector2(-22, 0), Vector2(-28, -6), Vector2(-16, 0), Vector2(-28, 6)]),
+			Color(0.78, 0.6, 0.35))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	if kind == "arrow":
+		# the Elf Archer's arrow, point first, red fletching behind
+		var aa := (to - from).angle()
+		draw_set_transform(Vector2.ZERO, aa, Vector2.ONE)
+		draw_line(Vector2(-12, 0), Vector2(8, 0), Color(0.62, 0.45, 0.25), 1.8, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(12, 0), Vector2(6, -3), Vector2(6, 3)]), Color(0.78, 0.8, 0.86))
+		draw_colored_polygon(PackedVector2Array([Vector2(-12, 0), Vector2(-16, -3.5), Vector2(-9, 0), Vector2(-16, 3.5)]),
+			Color(0.9, 0.3, 0.25))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	if kind == "scythe":
+		# the female mantis's thrown claw: a green crescent blade, spinning hard,
+		# with a pale blur ring round it
+		draw_arc(Vector2.ZERO, 10.0, 0.0, TAU, 20, Color(0.85, 1.0, 0.7, 0.22), 3.0, true)
+		draw_set_transform(Vector2.ZERO, spin * 2.2, Vector2.ONE)
+		var blade := PackedVector2Array()
+		for i in 9:
+			blade.append(Vector2.from_angle(-0.3 + 2.6 * float(i) / 8.0) * 10.0)
+		for i in 9:
+			var a: float = -0.3 + 2.6 * float(8 - i) / 8.0
+			blade.append(Vector2.from_angle(a) * 6.0 + Vector2(1.8, 0.8))
+		draw_colored_polygon(blade, Color(0.55, 0.8, 0.32))
+		var edge := blade.duplicate()
+		edge.append(blade[0])
+		draw_polyline(edge, DDArt.OUTLINE, 1.4, true)
+		draw_line(Vector2.ZERO, Vector2.from_angle(-0.3) * 10.0, Color(0.95, 1.0, 0.85), 1.2, true)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if kind == "alchemist":
 		draw_circle(Vector2.ZERO, radius_px, Color(0.55, 0.92, 0.5))
 		draw_arc(Vector2.ZERO, radius_px, 0.0, TAU, 20, DDArt.OUTLINE, 2.0, true)

@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 ## Verification helper. Launch with user args after a bare "--", e.g.
 ##   -- --demo --shots=<abs path to debug folder>
@@ -223,9 +223,6 @@ func _ready() -> void:
 	elif scenario == "eggs":
 		shot_times = []
 		run_time = 33.0
-	elif scenario == "antlane":
-		shot_times = [17.0]
-		run_time = 42.0
 	elif scenario == "boltlock":
 		shot_times = []
 		run_time = 9.0
@@ -241,6 +238,45 @@ func _ready() -> void:
 	elif scenario == "hovervol":
 		shot_times = [1.65, 2.05]
 		run_time = 3.0
+	elif scenario == "cardcycle":
+		shot_times = [1.2]
+		run_time = 2.5
+	elif scenario == "mantis":
+		shot_times = [2.0, 2.78, 3.6]
+		run_time = 7.2
+	elif scenario == "tweaks":
+		shot_times = []
+		run_time = 13.5
+	elif scenario == "elf":
+		shot_times = [2.6]
+		run_time = 4.3
+	elif scenario == "drawfx":
+		shot_times = [1.9, 2.2, 2.6, 3.45]
+		run_time = 3.6
+	elif scenario == "elitetime":
+		shot_times = []
+		run_time = 1.2
+	elif scenario == "nopres":
+		shot_times = []
+		run_time = 2.0
+	elif scenario == "ballista":
+		shot_times = [3.0, 24.0]
+		run_time = 31.0
+	elif scenario == "phases" or scenario == "phaselead" or scenario == "phaseelite":
+		shot_times = [0.45, 1.4]
+		run_time = 2.3
+	elif scenario == "lockbridge":
+		shot_times = [1.6, 4.5]
+		run_time = 4.8
+	elif scenario == "shiestyweb":
+		shot_times = []
+		run_time = 1.0
+	elif scenario == "snowroll":
+		shot_times = []
+		run_time = 4.7
+	elif scenario == "pennyair":
+		shot_times = []
+		run_time = 7.2
 	elif scenario == "rewardui":
 		# needs --run=7: the first fight is won at 0.6 and the reward screen is up
 		# from 0.9; its cards are in by about 2.0
@@ -450,8 +486,6 @@ func _process(delta: float) -> void:
 		_spidercycle_steps()
 	elif scenario == "eggs":
 		_eggs_steps()
-	elif scenario == "antlane":
-		_antlane_steps()
 	elif scenario == "boltlock":
 		_boltlock_steps()
 	elif scenario == "goat":
@@ -462,6 +496,32 @@ func _process(delta: float) -> void:
 		_antaggro_steps()
 	elif scenario == "hovervol":
 		_hovervol_steps()
+	elif scenario == "cardcycle":
+		_cardcycle_steps()
+	elif scenario == "mantis":
+		_mantis_steps()
+	elif scenario == "tweaks":
+		_tweaks_steps()
+	elif scenario == "elf":
+		_elf_steps()
+	elif scenario == "drawfx":
+		_drawfx_steps()
+	elif scenario == "elitetime":
+		_elitetime_steps()
+	elif scenario == "nopres":
+		_nopres_steps()
+	elif scenario == "ballista":
+		_ballista_steps()
+	elif scenario == "phases" or scenario == "phaselead" or scenario == "phaseelite":
+		_phases_steps()
+	elif scenario == "lockbridge":
+		_lockbridge_steps()
+	elif scenario == "shiestyweb":
+		_shiestyweb_steps()
+	elif scenario == "snowroll":
+		_snowroll_steps()
+	elif scenario == "pennyair":
+		_pennyair_steps()
 	elif scenario == "rewardui":
 		_rewardui_steps()
 	elif scenario == "goatart":
@@ -1770,6 +1830,548 @@ func _shiesty_fx_steps() -> void:
 			fx_sh.position.distance_to(fx_mark) / float(arena.TILE), str(fx_sh.tower_ignore)])
 
 
+## Card-draw signalling and the Nekomancer's pentagrams: playing the Hero sends
+## the drawn card in face down from where he landed, and it flashes as it turns
+## over; the "+1" badge sits under the cost. Then the pentagrams open ahead of
+## her. Run with --bots=off.
+var dfx_card: Node = null
+var dfx_neko: Node = null
+func _dfx_card_of(id: int) -> Node:
+	for c in arena.panels[0].cards:
+		if is_instance_valid(c) and int(c.card_id) == id:
+			return c
+	return null
+
+
+func _drawfx_steps() -> void:
+	if _at(1.6):
+		arena.hands[0] = ["hero", "frog", "aphid"]
+		arena.queues[0] = ["chicken", "wu", "slate"]
+		arena.hand_ids[0] = []
+		arena.queue_ids[0] = []
+		arena.gold[0] = 10.0
+	if _at(2.0):
+		arena.deploy(0, 0, arena.tile_center(9.5, 20.5))
+		print("[drawfx] played the Hero: hand %s" % str(arena.hands[0]))
+	if _at(2.08):
+		dfx_card = _dfx_card_of(int(arena.hand_ids[0].back()))
+		print("[drawfx] drawn card in flight: face down %s, state %d" % [str(dfx_card.arrive_back), int(dfx_card.state)])
+	if dfx_card != null and is_instance_valid(dfx_card) and dfx_card.land_flash > 0.0 and dfx_card.land_flash > DDHandCard.LAND_FLASH - 0.02:
+		print("[drawfx] t%.2f landed: face up %s, flash %.2f" % [elapsed, str(not dfx_card.arrive_back), dfx_card.land_flash])
+	if _at(3.2):
+		dfx_neko = arena.spawn_troop("neko", 0, arena.tile_center(9.5, 24.5))
+		dfx_neko.deploy_timer = 0.0
+		dfx_neko.speed = 0.0
+		dfx_neko.ritual_cd = 0.0
+	if _at(3.4):
+		for n in arena.get_children():
+			if n.get_script() == load("res://scripts/pentagram.gd"):
+				print("[drawfx] pentagram %.2f tiles ahead of her, %.2f across" % [
+					(n.position.x - dfx_neko.position.x) / float(arena.TILE), (n.position.y - dfx_neko.position.y) / float(arena.TILE)])
+
+
+## Penny: a flyer outranks a nearer ground troop, she reaches it only by
+## leaping (from 2.5 tiles, never a swipe), with a cooldown between leaps; and
+## with only an enemy building near she attacks it. Run with --bots=off.
+var pa_penny: Node = null
+var pa_bird: Node = null
+var pa_ground: Node = null
+var pa_leaps := 0
+var pa_was_jumping := false
+var pa_snow: Node = null
+func _pennyair_steps() -> void:
+	if _at(0.3):
+		pa_penny = arena.spawn_troop("penny", 0, arena.tile_center(9.5, 19.5))
+		pa_penny.deploy_timer = 0.0
+		pa_ground = _aa_dummy(arena.tile_center(9.5, 17.8))
+		pa_bird = _aa_dummy(arena.tile_center(6.5, 16.5))
+		pa_bird.flying = true
+		print("[pennyair] ground dummy %.1f tiles away, flyer %.1f tiles away" % [
+			arena.tiles_between(pa_penny.position, pa_ground.position), arena.tiles_between(pa_penny.position, pa_bird.position)])
+	if pa_penny != null and is_instance_valid(pa_penny):
+		if pa_penny.jumping and not pa_was_jumping:
+			pa_leaps += 1
+			var victim: Node = pa_penny.jump_victim
+			print("[pennyair] t%.2f leap %d at the %s, from %.2f tiles" % [elapsed, pa_leaps,
+				"flyer" if victim == pa_bird else ("ground dummy" if victim == pa_ground else "something else"),
+				arena.tiles_between(pa_penny.position, victim.position) if victim != null else -1.0])
+		pa_was_jumping = pa_penny.jumping
+	if _at(4.0):
+		print("[pennyair] t4: flyer took %.0f, ground dummy took %.0f, swipes on flyer none (all damage in leaps of 20)" % [
+			99999.0 - pa_bird.hp, 99999.0 - pa_ground.hp])
+		pa_bird.take_damage(999999.0, pa_bird.position)
+		pa_ground.take_damage(999999.0, pa_ground.position)
+		pa_snow = arena.spawn_troop("snowman", 1, pa_penny.position + Vector2(2.0 * float(arena.TILE), 0.0), true)
+		pa_snow.deploy_timer = 0.0
+		pa_snow.max_hp = 9999.0
+		pa_snow.hp = 9999.0
+		pa_snow.lifetime = 0.0
+	if _at(7.0):
+		print("[pennyair] t7: enemy building took %.0f (Penny targets buildings now: %s)" % [
+			9999.0 - pa_snow.hp, str(pa_penny.target == pa_snow)])
+
+
+## The Snowball: cast mid-board it rolls 8 tiles, straight over the river, and
+## bursts; the roll hits each enemy once (a dummy it shoves ahead is not rolled
+## over twice), and the burst still reaches what the roll shoved. Also the
+## starter deck and the draft pool. Run with --bots=off.
+var sn_ball: Node = null
+var sn_land := Vector2.ZERO
+var sn_last := Vector2.ZERO
+var sn_dummies: Array = []
+var sn_log: Array = []
+func _snowroll_steps() -> void:
+	if _at(0.3):
+		print("[snowroll] starter %s" % str(Run.STARTER_DECK))
+		print("[snowroll] draft pool %d cards: %s" % [Run.draft_pool().size(), str(Run.draft_pool())])
+		sn_land = arena.tile_center(9.5, 19.5)
+		sn_ball = arena.spawn_troop("snowball", 0, sn_land)
+		for row in [17.5, 14.5]:
+			var d: Node = _aa_dummy(arena.tile_center(9.5, row))
+			d.max_hp = 9999.0
+			d.hp = 9999.0
+			sn_dummies.append(d)
+			sn_log.append([])
+	if sn_ball != null and is_instance_valid(sn_ball) and not sn_ball.done:
+		sn_last = sn_ball.position
+	if _at(3.5):
+		print("[snowroll] gone %s; last seen %.2f tiles from where it landed, at row %.1f (river rows 14-15)" % [
+			str(not is_instance_valid(sn_ball)), absf(sn_last.x - sn_land.x) / float(arena.TILE),
+			float(arena.GRID_H) - (sn_last.x - arena.ORIGIN.x) / float(arena.TILE)])
+	# every change in a dummy's HP is one hit
+	for i in sn_dummies.size():
+		var d: Node = sn_dummies[i]
+		if is_instance_valid(d) and d.hp < 9999.0 - _sn_sum(sn_log[i]) - 0.01:
+			var amount: float = 9999.0 - _sn_sum(sn_log[i]) - d.hp
+			sn_log[i].append(snappedf(amount, 0.1))
+	if _at(4.5):
+		for i in sn_dummies.size():
+			print("[snowroll] dummy %d (started on row %s): hits %s" % [i, ["17.5", "14.5"][i], str(sn_log[i])])
+
+
+func _sn_sum(a: Array) -> float:
+	var s := 0.0
+	for v in a:
+		s += float(v)
+	return s
+
+
+## Shiesty takes his numbers from card_db; the spider never webs water (the
+## bridge decks' outer half tiles included). Run with --bots=off.
+func _shiestyweb_steps() -> void:
+	if _at(0.3):
+		arena.ability[0] = "shiesty"
+		arena.gold[0] = 10.0
+		arena.ability_cd[0] = 0.0
+		arena.use_ability(0)
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "shiesty":
+				var d: Dictionary = DDCard.get_card("shiesty")
+				print("[shiestyweb] Shiesty hp %.0f / %.0f (card %s), speed %.2f tiles/s (card %s), dmg %.0f (card %s)" % [
+					u.hp, u.max_hp, str(d["hp"]), u.speed_px / float(arena.TILE), str(d["speed"]), u.dmg, str(d["dmg"])])
+	if _at(0.6):
+		arena.start_spider_encounter()
+		var bx: float = float(arena.BRIDGE_COL_A)
+		var water_webs := 0
+		var deck_webs := 0
+		for off in [1.3, -1.3, 0.0]:
+			var h: Node = arena.spawn_troop("hero", 0, arena.tile_center(bx + off, 17.5), true)
+			h.deploy_timer = 0.0
+			h.position = arena.tile_center(bx + off, 17.5)
+			arena.spider.webs.clear()
+			arena.spider.lay_web_ahead_of(h)
+			for t in arena.spider.webs.keys():
+				if arena.is_water(t):
+					water_webs += 1
+				elif t.y >= arena.RIVER_TOP and t.y <= arena.RIVER_BOTTOM:
+					deck_webs += 1
+			print("[shiestyweb] web ahead of a troop at bridge %+.1f: tiles %s" % [off, str(arena.spider.webs.keys())])
+			h.take_damage(99999.0, h.position)
+		print("[shiestyweb] web tiles on water %d (expect 0), on the bridge's whole tiles %d" % [water_webs, deck_webs])
+
+
+## The whelp lock and the wider bridges. Playing the Obsidian Whelp puts a
+## Magma Whelp in the hand that cannot be played for 3 s (a try is refused),
+## then can. The bridge deck is 3 tiles wide: its outer half tiles are walkable
+## but cannot be played on, and a troop shoved out to the deck's edge keeps
+## crossing instead of turning back. Run with --bots=off.
+var lb_hero: Node = null
+var lb_row0 := 0.0
+func _lockbridge_steps() -> void:
+	if _at(0.6):
+		arena.hands[0] = ["obsidian", "frog", "fu"]
+		arena.queues[0] = ["idol", "wu"]
+		arena.hand_ids[0] = []
+		arena.queue_ids[0] = []
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, arena.tile_center(9.5, 24.5))
+		print("[lockbridge] played Obsidian: hand %s, slot 0 locked %s, %.2f s left" % [
+			str(arena.hands[0]), str(arena.card_locked(0, 0)), arena.lock_left(arena.hand_id(0, 0))])
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, arena.tile_center(9.5, 24.5))
+		print("[lockbridge] tried the Magma Whelp at once: hand %s (expect magma still there)" % str(arena.hands[0]))
+	if _at(3.7):
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, arena.tile_center(9.5, 24.5))
+		print("[lockbridge] t3.7 played it: hand %s, new obsidian locked %s" % [str(arena.hands[0]), str(arena.card_locked(0, 0))])
+		var bx: float = float(arena.BRIDGE_COL_A)
+		var row := 14.5
+		var probes: Array = []
+		for off in [-1.6, -1.4, -0.5, 0.5, 1.4, 1.6]:
+			probes.append("%+.1f:%s" % [off, str(arena.on_bridge_deck(arena.tile_center(bx + off, row)))])
+		print("[lockbridge] on the deck at bridge middle + (tiles): %s (expect only +-1.6 false)" % ", ".join(probes))
+		print("[lockbridge] outer half tile (col %d) is water %s, can deploy %s; deck tile (col %d) can deploy %s" % [
+			int(bx) - 2, str(arena.is_water(Vector2i(int(bx) - 2, 15))),
+			str(arena.can_deploy(0, "hero", arena.tile_center(bx - 1.75, 15.5))),
+			int(bx) - 1, str(arena.can_deploy(0, "hero", arena.tile_center(bx - 0.5, 15.5)))])
+		lb_hero = arena.spawn_troop("hero", 0, arena.tile_center(bx + 1.3, 15.6), true)
+		lb_hero.deploy_timer = 0.0
+		lb_hero.position = arena.tile_center(bx + 1.3, 15.6)
+		lb_row0 = 15.6
+	if _at(4.6) and lb_hero != null and is_instance_valid(lb_hero):
+		var row_now: float = float(arena.GRID_H) - (lb_hero.position.x - arena.ORIGIN.x) / arena.TILE
+		print("[lockbridge] hero started at the deck edge (+1.3) on row %.1f; 0.9 s later row %.2f, col %.2f (expect the row to drop: still crossing)" % [
+			lb_row0, row_now, arena.col_f(lb_hero.position)])
+
+
+## The three-phase clock. "phases": single (90 s) -> double -> sudden death,
+## gold x1 / x2 / x4, and the next tower to fall ends it. "phaselead": a tower
+## lead at the end of double gold wins there. "phaseelite": the spider's clock
+## (120 s single) goes to sudden death even with a side tower down, and running
+## out is the boss's win. Troops and a Snowman sit mid-board so the shots show
+## the letters over troops, under buildings. Run with --bots=off.
+func _ph_state(label: String) -> void:
+	print("[%s] %s: phase %d, %.1f s left, lengths %s, gold rate %.2f, over %s, winner %d" % [
+		scenario, label, int(arena.phase), arena.match_time_left, str(arena.phase_lengths()),
+		arena.gold_rate_now(), str(arena.match_over), int(arena.winner)])
+
+
+func _ph_side_tower(team: int) -> Node:
+	for t in arena.towers:
+		if is_instance_valid(t) and int(t.team) == team and t is DDTower and not bool(t.crown) and not t.dead:
+			return t
+	return null
+
+
+func _phases_steps() -> void:
+	if _at(0.2):
+		var lens: Array = []
+		for f in Run.ACT.size():
+			var e: Dictionary = Run.ACT[f]
+			lens.append("%s %ds" % [String(e["name"]), int(arena.SINGLE_TIME + arena.SINGLE_STEP * Run.battles_before(f)) if String(e.get("type", "")) == "battle" else int(arena.ELITE_SINGLE)])
+		print("[%s] single gold per run fight: %s" % [scenario, ", ".join(lens)])
+		if scenario == "phaseelite":
+			arena.start_spider_encounter()
+		_ph_state("start")
+		for i in 3:
+			var u: Node = arena.spawn_troop("militia", 0, arena.board_rect().get_center() + Vector2(-60.0 + 60.0 * i, 30.0))
+			u.deploy_timer = 0.0
+			u.speed = 0.0
+		var sm: Node = arena.spawn_troop("snowman", 0, arena.board_rect().get_center() + Vector2(-130.0, -10.0))
+		sm.deploy_timer = 0.0
+	if _at(0.6):
+		if scenario == "phaselead":
+			_ph_side_tower(1).take_damage(99999.0, Vector2.ZERO)
+		if scenario == "phaseelite":
+			_ph_side_tower(0).take_damage(99999.0, Vector2.ZERO)
+		arena.match_time_left = 0.05
+	if _at(0.8):
+		_ph_state("after single")
+		arena.match_time_left = 0.05
+	if _at(1.0):
+		_ph_state("after double")
+	if _at(1.6) and scenario == "phases":
+		_ph_side_tower(1).take_damage(99999.0, Vector2.ZERO)
+	if _at(1.8):
+		if scenario == "phaseelite":
+			arena.match_time_left = 0.05
+	if _at(2.1):
+		_ph_state("end")
+		print("[%s] banner: %s" % [scenario, arena.banner_text])
+
+
+## The Ballista: wheeled up the left lane, it should set down on the bridge and
+## shoot the enemy's side tower from out of that tower's reach. A Militia goes
+## with it for the picture. Then the run timeout rule (level towers = a loss).
+## Run with --bots=off.
+var bl_unit: Node = null
+var bl_tower: Node = null
+var bl_hp := 0.0
+var bl_stop_logged := false
+func _ballista_steps() -> void:
+	if _at(0.3):
+		bl_unit = arena.spawn_troop("ballista", 0, arena.tile_center(4.5, 22.5))
+		bl_unit.deploy_timer = 0.0
+		var mil: Node = arena.spawn_troop("militia", 0, arena.tile_center(7.5, 22.5))
+		mil.deploy_timer = 0.0
+		for t in arena.towers:
+			if is_instance_valid(t) and int(t.team) == 1 and not bool(t.crown) and arena.tile_of(t.position).x < 9:
+				bl_tower = t
+		bl_hp = bl_tower.hp
+		print("[ballista] is_building %s, stationary %s, reach %.1f, enemy side tower reach %.0f" % [
+			str(bl_unit.is_building()), str(bl_unit.stationary), bl_unit.reach, bl_tower.reach])
+	if bl_unit != null and is_instance_valid(bl_unit) and not bl_stop_logged and bl_unit.state == DDUnit.S.ATTACK:
+		bl_stop_logged = true
+		print("[ballista] t%.1f set down at tile %s, %.2f tiles from the tower's centre; tower can reach %s" % [
+			elapsed, str(arena.tile_of(bl_unit.position)), arena.tiles_between(bl_unit.position, bl_tower.position),
+			str(arena.tiles_between(bl_unit.position, bl_tower.position) <= float(bl_tower.reach))])
+	if _at(30.0):
+		print("[ballista] t30: tower took %.0f, ballista hp %.0f / %.0f" % [bl_hp - bl_tower.hp, bl_unit.hp, bl_unit.max_hp])
+	if _at(30.5):
+		Run.active = true
+		arena._finish_on_towers()
+		print("[ballista] run timeout with towers level: winner %d, \"%s\"" % [arena.winner, arena.banner_text])
+
+
+## Presence: Rat Skeletons, Meerkats and ants hold no ground; a Hero does.
+## Each is spawned alone in the band and the team's held tiles are counted.
+func _presence_count() -> int:
+	return (arena.control[0] as Array).count(true)
+
+
+func _nopres_steps() -> void:
+	var kinds := ["ratbones", "meerkats", "ant", "hero"]
+	for i in kinds.size():
+		var t0: float = 0.3 + 0.4 * float(i)
+		if _at(t0):
+			for u in arena.units.duplicate():
+				if is_instance_valid(u) and int(u.team) == 0:
+					u.take_damage(99999.0, u.position)
+		if _at(t0 + 0.05):
+			var u: Node = arena.spawn_troop(String(kinds[i]), 0, arena.tile_center(9.5, 16.5))
+			for v in arena.units:
+				if is_instance_valid(v) and String(v.kind) == String(kinds[i]):
+					v.deploy_timer = 0.0
+					v.speed = 0.0
+		if _at(t0 + 0.3):
+			print("[nopres] %s on the board: team 0 holds %d tiles" % [kinds[i], _presence_count()])
+
+
+## Tower reach (side 7, crown 8), the elite pick per run seed, and the elite
+## clock: starting the spider sets 120 s single / 60 double / 30 sudden death.
+func _elitetime_steps() -> void:
+	if _at(0.3):
+		var r: Array = []
+		for t in arena.towers:
+			if is_instance_valid(t) and int(t.team) == 0:
+				r.append("%s %.0f" % ["crown" if bool(t.crown) else "side", float(t.reach)])
+		print("[elitetime] team 0 tower reach: %s" % ", ".join(r))
+		var keep_seed: int = Run.run_seed
+		var picks: Array = []
+		for sd in 10:
+			Run.run_seed = sd
+			var e: Dictionary = Run.encounter_at(2)
+			picks.append("%d:%s" % [sd, String(e.get("name", ""))])
+		var krakens := 0
+		for sd in 200:
+			Run.run_seed = sd
+			if String(Run.encounter_at(2).get("elite", "")) == "kraken":
+				krakens += 1
+		Run.run_seed = keep_seed
+		print("[elitetime] elite fight by run seed: %s" % ", ".join(picks))
+		print("[elitetime] over 200 seeds: %d Kraken, %d Matriarch" % [krakens, 200 - krakens])
+		arena.start_spider_encounter()
+		print("[elitetime] spider started: phases %s (expect 120 / 60 / 30), elite %s; name %s, pool %s poison every %s s" % [
+			str(arena.phase_lengths()), str(arena.elite_fight), DDCard.pretty("spider"),
+			str(arena.spider.cfg["pool_poison"]), str(arena.spider.cfg["pool_every"])])
+
+
+## The Elf Archer: shoots a ground dummy and a flyer from 5.5 tiles. Run with
+## --bots=off.
+var el_elf: Node = null
+var el_dummy: Node = null
+var el_bird: Node = null
+func _elf_steps() -> void:
+	if _at(0.3):
+		el_elf = arena.spawn_troop("elf", 0, arena.tile_center(9.5, 24.5))
+		el_dummy = _aa_dummy(arena.tile_center(9.5, 18.6))
+		el_bird = _aa_dummy(arena.tile_center(6.5, 18.6))
+		el_bird.flying = true
+	if _at(4.0):
+		print("[elf] starter deck has her: %s; elf at %.1f tiles from the dummy" % [
+			str(Run.STARTER_DECK.has("elf")), arena.tiles_between(el_elf.position, el_dummy.position)])
+		print("[elf] dummy took %d, flyer took %d (20 an arrow)" % [int(99999.0 - el_dummy.hp), int(99999.0 - el_bird.hp)])
+
+
+## Small rule checks: Hero / Hot Chicken / Snowman draw a card when played and
+## leave the draw clock alone (apart from the usual gold pull); the
+## Nekomancer's first ritual 1.5 s after she is played; the Wolf Pack's bite
+## rate does not drop as wolves die; the run's starter deck. Run with --bots=off.
+var tw_neko: Node = null
+var tw_neko_at := -1.0
+var tw_wolves: Array = []
+var tw_dummy: Node = null
+var tw_hp := 0.0
+func _tweaks_steps() -> void:
+	if _at(0.3):
+		print("[tweaks] opening hands %d and %d (expect %d), hand max %d" % [arena.hands[0].size(),
+			arena.hands[1].size(), int(arena.OPENING_HAND), int(arena.HAND_MAX)])
+		arena.hands[0] = ["frog", "fu", "aphid", "idol", "wu", "slate"]
+		arena.queues[0] = ["troll", "hero"]
+		arena.hand_ids[0] = []
+		arena.queue_ids[0] = []
+		arena.draw_card(0)
+		print("[tweaks] a draw into a full hand of 6: hand %d cards %s" % [arena.hands[0].size(), str(arena.hands[0])])
+		for kind in ["hero", "chicken", "snowman", "fu"]:
+			arena.hands[0] = [kind, "frog", "aphid"]
+			arena.queues[0] = ["idol", "wu", "slate"]
+			arena.hand_ids[0] = []
+			arena.queue_ids[0] = []
+			arena.gold[0] = 10.0
+			arena.draw_timer[0] = 7.0
+			arena.deploy(0, 0, arena.tile_center(9.5 - float(["hero", "chicken", "snowman", "fu"].find(kind)) * 2.0, 24.5))
+			print("[tweaks] played %s: hand %s, deck %s, draw clock %.2f (expect 7.00 for the drawing cards, 7 less %d for others)" % [
+				kind, str(arena.hands[0]), str(arena.queues[0]), float(arena.draw_timer[0]), DDCard.cost(kind)])
+		print("[tweaks] starter deck %s" % str(Run.STARTER_DECK))
+		tw_neko = arena.spawn_troop("neko", 0, arena.tile_center(3.5, 26.5))
+		tw_neko_at = elapsed
+	if tw_neko != null and is_instance_valid(tw_neko) and tw_neko_at >= 0.0 and tw_neko.cloak_t > 0.0:
+		print("[tweaks] Nekomancer's first ritual %.2f s after she was played (expect 1.50)" % (elapsed - tw_neko_at))
+		tw_neko_at = -1.0
+	for tt in [1.95, 3.0, 4.9, 8.9]:
+		if _at(tt):
+			# clear the troops played above (and the rats), so only wolves bite
+			for u in arena.units.duplicate():
+				if is_instance_valid(u) and not u.dead and int(u.team) == 0 and String(u.kind) != "wolves":
+					u.take_damage(99999.0, u.position)
+	if _at(2.0):
+		# out of every tower's range, so only the wolves hurt it
+		tw_dummy = _aa_dummy(arena.tile_center(9.5, 17.5))
+		arena.spawn_troop("wolves", 0, arena.tile_center(9.5, 21.5))
+		for u in arena.units:
+			if is_instance_valid(u) and String(u.kind) == "wolves":
+				u.deploy_timer = 0.0
+				tw_wolves.append(u)
+	if _at(5.0):
+		tw_hp = tw_dummy.hp
+	if _at(9.0):
+		print("[tweaks] 4 wolves: %d bites in 4 s" % int((tw_hp - tw_dummy.hp) / 10.0))
+		tw_wolves[0].take_damage(999.0, tw_wolves[0].position)
+		tw_wolves[1].take_damage(999.0, tw_wolves[1].position)
+		tw_hp = tw_dummy.hp
+	if _at(13.0):
+		print("[tweaks] 2 wolves: %d bites in 4 s (expect about the same)" % int((tw_hp - tw_dummy.hp) / 10.0))
+
+
+## The Mated Mantises: he lands on the tile, she 3.5 tiles behind; he claws, she
+## throws; at 25 % she leaps on him, he loses his head (out of `units`, a
+## corpse for a while), she heals 50 % up to 125 % of her max, rages and claws
+## up close. Then a second pair where she is shot down in mid-leap: he must be
+## let go. Run with --bots=off.
+var mt_m: Node = null
+var mt_f: Node = null
+var mt_dummy: Node = null
+func _mt_pair(at: Vector2) -> void:
+	mt_m = arena.spawn_troop("mantis", 0, at)
+	for u in arena.units:
+		if is_instance_valid(u) and String(u.kind) == "mantisf" and u.mate == mt_m:
+			mt_f = u
+	mt_m.deploy_timer = 0.0
+	mt_f.deploy_timer = 0.0
+
+
+func _mantis_steps() -> void:
+	if _at(0.3):
+		_mt_pair(arena.tile_center(9.5, 21.5))
+		var tm: Vector2i = arena.tile_of(mt_m.position)
+		print("[mantis] male tile %s, female tile %s, apart %.2f tiles (expect 3.5 behind)" % [
+			str(tm), str(arena.tile_of(mt_f.position)), arena.tiles_between(mt_m.position, mt_f.position)])
+		mt_dummy = _aa_dummy(arena.tile_center(9.5, 19.3))
+	if _at(2.5):
+		print("[mantis] t2.5 dummy took %d (male claws + female scythes); male state %d, female state %d" % [
+			int(99999.0 - mt_dummy.hp), int(mt_m.state), int(mt_f.state)])
+		mt_m.take_damage(mt_m.max_hp * 0.7, mt_m.position)
+		print("[mantis] male at %.0f / %.0f: female devour phase %d (expect 0)" % [mt_m.hp, mt_m.max_hp, mt_f.devour_phase])
+	if _at(2.7):
+		mt_m.take_damage(mt_m.max_hp * 0.06, mt_m.position)
+		print("[mantis] male at %.0f: female hp %.0f / %.0f" % [mt_m.hp, mt_f.hp, mt_f.max_hp])
+	if _at(2.8):
+		print("[mantis] t2.8 devour phase %d, male held %s invincible %s" % [mt_f.devour_phase, mt_m.held, mt_m.invincible])
+		mt_m.take_damage(500.0, mt_m.position)
+		print("[mantis]   a 500 hit on him mid-leap: male hp %.0f dead %s (expect untouched)" % [mt_m.hp, mt_m.dead])
+	if _at(3.5):
+		print("[mantis] t3.5 male dead %s headless %s in units %s; female hp %.0f / %.0f (expect 150), rage %.1f s, speed %.3f, devoured %s" % [
+			mt_m.dead, mt_m.headless, arena.units.has(mt_m), mt_f.hp, mt_f.max_hp, mt_f.rage_t, mt_f.speed, mt_f.devoured])
+		print("[mantis]   female to male distance %.2f tiles" % arena.tiles_between(mt_f.position, mt_m.position))
+		mt_dummy.position = mt_f.position + Vector2(-1.2 * float(arena.TILE), 0.0)
+		mt_dummy.hp = 99999.0
+	if _at(4.6):
+		print("[mantis] t4.6 dummy beside her took %d (claws 18 each, 0.8 s apart in rage); claw shown %s" % [
+			int(99999.0 - mt_dummy.hp), str(mt_f.claw_t > 0.0 or mt_f.attack_stretch > 0.0)])
+	if _at(6.2):
+		print("[mantis] t6.2 corpse still drawn %s (expect gone after 3 s), rage %.1f, speed %.2f" % [
+			str(is_instance_valid(mt_m)), mt_f.rage_t, mt_f.speed])
+		mt_dummy.queue_free()
+		_mt_pair(arena.tile_center(4.5, 22.5))
+	if _at(6.6):
+		mt_m.take_damage(mt_m.max_hp * 0.8, mt_m.position)
+	if _at(6.7):
+		print("[mantis] pair 2: devour phase %d; shooting her down mid-leap" % mt_f.devour_phase)
+		mt_f.take_damage(9999.0, mt_f.position)
+	if _at(6.8):
+		print("[mantis] pair 2: female dead %s; male held %s invincible %s dead %s (expect false false false)" % [
+			str(not is_instance_valid(mt_f) or mt_f.dead), mt_m.held, mt_m.invincible, mt_m.dead])
+
+
+## Card cycling: Penny gives Pen and goes to the back of the deck; Pen played is
+## gone; the whelps swap in the hand every play and never enter the deck. Then
+## the draft pool, and Esc pause (this node keeps running while paused). Run
+## with --bots=off.
+var cc_clock := 0.0
+func _cc_state(label: String) -> void:
+	print("[cardcycle] %s: hand %s | deck %s" % [label, str(arena.hands[0]), str(arena.queues[0])])
+
+
+func _cardcycle_steps() -> void:
+	var at: Vector2 = arena.tile_center(9.5, 24.5)
+	if _at(0.3):
+		process_mode = Node.PROCESS_MODE_ALWAYS
+		arena.hands[0] = ["penny", "obsidian", "frog", "troll"]
+		arena.queues[0] = ["fu", "idol"]
+		arena.hand_ids[0] = []
+		arena.queue_ids[0] = []
+		arena.gold[0] = 10.0
+		_cc_state("start")
+		arena.deploy(0, 0, at)
+		_cc_state("played Penny (expect pen in slot 0, penny at the deck's end)")
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, at)
+		_cc_state("played Pen (expect it gone from hand and deck)")
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, at)
+		_cc_state("played Obsidian (expect magma in slot 0, deck unchanged)")
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, at)
+		_cc_state("played Magma (expect obsidian back in slot 0, deck unchanged)")
+		arena.gold[0] = 10.0
+		arena.deploy(0, 0, at)
+		_cc_state("played Obsidian again (expect magma)")
+		var pool: Array = Run.draft_pool()
+		var bad: Array = Run.STARTER_DECK.filter(func(k): return pool.has(k))
+		var missing: Array = DDCard.ORDER.filter(func(k): return not pool.has(k) and not Run.STARTER_DECK.has(k))
+		print("[cardcycle] draft pool %d of %d cards, starter cards in it: %s, non-starter cards missing: %s" % [
+			pool.size(), DDCard.ORDER.size(), str(bad), str(missing)])
+	if _at(0.6):
+		var esc := InputEventKey.new()
+		esc.keycode = KEY_ESCAPE
+		esc.pressed = true
+		arena.get_viewport().push_input(esc, true)
+	if _at(0.7):
+		cc_clock = float(arena.match_time_left)
+		print("[cardcycle] after Esc: paused=%s menu=%s" % [get_tree().paused, arena.pause_layer != null])
+	if _at(1.7):
+		print("[cardcycle] 1 s paused: clock moved %.3f s (expect 0)" % (cc_clock - float(arena.match_time_left)))
+		var esc := InputEventKey.new()
+		esc.keycode = KEY_ESCAPE
+		esc.pressed = true
+		arena.get_viewport().push_input(esc, true)
+	if _at(1.8):
+		cc_clock = float(arena.match_time_left)
+		print("[cardcycle] after second Esc: paused=%s menu=%s" % [get_tree().paused, arena.pause_layer != null])
+	if _at(2.3):
+		print("[cardcycle] 0.5 s running: clock moved %.2f s" % (cc_clock - float(arena.match_time_left)))
+
+
 ## Duplicate cards: a deck of repeats deals a hand with two of a card; each copy
 ## has its own id, cycles back as itself, keeps its own Firebolt charges, and a
 ## Penny turning into Pen leaves the other Penny alone. Then the draw clock:
@@ -2768,59 +3370,6 @@ func _eggs_steps() -> void:
 		eg_eggs[0].take_damage(9999.0, eg_eggs[0].position)
 	if _at(32.0):
 		print("[eggs] egg B ran out on its own: gone=%s (expect 8 more)" % str(not is_instance_valid(eg_eggs[1])))
-
-
-## Ant lanes: an Ant Hill on the left lane. The first ant to reach the bridge
-## mouth is killed there; the next ant into that tile turns for the right lane,
-## and every ant it meets coming the other way turns too. Ants hatched after the
-## grave has gone stale walk the left lane again. Late on, an enemy dummy by the
-## right-lane route: turned ants attack it before carrying on.
-var al_killed := false
-var al_turned: Dictionary = {}
-var al_dummy: Node = null
-func _antlane_steps() -> void:
-	if _at(0.3):
-		arena.spawn_troop("anthill", 0, arena.tile_center(5.0, 22.5))
-		print("[antlane] ant hill on the left lane; bridges at cols %d and %d" % [int(arena.BRIDGE_COL_A), int(arena.BRIDGE_COL_B)])
-	var ants: Array = arena.units.filter(func(u): return is_instance_valid(u) and not u.dead and String(u.kind) == "ant")
-	if not al_killed:
-		for a in ants:
-			if arena.tile_of(a.position).y <= 17:
-				al_killed = true
-				print("[antlane] t%.2f killing the lead ant at tile %s" % [elapsed, str(arena.tile_of(a.position))])
-				a.take_damage(999.0, a.position)
-				break
-	for a in ants:
-		var id: int = a.get_instance_id()
-		if a.ant_turned and not al_turned.has(id):
-			al_turned[id] = true
-			var goal_col: int = arena.tile_of(a.ant_goal.position).x
-			print("[antlane] t%.2f ant at tile %s turns (goal tower col %d)" % [elapsed, str(arena.tile_of(a.position)), goal_col])
-	for tt in [16.0, 24.0, 32.0, 41.0]:
-		if _at(tt):
-			var n_turn := 0
-			var right := 0
-			for a in ants:
-				if a.ant_turned:
-					n_turn += 1
-				if arena.tile_of(a.position).x >= 9:
-					right += 1
-			print("[antlane] t%.0f ants %d, turned %d, on the right half %d" % [tt, ants.size(), n_turn, right])
-	if _at(24.5):
-		# something to bite on the way to the right lane
-		var turned_ants: Array = ants.filter(func(a): return a.ant_turned)
-		if not turned_ants.is_empty():
-			var a0: Node = turned_ants[0]
-			al_dummy = _lani_dummy("hero", a0.position + Vector2(0.0, 2.0 * float(arena.TILE)))
-			al_dummy.max_hp = 5000.0
-			al_dummy.hp = 5000.0
-			print("[antlane] dummy placed 2 tiles from a turned ant")
-	if _at(27.0) and is_instance_valid(al_dummy):
-		var biting := 0
-		for a in ants:
-			if a.target == al_dummy:
-				biting += 1
-		print("[antlane] t27 ants on the dummy %d, dummy hp %d / 5000" % [biting, int(al_dummy.hp)])
 
 
 ## The Firebolt locks on or does not cast. A click on bare ground does nothing;

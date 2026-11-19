@@ -52,7 +52,7 @@ class Sheet extends Node2D:
 				var kinds := ["fu", "neko", "ovomachine", "fireball", "gilgamesh"]
 				for i in kinds.size():
 					TCG.card(self, kinds[i], Rect2(24.0 + 314.0 * float(i), 70.0, 300.0, 419.0), true)
-				var kinds2 := ["chicken", "phalanx", "hawk", "slate", "laniakea"]
+				var kinds2 := ["chicken", "militia", "ballista", "elf", "mantis"]
 				for i in kinds2.size():
 					TCG.card(self, kinds2[i], Rect2(24.0 + 314.0 * float(i), 580.0, 300.0, 419.0), true)
 			"compact":
@@ -60,7 +60,7 @@ class Sheet extends Node2D:
 				var a := ["hero", "neko", "fu", "wolves"]
 				for i in a.size():
 					TCG.card(self, a[i], Rect2(24.0 + 274.0 * float(i), 70.0, 260.0, 364.0), false)
-				var b := ["femme", "warren", "frog", "obsidian", "snowball", "dragon"]
+				var b := ["femme", "warren", "frog", "obsidian", "magma", "dragon"]
 				for i in b.size():
 					TCG.card(self, b[i], Rect2(24.0 + 228.0 * float(i), 470.0, 216.0, 302.0), false)
 				var c := ["alchemist", "anthill", "meerkats", "penny", "idol", "aphid", "wu", "troll"]
