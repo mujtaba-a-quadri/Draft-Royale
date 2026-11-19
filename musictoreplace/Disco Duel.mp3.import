@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dc5tmtruuujwf"
+path="res://.godot/imported/Disco Duel.mp3-4295d11c95d7e92cb10e734f51635724.mp3str"
+
+[deps]
+
+source_file="res://musictoreplace/Disco Duel.mp3"
+dest_files=["res://.godot/imported/Disco Duel.mp3-4295d11c95d7e92cb10e734f51635724.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

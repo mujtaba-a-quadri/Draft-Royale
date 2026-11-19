@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 ## Verification helper. Launch with user args after a bare "--", e.g.
 ##   -- --demo --shots=<abs path to debug folder>
@@ -226,6 +226,29 @@ func _ready() -> void:
 	elif scenario == "antlane":
 		shot_times = [17.0]
 		run_time = 42.0
+	elif scenario == "boltlock":
+		shot_times = []
+		run_time = 9.0
+	elif scenario == "goat":
+		shot_times = []
+		run_time = 12.0
+	elif scenario == "pocket":
+		shot_times = [1.0]
+		run_time = 1.4
+	elif scenario == "antaggro":
+		shot_times = [2.0]
+		run_time = 13.0
+	elif scenario == "hovervol":
+		shot_times = [1.65, 2.05]
+		run_time = 3.0
+	elif scenario == "rewardui":
+		# needs --run=7: the first fight is won at 0.6 and the reward screen is up
+		# from 0.9; its cards are in by about 2.0
+		shot_times = [3.3, 3.9]
+		run_time = 4.2
+	elif scenario == "goatart":
+		shot_times = [0.8]
+		run_time = 1.0
 	elif scenario == "whelpart":
 		shot_times = [0.8]
 		run_time = 1.0
@@ -429,6 +452,20 @@ func _process(delta: float) -> void:
 		_eggs_steps()
 	elif scenario == "antlane":
 		_antlane_steps()
+	elif scenario == "boltlock":
+		_boltlock_steps()
+	elif scenario == "goat":
+		_goat_steps()
+	elif scenario == "pocket":
+		_pocket_steps()
+	elif scenario == "antaggro":
+		_antaggro_steps()
+	elif scenario == "hovervol":
+		_hovervol_steps()
+	elif scenario == "rewardui":
+		_rewardui_steps()
+	elif scenario == "goatart":
+		_goatart_steps()
 	elif scenario == "shiestyfx":
 		_shiesty_fx_steps()
 	elif scenario == "dupes":
@@ -712,7 +749,11 @@ func _firebolt_steps() -> void:
 		arena.panels[0]._begin_drag(0)
 		print("[firebolt] state before press: lifted=%s sel=%d/%d" % [
 			str(arena.panels[0].drag_card != null), arena.selected_player, arena.selected_index])
-		var point: Vector2 = arena.tile_center(4.0, 24.0)
+		# the Firebolt only casts locked on: an enemy to cast it on
+		probe = _lani_dummy("hero", arena.tile_center(4.0, 20.0))
+		probe.max_hp = 5000.0
+		probe.hp = 5000.0
+		var point: Vector2 = probe.position
 		var press := InputEventMouseButton.new()
 		press.button_index = MOUSE_BUTTON_LEFT
 		press.pressed = true
@@ -723,9 +764,9 @@ func _firebolt_steps() -> void:
 		print("[firebolt] casts after click 1=%d (expect 1) charges=%d in_hand=%s" % [
 			_bolts(), arena.charges_of(0, "firebolt"), str(arena.hands[0].has("firebolt"))])
 	if _at(1.6):
-		arena.try_deploy_at(arena.tile_center(4.0, 24.0))
+		arena.try_deploy_at(probe.position)
 		# the counter sees bolts still in flight, not a total: the charge bookkeeping
-		# is the proof here — 1 charge left after click 1, none after click 2
+		# is the proof here â€” 1 charge left after click 1, none after click 2
 		print("[firebolt] after click 2: bolts_in_flight=%d in_hand=%s lifted=%s" % [
 			_bolts(), str(arena.hands[0].has("firebolt")), str(arena.panels[0].drag_card != null)])
 
@@ -821,12 +862,12 @@ func _slate_steps() -> void:
 
 func _control_steps() -> void:
 	if _at(0.3):
-		print("[control] no units — p1 rows 18/17/16/13: %s %s %s %s" % [
+		print("[control] no units â€” p1 rows 18/17/16/13: %s %s %s %s" % [
 			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 18.5))),
 			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 17.5))),
 			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 16.5))),
 			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 13.5)))])
-		print("[control] no units — p2 rows 11/12/13/18: %s %s %s %s" % [
+		print("[control] no units â€” p2 rows 11/12/13/18: %s %s %s %s" % [
 			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 11.5))),
 			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 12.5))),
 			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 13.5))),
@@ -836,7 +877,7 @@ func _control_steps() -> void:
 		if is_instance_valid(alch):
 			alch.deploy_timer = 0.0
 	if _at(0.9):
-		print("[control] p1 unit at row 16 → p1 row16 col9=%s col2=%s row13=%s | p2 row16 col9=%s" % [
+		print("[control] p1 unit at row 16 â†’ p1 row16 col9=%s col2=%s row13=%s | p2 row16 col9=%s" % [
 			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 16.5))),
 			str(arena.can_deploy(0, "slate", arena.tile_center(2.5, 16.5))),
 			str(arena.can_deploy(0, "slate", arena.tile_center(9.5, 13.5))),
@@ -846,7 +887,7 @@ func _control_steps() -> void:
 		if is_instance_valid(h):
 			h.deploy_timer = 0.0
 	if _at(1.5):
-		print("[control] p2 unit at row 20 → p2 row18 col9=%s col2=%s" % [
+		print("[control] p2 unit at row 20 â†’ p2 row18 col9=%s col2=%s" % [
 			str(arena.can_deploy(1, "slate", arena.tile_center(9.5, 18.5))),
 			str(arena.can_deploy(1, "slate", arena.tile_center(2.5, 18.5)))])
 	if _at(1.9):
@@ -2182,7 +2223,7 @@ func _boulder2_steps() -> void:
 			print("[boulder2] boulder already gone")
 		else:
 			var step := TAU / 16.0
-			print("[boulder2] t1.6 armed=%s dir=(%.2f,%.2f) angle=%.1f° steps=%.2f (integer = snapped)" % [
+			print("[boulder2] t1.6 armed=%s dir=(%.2f,%.2f) angle=%.1fÂ° steps=%.2f (integer = snapped)" % [
 				str(b2.armed), b2.dir.x, b2.dir.y, rad_to_deg(b2.dir.angle()), b2.dir.angle() / step])
 			var ep: Vector2 = b2.epicenter
 			var spawn_off: float = ep.distance_to(b2.position) / arena.TILE
@@ -2780,3 +2821,366 @@ func _antlane_steps() -> void:
 			if a.target == al_dummy:
 				biting += 1
 		print("[antlane] t27 ants on the dummy %d, dummy hp %d / 5000" % [biting, int(al_dummy.hp)])
+
+
+## The Firebolt locks on or does not cast. A click on bare ground does nothing;
+## cast on a fast troop running away it follows it in and burns only it (its
+## neighbour 0.9 tiles off is untouched); it locks on to a tower and to the
+## spider too.
+var bl_runner: Node = null
+var bl_buddy: Node = null
+func _bolt_arm() -> void:
+	arena.hands[0][0] = "firebolt"
+	arena._sync_ids(0)
+	arena.charges = [{}, {}]
+	arena.gold[0] = 20.0
+	arena.selected_player = 0
+	arena.selected_index = 0
+
+
+func _boltlock_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.5):
+		arena.bot_players = [false, false]
+		_bolt_arm()
+		var g0: float = arena.gold[0]
+		arena.try_deploy_at(arena.tile_center(9.5, 19.5))
+		print("[boltlock] click on bare ground: casts %d, gold spent %.1f (expect 0 / 0)" % [_bolts(), g0 - arena.gold[0]])
+		# a tough runner going flat out (2.5 tiles/s), and a neighbour that stays put
+		bl_runner = arena.spawn_troop("hero", 1, arena.tile_center(9.5, 16.5), true)
+		bl_runner.deploy_timer = 0.0
+		bl_runner.speed = 2.5
+		bl_runner.ground_speed = 2.5
+		bl_runner.max_hp = 5000.0
+		bl_runner.hp = 5000.0
+		bl_runner.dmg = 0.0
+		bl_buddy = _lani_dummy("hero", bl_runner.position + Vector2(0.0, 0.9 * t))
+	if _at(0.7):
+		_bolt_arm()
+		arena.try_deploy_at(bl_runner.position)
+		bl_buddy.set_meta("cast_at", bl_runner.position)
+		print("[boltlock] cast on a runner %.1f tiles from my nearest tower: casts %d" % [
+			arena.tiles_between(bl_runner.position, arena.nearest_own_tower(0, bl_runner.position).position), _bolts()])
+	if _at(2.5):
+		print("[boltlock] runner burning=%s (moved %.1f tiles since the cast) (burn stack %.0f), neighbour burning=%s" % [
+			str(int(bl_runner.status) == 2), arena.tiles_between(bl_buddy.get_meta("cast_at"), bl_runner.position),
+			bl_runner.burn_stack, str(int(bl_buddy.status) == 2)])
+		var tw: Node = null
+		for x in arena.towers:
+			if int(x.team) == 1 and not bool(x.crown):
+				tw = x
+				break
+		_bolt_arm()
+		arena.try_deploy_at(tw.position + Vector2(0.4 * t, 0.3 * t))
+		probe = tw
+		print("[boltlock] cast on an enemy side tower: casts %d" % _bolts())
+	if _at(4.5):
+		print("[boltlock] tower burn stack %.0f (expect 60)" % float(probe.get("burn_stack")))
+		arena.start_spider_encounter()
+	if _at(5.0):
+		_bolt_arm()
+		var sp: Node = arena.spider
+		arena.try_deploy_at(sp.position + Vector2(-1.0 * t, 0.5 * t))
+		print("[boltlock] cast on the spider: casts %d" % _bolts())
+	if _at(8.5):
+		print("[boltlock] spider burn stack %.0f or ticked (burn_timer %.2f)" % [float(arena.spider.burn_stack), float(arena.spider.burn_timer)])
+
+
+## The Goat Rider: walks at a building (troops ignored), rams it once for 60,
+## then chops for 18 a hit; a melee hero hitting the goat is shoved a tile
+## back, a ranged shooter is not.
+var gt_goat: Node = null
+var gt_wall: Node = null
+var gt_wall_hp := 0.0
+var gt_hits: Array = []
+var gt_hero: Node = null
+var gt_pen: Node = null
+var gt_hero_pushes := 0
+var gt_pen_pushes := 0
+func _goat_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		gt_wall = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 17.5), true)
+		gt_wall.deploy_timer = 0.0
+		gt_wall.lifetime = 0.0
+		gt_wall.max_hp = 5000.0
+		gt_wall.hp = 5000.0
+		gt_wall_hp = gt_wall.hp
+		gt_goat = arena.spawn_troop("goatrider", 0, arena.tile_center(9.5, 21.5), true)
+		gt_goat.deploy_timer = 0.0
+		gt_goat.max_hp = 5000.0
+		gt_goat.hp = 5000.0
+	if is_instance_valid(gt_wall) and gt_wall.hp < gt_wall_hp - 0.01:
+		gt_hits.append([snappedf(elapsed, 0.01), int(roundf(gt_wall_hp - gt_wall.hp))])
+		gt_wall_hp = gt_wall.hp
+	if _at(5.0):
+		print("[goat] hits on the building [time, dmg] %s (expect 60 first, then 18 every 1.1 s)" % str(gt_hits))
+		# a melee hero and a ranged Pen on the goat
+		gt_hero = arena.spawn_troop("hero", 1, gt_goat.position + Vector2(-1.2 * t, 0.0), true)
+		gt_hero.deploy_timer = 0.0
+		gt_pen = arena.spawn_troop("pen", 1, gt_goat.position + Vector2(-3.5 * t, 1.5 * t), true)
+		gt_pen.deploy_timer = 0.0
+		for u in [gt_hero, gt_pen]:
+			u.max_hp = 5000.0
+			u.hp = 5000.0
+	if elapsed > 5.0 and is_instance_valid(gt_hero):
+		if gt_hero.knock_time > 0.0 and not gt_hero.has_meta("pushed"):
+			gt_hero.set_meta("pushed", gt_hero.position)
+			gt_hero_pushes += 1
+		elif gt_hero.knock_time <= 0.0 and gt_hero.has_meta("pushed"):
+			var from_p: Vector2 = gt_hero.get_meta("pushed")
+			if gt_hero_pushes == 1:
+				print("[goat] t%.2f hero shoved %.2f tiles (expect about 1)" % [elapsed, from_p.distance_to(gt_hero.position) / t])
+			gt_hero.remove_meta("pushed")
+		if is_instance_valid(gt_pen) and gt_pen.knock_time > 0.0:
+			gt_pen_pushes += 1
+	if _at(11.5):
+		print("[goat] hero shoves %d (expect several), pen shoves %d (expect 0), goat hp %d / 5000" % [
+			gt_hero_pushes, gt_pen_pushes, int(gt_goat.hp)])
+
+
+func _goatart_steps() -> void:
+	if not _at(0.3):
+		return
+	var poses := [{}, {"walk": true}, {"ram": 0.5}, {"chop": 0.45}, {"puff": 1.0}]
+	var layer := CanvasLayer.new()
+	layer.layer = 60
+	arena.add_child(layer)
+	var c := Control.new()
+	c.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(c)
+	var ink: Color = arena.team_ink(0)
+	c.draw.connect(func() -> void:
+		c.draw_rect(Rect2(Vector2.ZERO, c.get_viewport_rect().size), Color(0.36, 0.52, 0.32))
+		for i in poses.size():
+			c.draw_set_transform(Vector2(170.0 + 300.0 * float(i), 330.0), 0.0, Vector2(3.6, 3.6))
+			DDArt.goat_rider(c, 0.7 * 38.0, 1.0, 0.4, poses[i], ink)
+		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		DDCardFace.draw_full(c, "goatrider", Rect2(60.0, 560.0, 250.0, 390.0))
+		DDCardFace.draw(c, "goatrider", Rect2(340.0, 640.0, 216.0, 264.0))
+	)
+	c.queue_redraw()
+
+
+# ---------------------------------------------------------------- lane pocket
+
+func _side_tower(team: int, bottom: bool) -> Node:
+	for tw in arena.towers:
+		if is_instance_valid(tw) and tw is DDTower and int(tw.team) == team and not tw.crown:
+			if (arena.tile_of(tw.position).x >= 9) == bottom:
+				return tw
+	return null
+
+
+func _pocket_steps() -> void:
+	if _at(0.2):
+		var cases := [[0, Vector2i(3, 16)], [0, Vector2i(3, 12)], [0, Vector2i(5, 11)], [0, Vector2i(2, 9)], [0, Vector2i(1, 8)],
+			[0, Vector2i(7, 12)], [0, Vector2i(3, 7)], [0, Vector2i(2, 14)], [1, Vector2i(15, 20)]]
+		print("[pocket] before: %s" % str(cases.map(func(c): return arena.can_deploy(int(c[0]), "hero", arena.tile_center(float(c[1].x) + 0.5, float(c[1].y) + 0.5)))))
+		_side_tower(1, false).take_damage(99999.0, Vector2.ZERO)
+		_side_tower(0, true).take_damage(99999.0, Vector2.ZERO)
+		# troops just past the river: their presence cones run back across it,
+		# which must skip the water and keep the bridge decks
+		for col in [2.5, 9.5, 15.5]:
+			var u: Node = arena.spawn_troop("hero", 0, arena.tile_center(col, 12.5), true)
+			u.speed = 0.0
+			var v: Node = arena.spawn_troop("hero", 1, arena.tile_center(col, 17.5), true)
+			v.speed = 0.0
+	if _at(0.6):
+		var cases := [[0, Vector2i(3, 16)], [0, Vector2i(3, 12)], [0, Vector2i(5, 11)], [0, Vector2i(2, 9)], [0, Vector2i(1, 8)],
+			[0, Vector2i(7, 12)], [0, Vector2i(3, 7)], [0, Vector2i(2, 14)], [1, Vector2i(15, 20)]]
+		for c in cases:
+			var at: Vector2 = arena.tile_center(float(c[1].x) + 0.5, float(c[1].y) + 0.5)
+			print("[pocket] team %d tile %s: can deploy %s (pocket %s, water %s)" % [int(c[0]), str(c[1]),
+				str(arena.can_deploy(int(c[0]), "hero", at)), str(arena.in_pocket(int(c[0]), c[1])), str(arena.is_water(c[1]))])
+		var wet := 0
+		var bridge := 0
+		for row in [14, 15]:
+			for col in 18:
+				var t := Vector2i(col, row)
+				for team in 2:
+					if arena.controlled(team, t):
+						if arena.is_water(t):
+							wet += 1
+						else:
+							bridge += 1
+		print("[pocket] presence on river water tiles: %d, on bridge tiles: %d" % [wet, bridge])
+		print("[pocket] pocket sizes: team 0 %d, team 1 %d" % [arena.pocket_tiles[0].size(), arena.pocket_tiles[1].size()])
+
+
+# ---------------------------------------------------------------- reward screen UI
+
+func _reward_move(rs: Node, p: Vector2) -> void:
+	var ev := InputEventMouseMotion.new()
+	ev.position = p
+	ev.global_position = p
+	rs.get_viewport().push_input(ev, true)
+
+
+var rw_icon := ""
+
+
+func _rewardui_steps() -> void:
+	var run = arena.get_node_or_null("/root/Run")
+	if run == null or not run.active:
+		return
+	if run.floor_index != 0:
+		# the pick moved the run on: stop before this fight overwrites the shots
+		if _at(0.05):
+			get_tree().quit()
+		return
+	if _at(0.6):
+		arena._king_of(1).take_damage(99999.0, Vector2.ZERO)
+	var rs: Node = arena.reward_screen
+	if rs == null or not is_instance_valid(rs):
+		return
+	if _at(2.2):
+		print("[rewardui] choices %s, screen size %s" % [str(rs.choices), str(rs.size)])
+		_reward_move(rs, rs.card_rect(1).get_center())
+	if _at(2.6):
+		print("[rewardui] over card 2: hover %d, grown %.2f, drawn %s vs %s" % [rs.hover, float(rs.lift[1]),
+			str(rs.drawn_card_rect(1).size), str(rs.card_rect(1).size)])
+		var icons: Array = rs.last_hits.filter(func(h): return not ["melee", "ranged", "special", "spell"].has(String(h["id"])))
+		print("[rewardui] icons drawn: %s" % str(rs.last_hits.map(func(h): return String(h["id"]))))
+		if not icons.is_empty():
+			rw_icon = String(icons[0]["id"])
+			_reward_move(rs, icons[0]["c"])
+	if _at(2.85):
+		# that card has grown under the mouse since: aim at the icon where it is now
+		for h in rs.last_hits:
+			if String(h["id"]) == rw_icon:
+				_reward_move(rs, h["c"])
+				break
+	if _at(3.0):
+		print("[rewardui] tooltip: %s -> %s" % [str(rs.tip_hit.get("id", "none")), str(DDCardFace.tip_for(rs.tip_hit)) if not rs.tip_hit.is_empty() else "-"])
+	if _at(3.5):
+		_reward_move(rs, rs.skip_rect().get_center())
+	if _at(3.8):
+		print("[rewardui] over Skip: hover %s, grown %.2f, drawn %s vs %s, card hover now %d" % [str(rs.skip_hover), rs.skip_lift,
+			str(rs.drawn_skip_rect().size), str(rs.skip_rect().size), rs.hover])
+	if _at(4.0):
+		var p: Vector2 = rs.card_rect(0).get_center()
+		_reward_move(rs, p)
+		var want: String = String(rs.choices[0])
+		var n0: int = run.deck.size()
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = true
+		ev.position = p
+		ev.global_position = p
+		rs.get_viewport().push_input(ev, true)
+		print("[rewardui] clicked card 1 (%s): deck %d -> %d, last %s" % [want, n0, run.deck.size(), str(run.deck[-1])])
+
+# ---------------------------------------------------------------- ant aggro
+
+var aa_ants: Array = []
+var aa_foes := {}
+
+
+func _aa_dummy(at: Vector2) -> Node:
+	var u: Node = arena.spawn_troop("hero", 1, at, true)
+	u.deploy_timer = 0.0
+	u.speed = 0.0
+	u.dmg = 0.0
+	u.max_hp = 99999.0
+	u.hp = 99999.0
+	return u
+
+
+func _aa_report(label: String) -> void:
+	var parts: Array = []
+	for a in aa_ants:
+		if not is_instance_valid(a) or a.dead:
+			continue
+		var who := "lane/other"
+		for k in aa_foes.keys():
+			if a.target == aa_foes[k]:
+				who = k
+		if a.target != null and is_instance_valid(a.target) and a.target.is_tower():
+			who = "tower"
+		var dists: Array = []
+		for k in ["B", "C"]:
+			dists.append("%s %.1f" % [k, arena.tiles_between(a.position, aa_foes[k].position)])
+		parts.append("%s (%s)" % [who, ", ".join(dists)])
+	print("[antaggro] %s: %s | marks %d" % [label, " ; ".join(parts), arena.ant_marks.size()])
+
+
+## Hovered hand card (see-through, no art) and the volume slider: a real mouse
+## press on the slider track must move the Master bus.
+func _hovervol_steps() -> void:
+	var c: Node = arena.panels[0].cards[2]
+	var g := Rect2(c.global_position, c.size)
+	var art: Rect2 = DDCardFace.art_rect(c.kind, g)
+	if _at(1.0):
+		# hand cards poll the viewport mouse, which pushed motion events do not move
+		arena.get_viewport().warp_mouse(g.get_center())
+	if _at(1.3):
+		_hv_report("clear board")
+		hv_dummy = _aa_dummy(Vector2(g.get_center().x, (g.position.y + art.position.y) * 0.5))
+	if _at(1.45):
+		_hv_report("troop behind the header")
+		hv_dummy.position = art.get_center()
+	if _at(1.6):
+		_hv_report("troop behind the art")
+	if _at(1.7):
+		hv_dummy.queue_free()
+		# the hovered card rises above the panel's own rect, so press it directly
+		arena.panels[0]._press_card(2)
+	if _at(1.8):
+		var at: Vector2 = arena.tile_center(9.5, 22.5)
+		arena.get_viewport().warp_mouse(at)
+		var mv := InputEventMouseMotion.new()
+		mv.position = at
+		mv.global_position = at
+		arena.get_viewport().push_input(mv, true)
+	if _at(2.0):
+		_hv_report("dragged over the board")
+	if _at(2.4):
+		var s: HSlider = arena.volume_slider
+		var at := s.global_position + Vector2(s.size.x * 0.25, s.size.y * 0.5)
+		for down in [true, false]:
+			var ev := InputEventMouseButton.new()
+			ev.button_index = MOUSE_BUTTON_LEFT
+			ev.pressed = down
+			ev.position = at
+			ev.global_position = at
+			arena.get_viewport().push_input(ev, true)
+	if _at(2.7):
+		var cfg := ConfigFile.new()
+		cfg.load(DDSfx.SETTINGS_FILE)
+		print("[hovervol] slider=%.2f bus_db=%.1f muted=%s saved=%s" % [arena.volume_slider.value,
+			AudioServer.get_bus_volume_db(0), AudioServer.is_bus_mute(0), cfg.get_value("audio", "volume", "none")])
+		DDSfx.set_volume(DDSfx.VOLUME_DEFAULT)
+
+
+var hv_dummy: Node = null
+
+
+func _hv_report(label: String) -> void:
+	var c: Node = arena.panels[0].cards[2]
+	print("[hovervol] %s: state=%d alpha=%.2f art_hidden=%s" % [label, int(c.state), float(c.alpha), c.art_hidden])
+
+
+func _antaggro_steps() -> void:
+	if _at(0.2):
+		for p in [Vector2(3.5, 19.5), Vector2(4.5, 19.5), Vector2(3.5, 20.5), Vector2(4.5, 20.5), Vector2(6.5, 21.5), Vector2(1.5, 21.5)]:
+			var a: Node = arena.spawn_troop("ant", 0, arena.tile_center(p.x, p.y), true)
+			a.deploy_timer = 0.0
+			aa_ants.append(a)
+		aa_foes["A"] = _aa_dummy(arena.tile_center(3.5, 17.5))
+		aa_foes["B"] = _aa_dummy(arena.tile_center(7.5, 19.5))
+		aa_foes["C"] = _aa_dummy(arena.tile_center(0.5, 20.5))
+	if _at(0.45):
+		_aa_report("idle enemies only (A in their path)")
+	if _at(0.5):
+		aa_ants[0].take_damage(999.0, aa_foes["B"].position, aa_foes["B"])
+	if _at(0.7):
+		_aa_report("B killed an ant")
+	if _at(0.75):
+		aa_ants[2].take_damage(999.0, aa_foes["C"].position, aa_foes["C"])
+	if _at(0.95):
+		_aa_report("C killed one too (each ant should take the closer)")
+	if _at(6.0):
+		_aa_report("t6")
+	if _at(11.2):
+		_aa_report("marks run out (10 s after each kill)")

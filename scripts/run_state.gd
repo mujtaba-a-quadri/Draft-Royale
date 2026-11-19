@@ -22,7 +22,7 @@ extends Node
 const COMMANDER_MAX := 250.0
 
 ## What you start with: eight cards, repeats allowed.
-const STARTER_DECK := ["troll", "troll", "neko", "anthill", "meerkats", "chicken",
+const STARTER_DECK := ["troll", "hero", "neko", "anthill", "meerkats", "chicken",
 	"fireball", "firebolt"]
 
 ## Placeholder act. type "battle" is a bot with `deck`; "elite" swaps the enemy

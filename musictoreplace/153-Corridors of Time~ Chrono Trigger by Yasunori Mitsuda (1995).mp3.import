@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bxxofnu33pymm"
+path="res://.godot/imported/153-Corridors of Time~ Chrono Trigger by Yasunori Mitsuda (1995).mp3-a7af74ff1ae71f8115f89f8d1805bae6.mp3str"
+
+[deps]
+
+source_file="res://musictoreplace/153-Corridors of Time~ Chrono Trigger by Yasunori Mitsuda (1995).mp3"
+dest_files=["res://.godot/imported/153-Corridors of Time~ Chrono Trigger by Yasunori Mitsuda (1995).mp3-a7af74ff1ae71f8115f89f8d1805bae6.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

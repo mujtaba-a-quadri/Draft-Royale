@@ -23,14 +23,16 @@ godot --path . -- --match      # one plain match instead of a run
 
 A run is a string of fights with **one deck** against bots, one after another:
 Border Skirmish, Swamp Patrol, the Momma Ballista Spider (elite), The Chained
-Keep. You start with an **8 card deck** (repeats included): two Humbabas, the
-Nekomancer, the Ant Hill, Meerkats, Hot Chicken, Fireball and Firebolt.
+Keep. You start with an **8 card deck**: Humbaba, the Hero, the Nekomancer, the
+Ant Hill, Meerkats, Hot Chicken, Fireball and Firebolt.
 
 * **Your commander tower's HP carries over** from fight to fight. Your side
   towers, and everything on the enemy side, come back full every time.
 * **Win** and, after a moment, **Choose a Card** comes up: three different full
-  cards (face and description) and **Skip**. Click a card or press **1 – 3** to add
-  it to your deck, or Skip (**S**); either way the next fight starts. Enter does
+  cards (face and description) and **Skip**. Hovering a card grows it a little;
+  hovering an icon on it shows what the icon means; hovering Skip grows and lights
+  it. Click a card or press **1 – 3** to add it to your deck, or Skip (**S**);
+  either way the next fight starts. Enter does
   not skip it. The three offered are fixed for that run and fight, and can be
   cards you already have. No reward after the last fight.
 * **Lose** (your commander falls, the clock runs out against you, or a draw) and
@@ -79,23 +81,36 @@ is the same size, shrunk so the whole column fits the panel.
   on the 2 band rows nearest their own half (rows 17-18 for the bottom player,
   11-12 for the top), so the free zone always reaches one row from the river.
   Anything deeper needs **presence**: a ground troop projects a **cone** that opens
-  back toward its own half — 3 tiles wide on its own row, 5 one row back, 7, then 9.
+  back toward its own half — 3 tiles wide on its own row, 5 one row back, 7, then 9 —
+  but **never the tile the unit is standing on** (so its own row gives only the two beside it).
+  Presence **never reaches the river water**; the bridge decks can be held.
   Lizard Soldiers project the same cone **one row further forward**. Control is not exclusive — both
   players can hold and deploy on the same tile. Flying units project no control,
   and Shiesty projects none either. The grid is cached and only recomputed when
   a unit changes tile (drawn by `control_layer.gd`, which repaints on that change
   instead of every frame).
-  No deployment within 3.5 tiles of an enemy tower.
+  No deployment within 3.5 tiles of an enemy tower, and **never on river water**
+  (a building may not hang over it either).
+* **Lane pocket** — take an enemy side tower and that lane opens to you, with or
+  without presence. It covers the 6 columns from that edge to the bridge on both
+  sides of the river: your near-river band row, and the 3 band rows past the river.
+  It also reaches 3 rows further past the ruin along the edge (columns 1-2). The
+  river water itself stays closed. It is drawn in your colour like held ground
+  (`arena.POCKET`, mirrored for the other lane and the other player).
 * **View modes** — solo layout (cards on the left third, arena on the right,
   opponent info strip) and dual hotseat (both hands). Tab toggles; the panel
   button does the same.
 * Three towers per side: two princess towers and one **commander (king) tower**, **250 HP each**.
+  The princess towers stand in line with the bridges (centred on columns 5 and 13,
+  rows 6 and 24); the commanders sit at rows 3 and 27. Their hitbox is a circle of
+  0.9 tiles. `--towers=diamond` draws the princess towers as diamond keeps (looks
+  only; `res://scenes/tower_mock.tscn` compares the shapes against the hitbox).
   **Taking the commander tower wins the match outright** — princess towers alone never end it.
 * **150 second matches.** The clock is the chip at the top of the board. The last 60 seconds are the
   closing window: **double gold**, **half ability cooldowns**, and card draws **two seconds faster**.
   If the clock runs out, **whoever has had more towers destroyed loses**. Level on that, it goes
   to whoever has **more tower HP left** (all standing towers summed); level on both, it is a draw.
-* **33 cards in the game, 31 in each deck** — Pen and the Magma Whelp are not dealt out; they only
+* **34 cards in the game, 32 in each deck** — Pen and the Magma Whelp are not dealt out; they only
   arrive when Penny / the Obsidian Whelp is played. (The Nekomancer's Rat Skeletons and the Ant Hill's ants are summons, not cards.) 4 cards in hand, 1 "next", cycling exactly like
   Clash Royale: play a card and it goes to the back of the queue. Both decks are
   **shuffled fresh every match**, independently of each other. **A deck may hold several copies
@@ -107,19 +122,25 @@ is the same size, shrunk so the whole column fits the panel.
 
 ## Cards (base numbers, all tunable in `scripts/card_db.gd`)
 
-The card face carries one ribbon and one effect line, and both change with the
-card's **type** so a spell or a building is not forced into a troop's slots:
+The card face is trading-card style (`scripts/card_face.gd`):
 
-* **Troop** — ribbon `90 HP · Troop` (with `×N` for a formation); effect line is
-  cadence, burn/shove, reach.
-* **Building** — ribbon `240 HP · 60s · 2×2`; effect line is what it does on its
-  clock, e.g. `spawn 12s · 60s life`.
-* **Spell** — no body, so the ribbon names the **cast** (`Spell · from your tower`)
-  and the effect line carries the payload: `grows 1 tile / 2 · slow 3.5s`,
-  `burn 60 · ×2 casts`.
+* **Top**: the cost coin, the name, and the HP at the right (`70 ×6` for a
+  formation, `200+180` for a pair, nothing for a spell).
+* **Art window**: a card that summons (Nekomancer, Ant Hill, Lizard Warren, Ovo
+  Javer Machine) shows what it makes in a coin at the art's top right.
+* **Middle line** under the art: the type, then speed and sight for a troop,
+  footprint and lifetime for a building, or where a spell is cast from.
+* **Attacks**: one row each, with a crossed-swords badge for melee, a bow for
+  ranged, a star for something that is not a hit, and a burst for a spell.
+* **Attributes**: icons along the bottom (targets buildings, flies, spawner,
+  burn, and so on). The hand names them in a list when they fit.
+* **Description**: shown on the reward screen only.
 
-That split is the place to add per-type information (a spell's radius, a building's
-footprint) rather than squeezing it into the HP ribbon.
+The detail steps down with the card's width, and in the hand the face never
+shows the description. The trim (border, frames) and the middle line are
+colours: set `card_trim` / `card_line` on the arena in the inspector, or pass
+`--trim=#hex` / `--line=#hex`. `res://scenes/tcg_mock.tscn` renders the face at
+every size into `mockups/tcg/`, with an icon legend.
 
 | Card | Cost | HP | Damage | Notes |
 | --- | --- | --- | --- | --- |
@@ -130,7 +151,7 @@ footprint) rather than squeezing it into the HP ribbon.
 | The Chained Dragon | 9 | **420** | claw 45 / 1.4 s → **25 fire per second** | A green brute with his **wings** chained (the hands are free — it can still claw). At half HP the chains burst, he takes the sky and **breathes straight down** in **your team's colour**: a **2 tile burning patch** under and just ahead of him doing **25 damage a second**. It **burns friend and foe alike** — anything on the ground under him, your own troops included — but flyers are above it. He flies until the fire is landing on his target, so **the tower he is attacking burns too**, and he hovers there pouring it on |
 | Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges the nearest **tower or building** at high speed and detonates for 100. After turning it ignores troops entirely |
 | Fireball | 5 | – | 40 splash + **70 burn**, shoves loose units 1.2 tiles out, then **10 burn a second** from the ground | Fired from your **king tower**; `tower_mult` cuts tower damage. The blast leaves the ground **burning for 4.2 s** across its whole 2.2 tile radius: every second (4 doses) it adds **10 burn** to each enemy troop, building or tower standing in it |
-| Firebolt | 2 | – | **No damage — 40 burn** | An arrow of fire from your **nearest tower**. The only card that **locks onto a troop**: while you hold it, hovering an enemy troop pins the preview to that troop and follows it smoothly instead of snapping to a tile  **Two casts**: after the first throw the card stays in your hand and stays armed, so clicking again throws again — right click (or picking another card) puts it back with one charge left, shaded over the spent half (the triangle below the bottom-left → top-right diagonal). Only the **second** cast consumes it |
+| Firebolt | 2 | – | **No damage — 60 burn**, one target | An arrow of fire from your **nearest tower**. The only card that **locks on**: while you hold it, hovering any enemy body — **troop, building, tower or boss** — rings it and pins the cast to it. **It can only be played locked on**: over bare ground there is no preview and a click does nothing (no gold spent). It has **no radius**: the arrow **follows its target all the way in and always lands on it**, burning that one body and nothing beside it (if the target dies first, it lands where it was)  **Two casts**: after the first throw the card stays in your hand and stays armed, so clicking again throws again — right click (or picking another card) puts it back with one charge left, shaded over the spent half (the triangle below the bottom-left → top-right diagonal). Only the **second** cast consumes it |
 | Snowball | 4 | – | **10 × height** while rolling, **30** on the burst | You pick a tile; it is **thrown in an arc** from your **nearest tower** onto it, lands as **one tile of snow**, then rolls forward in a straight line along that row, growing **smoothly, a tile of height for every two tiles it covers** (its size and the lane it flattens grow continuously; damage and shove count whole tiles of height). That means it can be cast **on their side** — it simply starts rolling where it lands. Rolling strikes deal **10 per tile of current height** and shove things back that many tiles; at the **river** (or the back of the board) it bursts for **30** and a **3.5 s slow**. Troops only |
 | Golden Idol | 4 | 35 | – | Stationary, taunts, **10 s lifetime**. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
 | Hedgehog | 3 | 60 each | 12 curl / 8 thorns | Two burrowers with **no jab at all**. They walk to their melee reach and **ball up**: 12 damage plus a shove of about half a tile, always short enough that nothing leaves quill reach. Balled up they take **45 % damage**, and anything striking the ball from within **1.5 tiles gets 8 back — melee or ranged**, since projectiles are credited to their shooter. They hold while the quills can reach something and **walk again once nothing is in reach**  **Air is invisible to them**: they never pick a flying target and their burst skips flyers. But a **melee flyer that dives on one** makes it ball up on the spot — the dive itself is not repaid, and **every hit after it takes 8 thorns**. They stay rolled up until nothing is in quill reach, then walk again |
@@ -153,9 +174,10 @@ footprint) rather than squeezing it into the HP ribbon.
 | Poison Dart Frog | 1 | 25 | **10 poison**, once | A glossy black frog striped in a brighter version of **your colour**, on blue spotted legs. It never walks: it **hops 0.7 tiles** at a time (0.22 s in the air, 0.45 s sitting, about a tile a second). It has **no attack**. The moment any ground enemy — troop, building or tower — has its edge within **2 tiles**, it **leaps** on the nearest one (following it through the air), lands, and **bursts**: **10 poison** on every ground enemy the **0.5 tile** circle touches, and the frog is gone. Flyers are out of its reach. Poison never wears off (see the spider) |
 | Phalanx | 8 | 70 ×6, **shield 60** each | spear **14** / 1.3 s, **1.7 tiles**; dagger **8** | Six spartans, **three across and two deep**, so the back rank pokes over the front. Each **raises its shield by the Obsidian Whelp's rules**: an enemy unit within **3 tiles** (edge to edge) or a hit; lowered once nothing is in 3 tiles and **2 s** have passed unhit. The hit that raises it lands on the spartan; while raised, **every hit lands on the shield's own 60 HP** (burn and poison go past it), and he **keeps walking and poking, slower** (60 % move, 1.3× the poke interval). A **broken shield** means a **dagger**: with the target within **1 tile** he stabs between pokes (poke, stab, poke… each 0.65 s apart). Ground only |
 | Wolf Pack | 4 | 55 ×4 | **10** a bite | Four wolves in a diamond that **move as one** (each keeps its place around the pack's middle; single file over a bridge). Within **6 tiles** of the pack they hunt the **loneliest ground troop** — the one whose nearest friend (troop, building or tower) is furthest — and with none, the nearest building or tower. Arrived, they **ring it 2 tiles out from its edge** (turning slowly round a troop, an arc on the near side of a structure) and **take turns darting in to bite** like clockwork: each wolf goes every 1.6 s, so **a bite every 0.4 s with four, 0.8 s with two** |
+| Goat Rider | 5 | 260 | **60 ram**, then **18** tomahawk / 1.1 s, melee | A painted warrior on a huge woolly mountain goat that walks at **buildings and towers only**. The **first hit on each new target is the goat's ram** (60); after that he chops at it with his tomahawk (18). **The wool:** a melee blow on the goat (struck up close by anything with less than 2 tiles of reach) puffs it up and **shoves the attacker 1 tile away**; the blow still lands. Projectiles and long reaches do not set it off |
 | Meerkats | 2 | 22 ×4 | 5 / 0.6 s, melee | Four fast (1.9), fragile biters in a square |
 | Ant Hill | 4 | 140 | – | A 1 × 1 mound with a **60 s lifetime**. An **ant** crawls out of the front **1 s after it lands and every 1.2 s after** (about fifty in all) |
-| Ant | – | 8 | 2 / 1.0 s, melee | From the Ant Hill, never dealt. Slow (0.55), tiny, ground only. Ants walk the shortest way to a tower, but one that **walks into a tile where one of its own ants died in the last 7 s** turns round: it walks **1.5 tiles back down its own trail**, then heads for the **other lane's side tower**, crossing by that lane's bridge. A turned ant that **touches an ant walking the other way turns it too**, so the turn runs back down the whole column. Newly hatched ants take the shortest way until something turns them. **Any enemy troop or building within 4 tiles is bitten first**, whichever way an ant is going. A turned ant on its way to the other tower shows a **reverse-arrows symbol** over its head. Graves are not drawn |
+| Ant | – | 8 | 2 / 1.0 s, melee | From the Ant Hill, never dealt. Slow (0.55), tiny, ground only. Ants walk the shortest way to a tower, but one that **walks into a tile where one of its own ants died in the last 7 s** turns round: it walks **1.5 tiles back down its own trail**, then heads for the **other lane's side tower**, crossing by that lane's bridge. A turned ant that **touches an ant walking the other way turns it too**, so the turn runs back down the whole column. Newly hatched ants take the shortest way until something turns them. **Ants ignore troops and go for buildings** (a building within reach of their sight is bitten first, whichever way an ant is going), **until a troop kills an ant**: that troop is **marked for 10 s**, and every ant that sees it within 4 tiles swarms it for as long as the mark lasts. With several killers marked, each ant takes the **closest**, not the latest. A turned ant on its way to the other tower shows a **reverse-arrows symbol** over its head. Graves are not drawn |
 | Rat Skeleton | – | 20 | 6 / 0.8 s, melee | The Nekomancer's summon, never dealt. Quick (1.4), brittle, ground only |
 | Magma Whelp | 1 | 30 | **5 burn** per feather / 1.4 s, **2 tiles** | The Obsidian Whelp's molten twin, never dealt. **Flies**, and flicks flaming feathers at **ground and air** within 2 tiles: no impact damage, just 5 burn each. A perfectly ordinary card once in hand; it does not turn back |
 
@@ -175,8 +197,8 @@ your towers. All numbers are in the `spider`, `spideregg` and `spiderling` cards
 | What | Numbers | How it works |
 | --- | --- | --- |
 | Body | **900 HP** | Always faces your board; never turns around |
-| Skitter | waits **3 – 7 s** at the back (random), **3 – 6 tiles** forward, stays **10 s minus that wait** | Runs toward you and stays. The longer she sat at the back, the shorter she stays forward. Then she lays an egg, builds a trap, takes her parting shot and **walks** home (3 tiles/s). She keeps stabbing and webbing the whole time |
-| Poison pool | seeps at **2.5 tiles/s**; **2 poison every 1 s** to your ground troops in it | The moment she is forward, poison in the green of her abdomen seeps from her mouth: a **pool** in front of her face, then a **braided stream** running down to the river. Where it flows in, the **river turns poison downstream**, to the bottom of the board (the bridges stay clear). When she leaves it **dries from her mouth down**, then the river **clears from the top down**. The river itself does nothing to troops (they cross on the bridges) |
+| Skitter | waits **3 – 7 s** at the back (random), **2 – 5 tiles** forward, stays **10 s minus that wait** | Runs toward you and stays. The longer she sat at the back, the shorter she stays forward. Then she lays an egg, builds a trap, takes her parting shot and **walks** home (3 tiles/s). She keeps stabbing and webbing the whole time |
+| Poison pool | seeps at **2.5 tiles/s**; **2 poison every 1 s** to your ground troops in it | The moment she is forward, poison in the green of her abdomen seeps from her mouth: a wide **pool** in front of her face (about **3.6 tiles across** and 1.8 deep), then a **braided stream** running down to the river. Where it flows in, the **river turns poison downstream**, to the bottom of the board (the bridges stay clear). When she leaves it **dries from her mouth down**, then the river **clears from the top down**. The river itself does nothing to troops (they cross on the bridges) |
 | Egg | **60 HP** building, **30 s** lifetime | Laid centred on a **2 × 2 patch of web**. When it dies — timer or damage — **Spiderlings** climb out: **one per eighth of its life it lasted** (rounded, at least 1): 4 at 15 s, **8** if it runs out. Dark specks inside the egg show how many are in there now |
 | Spiderling | 40 HP, **6 + 5 poison** per bite / 0.8 s, fast | An ordinary enemy troop: walks at your troops and towers |
 | Venom spit | **6 + 10 poison**, **0.5 tile splash**, any distance | **Not until the pool has formed.** Then one every **2 s** at your closest unit while she is forward. **Parting shot:** after the trap, her **eye glints for 0.6 s** and she spits at your nearest tower or building, then walks home. The glob follows its target and bursts on arrival, hitting everything of yours in the splash |
@@ -411,12 +433,14 @@ while you drag the card over the arena**, so the placement preview is the only c
   cost **flashes**; **less than one coin short** and the placement is **queued** and plays itself the
   moment the gold arrives. Picking any other card first cancels the queue — and the gold is only ever
   spent when the troop actually lands.
-* **Hover** grows a card 1.25× and lifts it half out of the strip, drawn see-through (and thinner
-  still when troops stand behind it) so the board stays readable.
+* **Hover** grows a card 1.25× and lifts it half out of the strip. It stays solid until a troop
+  stands anywhere behind it, then drops to 40 %; a troop behind the art window also blanks the
+  art, so the board stays readable (`HandPanel.HOVER_ALPHA` / `HOVER_OCCLUDED_ALPHA`,
+  `DDCardFace.art_rect()`).
 * **Picking a card up** — press-and-drag and click-then-move are the same gesture: the card leaves
   the strip and follows the cursor whether or not the button is held. Clicking the same card again
   puts it back.
-* Over the board it becomes a **transparent ghost of itself snapped to the grid** (the tile centre,
+* Over the board it becomes a **20 % ghost of itself with no art, snapped to the grid** (the tile centre,
   or a 2x2 building's whole footprint) on top of the **board preview**: tile outline, tinted swarm
   ghost, spell radius.
 * **Release or click on the board** deploys it; anywhere else leaves it armed.
@@ -541,6 +565,16 @@ Pixabay recordings, credited in their own filenames.
 
 Both run through six pooled `AudioStreamPlayer` voices at −6 dB, so quick plays
 overlap instead of cutting each other off.
+
+* **Match music**: once the four-card deal has played, one song from
+  `musictoreplace/` (picked at random each fight) loops at −12 dB for the rest of
+  the match (every audio file in `DDSfx.MUSIC_DIR`, read when the song is picked, so adding or removing a file
+  needs no code change; `music_files()`, `start_music()`). These are placeholders, and
+  there is no music when running headless.
+* **Volume**: a slider in the top-left corner of the match sets the Master bus
+  (music and sounds together, squared so mid-slider sounds like half). It is saved
+  to `user://settings.cfg` and carries over between fights and plays
+  (`DDSfx.get_volume()` / `set_volume()`).
 
 ## Verification hooks
 

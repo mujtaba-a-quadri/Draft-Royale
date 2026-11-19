@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://p8o7xf8by2l8"
+path="res://.godot/imported/050-Field of Hopes and Dreams~ Deltarune Chapter 1 by Toby Fox (2018).mp3-ffe8e54aaad932b014fb7e088abd8615.mp3str"
+
+[deps]
+
+source_file="res://musictoreplace/050-Field of Hopes and Dreams~ Deltarune Chapter 1 by Toby Fox (2018).mp3"
+dest_files=["res://.godot/imported/050-Field of Hopes and Dreams~ Deltarune Chapter 1 by Toby Fox (2018).mp3-ffe8e54aaad932b014fb7e088abd8615.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

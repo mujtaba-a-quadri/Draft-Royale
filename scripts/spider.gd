@@ -742,7 +742,7 @@ func _draw_ooze() -> void:
 	# sheen running downhill
 	for k in 6:
 		var sk: float = fmod(clock * 1.6 + float(k) * 0.7, maxf(0.5, ooze_wet - ooze_dry)) + ooze_dry
-		var lat: float = sin(float(k) * 2.3) * (0.4 if sk < pl else 0.0)
+		var lat: float = sin(float(k) * 2.3) * (float(cfg["pool_wide"]) * 0.45 if sk < pl else 0.0)
 		var p: Vector2 = ooze_from + fwd * sk * tile + side * lat * tile
 		if sk >= pl:
 			p += side * _branch_off(sk) * tile * (1.0 if k % 2 == 0 else -1.0)

@@ -17,10 +17,10 @@ const HAND_LEFT := 249.0
 const NEXT_CX := 1351.0
 const NEXT_W := 100.0
 
-## A hovered card is see-through enough to read the board underneath it, and
-## fades further while troops stand behind it.
-const HOVER_ALPHA := 0.6
-const HOVER_OCCLUDED_ALPHA := 0.32
+## A hovered card is solid until troops stand behind it, then see-through (its
+## art also drops while they are behind the art window: hand_card.gd).
+const HOVER_ALPHA := 1.0
+const HOVER_OCCLUDED_ALPHA := 0.4
 
 ## Opponent hand: one column of up to four cards, then a second column to its
 ## right — the first shrinks in width to make room for it.
@@ -272,7 +272,12 @@ func gold_fraction(kind: String) -> float:
 	return clampf(float(arena.gold[player]) / float(maxi(DDCard.cost(kind), 1)), 0.0, 1.0)
 
 
-## Alpha a hovered card takes: see-through, and thinner still with troops behind.
+## Any living troop under this global rect (a hovered card's art window).
+func units_under(rect: Rect2) -> bool:
+	return arena != null and arena.any_units_under(rect)
+
+
+## Alpha a hovered card takes: solid, or see-through with troops behind it.
 func hover_alpha_for(rect: Rect2) -> float:
 	if arena != null and arena.any_units_under(rect):
 		return HOVER_OCCLUDED_ALPHA

@@ -78,9 +78,11 @@ const CARDS := {
 		"name": "Firebolt",
 		"cost": 2,
 		"type": "spell",
-		"blurb": "An arrow of fire from your nearest tower. No damage, but 60 burn on whatever it lands on.",
+		"blurb": "An arrow of fire from your nearest tower that follows its target all the way in. No damage, but 60 burn on the one thing it hits.",
+		# splash 0: one target only. Cast on a troop it homes on that troop and
+		# always lands; cast on a tile it hits the single nearest body there.
 		"hp": 0.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
-		"radius": 0.6, "splash": 0.6, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"radius": 0.0, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
 		"buildings_only": false,
 		"burn": 60.0, "launch": "closest",
 		"tower_mult": 0.40,
@@ -288,31 +290,50 @@ const CARDS := {
 	},
 	"anthill": {
 		"name": "Ant Hill",
-		"cost": 4,
+		"cost": 3,
 		"type": "building",
-		"blurb": "A mound of dirt that never stops emptying: an ant crawls out of the front every 1.2 seconds for a minute. Each one is slow, tiny and barely bites.",
+		"blurb": "A mound of dirt that never stops emptying: an ant crawls out of the front every 2 seconds for a minute. Each one is slow, tiny and barely bites.",
 		"hp": 140.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
 		"radius": 0.55, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 60.0,
 		"buildings_only": false,
 		"footprint": [1, 1],
 		# quiet: no screen shake per ant
-		"summon": {"unit": "ant", "interval": 1.2, "first": 1.0, "spot": "front", "quiet": true},
+		"summon": {"unit": "ant", "interval": 2, "first": 1.0, "spot": "front", "quiet": true},
 		"accent": Color(0.62, 0.44, 0.28),
 	},
 	"ant": {
 		"name": "Ant",
 		"cost": 0,
 		"type": "troop",
-		"blurb": "Out of the Ant Hill. Slow, tiny, and barely bites, but there is always another. Ants that walk where another ant died turn round and take the other lane, and turn every ant they meet on the way.",
+		"blurb": "Out of the Ant Hill. Slow, tiny, and barely bites, but there is always another. Ants march on buildings and leave troops alone, until a troop kills one: then every ant that can see it swarms it for 10 seconds. Ants that walk where another ant died turn round and take the other lane, and turn every ant they meet on the way.",
 		"hp": 8.0, "dmg": 2.0, "speed": 0.55, "reach": 0.3, "interval": 1.0,
 		"radius": 0.22, "splash": 0.0, "aggro": 4.0, "stationary": false, "lifetime": 0.0,
-		"buildings_only": false,
+		# troops are ignored... unless they kill an ant (trail.mark_time below)
+		"buildings_only": true,
 		# walking into a tile where one of their own ants died in the last
 		# grave_time s turns an ant to the other lane's tower; a turned ant that
 		# touches (edges within `touch` tiles) an ant walking the other way turns it
 		# too. A turning ant first walks `back` tiles back down its own trail.
-		"trail": {"grave_time": 7.0, "touch": 0.06, "back": 1.5},
+		# Whatever kills an ant is marked for mark_time s: ants with a marked
+		# killer within aggro tiles go for the closest one instead of buildings.
+		"trail": {"grave_time": 7.0, "touch": 1.02, "back": 1.5, "mark_time": 10.0},
 		"accent": Color(0.35, 0.2, 0.14),
+	},
+	"goatrider": {
+		"name": "Goat Rider",
+		"cost": 5,
+		"type": "troop",
+		"blurb": "A painted warrior on a huge woolly mountain goat, headed for the nearest building. The goat rams it first; after that he chops at it with his tomahawk. Hit the goat up close and its wool puffs up, shoving you a tile back.",
+		# dmg / reach / interval: the tomahawk, after the ram
+		"hp": 260.0, "dmg": 18.0, "speed": 1.0, "reach": 0.45, "interval": 1.1,
+		"radius": 0.7, "splash": 0.0, "aggro": 7.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": true,
+		# the first hit on each new target is the goat's ram
+		"ram": {"dmg": 60.0},
+		# a melee hit on the goat (from an attacker with reach under `melee`) puffs
+		# the wool and shoves the attacker `push` tiles away over push_time s
+		"wool": {"push": 1.0, "push_time": 0.2, "melee": 2.0},
+		"accent": Color(0.9, 0.88, 0.8),
 	},
 	"magma": {
 		"name": "Magma Whelp",
@@ -545,14 +566,15 @@ const CARDS := {
 			# cycle - that wait, lay an egg, walk to a bridge with no trap and build
 			# one, glint, spit at the nearest tower / building, walk home
 			"back_min": 3.0, "back_max": 7.0, "cycle": 10.0,
-			"skitter_min": 3, "skitter_max": 6, "skitter_time": 0.55,
+			# (one tile shorter than it was, to leave room for the wide pool)
+			"skitter_min": 2, "skitter_max": 5, "skitter_time": 0.55,
 			# forward she seeps poison from her mouth: it runs down the "hill" at
 			# seep_speed tiles/s, the first pool_len tiles a pool pool_wide tiles
 			# across (each side), then a braided stream into the river, which turns
 			# from the inflow downstream at river_speed tiles/s. It dries the same
 			# way, mouth first, once she leaves. Enemy ground troops standing in the
 			# pool or stream take pool_poison every pool_every s.
-			"seep_speed": 2.5, "pool_len": 1.2, "pool_wide": 0.9, "stream_wide": 0.22,
+			"seep_speed": 2.5, "pool_len": 1.8, "pool_wide": 1.8, "stream_wide": 0.22,
 			"river_speed": 6.0, "pool_poison": 2.0, "pool_every": 1.0,
 			# spits reach anywhere: one every forward_spit_every s at the closest
 			# unit while forward, once the pool has formed; and the parting shot at
@@ -678,7 +700,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider"]
 
 
 ## Every card in the game. Pen and the Magma Whelp are not in the deck — they

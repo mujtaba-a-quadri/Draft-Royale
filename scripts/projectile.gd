@@ -205,7 +205,11 @@ func _pierce_hits() -> void:
 func _impact() -> void:
 	area.release_reservation(owner_id)
 	if spell_blast:
-		area.spell_blast(to, splash, dmg, team, tower_mult, burn, knock_tiles, kind, burn_ticks)
+		# a homing single-target spell lands on the body it followed
+		var only: Node = null
+		if splash <= 0.0 and seek != null and is_instance_valid(seek) and seek.get("dead") != true:
+			only = seek
+		area.spell_blast(to, splash, dmg, team, tower_mult, burn, knock_tiles, kind, burn_ticks, only)
 		return
 	if splash > 0.0:
 		# every splash shows its reach: a light ring in the attacker's colour

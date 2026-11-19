@@ -76,6 +76,22 @@ var team_colors: Array = [Left_Color, Right_Color]:
 		if control_layer != null:
 			control_layer.queue_redraw()
 
+## Trial art: side towers drawn as diamonds (--towers=diamond). Looks only; the
+## hitbox stays the 0.9-tile circle.
+var diamond_towers := false
+
+## The card face's trim (border, art frame, summon coin, description edge) and
+## its middle line (the band under the art). Set them here in the inspector, or
+## --trim=#hex / --line=#hex on the command line.
+@export var card_trim := DDCardFace.TRIM_DEFAULT:
+	set(value):
+		card_trim = value
+		DDCardFace.trim = value
+@export var card_line := DDCardFace.LINE_DEFAULT:
+	set(value):
+		card_line = value
+		DDCardFace.line = value
+
 ## Every unit, tower and tile tint is drawn in its team colour; unit outlines are
 ## a darker shade of it instead of black.
 const TEAM_INK_DARKEN := 0.45
@@ -86,6 +102,8 @@ var units: Array = []
 ## Ants that walk into one of their own side's fresh graves change lanes
 ## (DDUnit._tick_ant). Nothing draws them.
 var ant_graves: Array = []
+## enemies that killed an ant lately: "antteam:id" -> {node, team, until (frame)}
+var ant_marks: Dictionary = {}
 var gold := [4.2, 4.2]
 var gold_max := 10.0
 var gold_rate := 1.0 / 2.4
@@ -136,6 +154,7 @@ var banner_timer := 0.0
 var shake_amount := 0.0
 var shake_offset := Vector2.ZERO
 var panels: Array = []
+var volume_slider: HSlider = null
 ## The all-cards overlay (a reusable filtered, scrolling card grid).
 var shelf_grid: DDCardGrid = null
 var view_mode := 0
@@ -175,6 +194,15 @@ func _ready() -> void:
 					Color.from_string(String(parts[0]).strip_edges(), Left_Color),
 					Color.from_string(String(parts[1]).strip_edges(), Right_Color),
 				]
+		elif a == "--towers=diamond":
+			diamond_towers = true
+		elif a.begins_with("--trim="):
+			card_trim = Color.from_string(a.substr(7), card_trim)
+		elif a.begins_with("--line="):
+			card_line = Color.from_string(a.substr(7), card_line)
+	# the static colours outlive a scene reload: make them this arena's
+	DDCardFace.trim = card_trim
+	DDCardFace.line = card_line
 	if forced == "tentacle":
 		ability = ["tentacle", "shiesty"]
 	elif forced == "shiesty" or forced == "goblin":
@@ -373,8 +401,8 @@ func _build_board_state() -> void:
 	towers.clear()
 	units.clear()
 	for t in [
-		[1, 9.0, 3.0, true], [1, 4.0, 7.0, false], [1, 14.0, 7.0, false],
-		[0, 9.0, 27.0, true], [0, 4.0, 23.0, false], [0, 14.0, 23.0, false],
+		[1, 9.0, 3.0, true], [1, 5.0, 6.0, false], [1, 13.0, 6.0, false],
+		[0, 9.0, 27.0, true], [0, 5.0, 24.0, false], [0, 13.0, 24.0, false],
 	]:
 		var tw := DDTower.new()
 		tw.setup(int(t[0]), self, bool(t[3]))
@@ -467,7 +495,12 @@ func selection_id() -> int:
 func _build_sfx() -> void:
 	sfx = DDSfx.new()
 	add_child(sfx)
+	DDSfx.get_volume()
 	sfx.draw_hand(4)
+	# the song comes in once the four-card deal has finished
+	# (not headless: the bot sim and checks have no one to hear it)
+	if DisplayServer.get_name() != "headless":
+		sfx.start_music(4.0 * float(sfx.slice_seconds) + 0.3)
 
 
 func _build_hud() -> void:
@@ -488,6 +521,30 @@ func _build_hud() -> void:
 		add_child(panel)
 		panels.append(panel)
 	panels[1].visible = true
+	_build_volume()
+
+
+## Volume slider in the empty top-left corner. It never takes keyboard focus, so
+## the arrow keys and hotkeys stay with the match.
+func _build_volume() -> void:
+	var label := Label.new()
+	label.name = "VolumeLabel"
+	label.text = "VOLUME"
+	label.position = Vector2(24.0, 14.0)
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(0.62, 0.66, 0.74))
+	add_child(label)
+	volume_slider = HSlider.new()
+	volume_slider.name = "VolumeSlider"
+	volume_slider.min_value = 0.0
+	volume_slider.max_value = 1.0
+	volume_slider.step = 0.01
+	volume_slider.value = DDSfx.get_volume()
+	volume_slider.focus_mode = Control.FOCUS_NONE
+	volume_slider.position = Vector2(92.0, 14.0)
+	volume_slider.size = Vector2(170.0, 20.0)
+	volume_slider.value_changed.connect(DDSfx.set_volume)
+	add_child(volume_slider)
 
 
 ## The debug all-cards overlay. It is a DDCardGrid so the collection screen and
@@ -656,16 +713,19 @@ func any_units_under(rect: Rect2) -> bool:
 	return false
 
 
-## The enemy troop a unit-locking card (the Firebolt) has locked onto under the
-## cursor. Towers are never locked â€” those still use the tile.
+## The enemy body a unit-locking card (the Firebolt) has locked onto under the
+## cursor: a troop, building, tower or boss. Such a card can only be played
+## while it is locked on (try_deploy_at).
 func aim_lock(world: Vector2) -> Node:
 	var kind := selection_kind()
 	if kind == "" or not bool(DDCard.get_card(kind).get("unit_lock", false)):
 		return null
 	var e := _hovered_entity(world)
-	if e == null or e.is_tower():
+	if e == null:
 		return null
 	if int(e.get("team")) == selection_owner():
+		return null
+	if e.get("untargetable") == true:
 		return null
 	return e
 
@@ -705,6 +765,9 @@ func try_deploy_at(world: Vector2) -> void:
 	# a unit-locking card casts on the troop it is aimed at, not on the tile
 	var at: Vector2 = world
 	if bool(DDCard.get_card(kind).get("unit_lock", false)):
+		# nothing under the cursor to lock on to: the click does nothing
+		if aim_lock(world) == null:
+			return
 		at = aim_point(world)
 	else:
 		# past where this card may go: it lands on the closest tile that is open
@@ -889,6 +952,7 @@ func _physics_process(delta: float) -> void:
 		gold[p] = minf(gold_max, gold[p] + gold_rate_now() * delta)
 		ability_cd[p] = maxf(0.0, float(ability_cd[p]) - delta)
 	_tick_control(delta)
+	_tick_pockets()
 	separate_units()
 	_tick_draw(delta)
 	_tick_staged()
@@ -1043,7 +1107,8 @@ func _rebuild_control() -> void:
 		var shift := 0
 		if u.get("presence_shift") != null:
 			shift = int(u.get("presence_shift"))
-		# cone: 3 tiles wide at the unit, then 5, 7, 9 going back toward its own half
+		# cone: 3 tiles wide at the unit, then 5, 7, 9 going back toward its own half,
+		# but never the tile the unit is standing on
 		for k in range(0, CONTROL_REACH + 1):
 			var half := 1 + k
 			var ty: int = base.y + (k - shift) * back
@@ -1053,7 +1118,9 @@ func _rebuild_control() -> void:
 				var tx: int = base.x + dx
 				if tx < 0 or tx >= GRID_W:
 					continue
-				if not valid_tile(Vector2i(tx, ty)):
+				if tx == base.x and ty == base.y:
+					continue
+				if not valid_tile(Vector2i(tx, ty)) or is_water(Vector2i(tx, ty)):
 					continue
 				control[ut][ty * GRID_W + tx] = true
 	if control_layer != null:
@@ -1070,10 +1137,14 @@ func separate_units() -> void:
 			continue
 		if a.get("stationary") == true:
 			continue
+		# a dart frog in mid-leap is in the air: it lands on its prey and bursts
+		# without shoving anything on the way
+		if a.get("frog_leaping") == true:
+			continue
 		var ra: float = float(a.get_radius_t())
 		for j in range(i + 1, n):
 			var b = units[j]
-			if not is_instance_valid(b) or b.dead:
+			if not is_instance_valid(b) or b.dead or b.get("frog_leaping") == true:
 				continue
 			if bool(a.get("flying")) != bool(b.get("flying")):
 				continue
@@ -1099,6 +1170,57 @@ func controlled(team: int, t: Vector2i) -> bool:
 	if not valid_tile(t):
 		return false
 	return bool(control[team][band_index(t)])
+
+
+## River water: the two river rows except the bridge decks. Nothing is placed
+## there and no presence reaches it.
+func is_water(t: Vector2i) -> bool:
+	if t.y < RIVER_TOP or t.y > RIVER_BOTTOM:
+		return false
+	for bx in [int(BRIDGE_COL_A), int(BRIDGE_COL_B)]:
+		if t.x == bx or t.x == bx - 1:
+			return false
+	return true
+
+
+## The lane pocket: once a side tower falls, the team that took it may place in
+## that lane on both sides of the river (and a little way past the ruin, along
+## the edge), presence or not. Given as [row, first col, last col] for team 0
+## taking the top-lane tower; mirrored by row for team 1 and by column for the
+## bottom lane. River water is never part of it.
+const POCKET := [[16, 0, 5], [13, 0, 5], [12, 0, 5], [11, 0, 5], [10, 0, 2], [9, 0, 2], [8, 0, 2]]
+## per team: tile (Vector2i) -> true
+var pocket_tiles := [{}, {}]
+var _pocket_key := ""
+
+
+func in_pocket(team: int, t: Vector2i) -> bool:
+	return (pocket_tiles[team] as Dictionary).has(t)
+
+
+## Rebuilt only when the set of fallen side towers changes.
+func _tick_pockets() -> void:
+	var fallen: Array = []
+	var key := ""
+	for tw in towers:
+		if is_instance_valid(tw) and tw is DDTower and not tw.crown and tw.dead:
+			fallen.append(tw)
+			key += "%d:%d;" % [int(tw.team), tile_of(tw.position).x]
+	if key == _pocket_key:
+		return
+	_pocket_key = key
+	pocket_tiles = [{}, {}]
+	for tw in fallen:
+		var taker: int = 1 - int(tw.team)
+		var bottom_lane: bool = tile_of(tw.position).x >= GRID_W / 2
+		for p in POCKET:
+			var row: int = int(p[0]) if taker == 0 else GRID_H - 1 - int(p[0])
+			for c in range(int(p[1]), int(p[2]) + 1):
+				var t := Vector2i(GRID_W - 1 - c if bottom_lane else c, row)
+				if valid_tile(t) and not is_water(t):
+					pocket_tiles[taker][t] = true
+	if control_layer != null:
+		control_layer.queue_redraw()
 
 
 func control_counts() -> Array:
@@ -1201,13 +1323,32 @@ func apply_burn_at(center: Vector2, radius_t: float, burn: float, team: int, tic
 			e.apply_burn(burn, ticks)
 
 
+## radius_t 0 is a single-target spell: `only` if given (the body it homed on),
+## otherwise the one nearest body the point is inside.
 func spell_blast(center: Vector2, radius_t: float, dmg: float, team: int, tower_mult: float,
-		burn: float, knock_tiles: float, kind: String, burn_ticks: int = 4) -> void:
-	for e in enemy_entities(team).duplicate():
+		burn: float, knock_tiles: float, kind: String, burn_ticks: int = 4, only: Node = null) -> void:
+	var hits: Array = []
+	if only != null:
+		hits = [only]
+	elif radius_t <= 0.0:
+		var best: Node = null
+		var best_d := INF
+		for e in enemy_entities(team):
+			if not is_instance_valid(e) or e.dead:
+				continue
+			var d0: float = tiles_between(center, e.position)
+			if d0 <= float(e.get_radius_t()) and d0 < best_d:
+				best_d = d0
+				best = e
+		if best != null:
+			hits = [best]
+	else:
+		hits = enemy_entities(team).duplicate()
+	for e in hits:
 		if not is_instance_valid(e) or e.dead:
 			continue
 		var d: float = tiles_between(center, e.position)
-		if d > radius_t + float(e.get_radius_t()) * 0.5:
+		if only == null and radius_t > 0.0 and d > radius_t + float(e.get_radius_t()) * 0.5:
 			continue
 		var amount := dmg
 		if e.is_tower() and tower_mult != 1.0:
@@ -1313,10 +1454,15 @@ func route_point(from: Vector2, goal: Vector2, bridge_col: float = -1.0) -> Vect
 	return far_bank
 
 
+## Bridges span cols (bx-1, bx), so a bridge's middle is the line x = bx, and
+## the board's midline (between the two) splits the lanes. Measure from the
+## tile's centre (col + 0.5): measuring from its edge put the first column
+## south of the midline at an exact tie, which went to the north bridge.
 func nearest_bridge_col(col: int) -> float:
 	var a := BRIDGE_COL_A
 	var b := BRIDGE_COL_B
-	return a if absf(a - float(col)) <= absf(b - float(col)) else b
+	var c := float(col) + 0.5
+	return a if absf(a - c) <= absf(b - c) else b
 
 
 # --------------------------------------------------------------------- spawns
@@ -1697,6 +1843,14 @@ func can_deploy(team: int, kind: String, world: Vector2) -> bool:
 		return false
 	if DDCard.is_spell(kind):
 		return true
+	if is_water(t):
+		return false
+	# a building may not hang over the water either
+	var card_fp: Array = DDCard.get_card(kind).get("footprint", [1, 1])
+	if int(card_fp[0]) * int(card_fp[1]) > 1:
+		for ft in DDBoard.footprint_layout(t, card_fp)["tiles"]:
+			if is_water(ft):
+				return false
 	# a 1x1 building blocks its tile outright; a 2x2 lets you in and shoves you off
 	var b := building_at(t)
 	if b != null:
@@ -1717,6 +1871,8 @@ func can_deploy(team: int, kind: String, world: Vector2) -> bool:
 			return true
 		if t.y <= BAND_TOP + 1:
 			return true
+	if in_pocket(team, t):
+		return true
 	if row_is_band(t.y):
 		return controlled(team, t)
 	return false

@@ -143,6 +143,18 @@ var wolf_lunge_t := 0.0
 
 ## ants: the tile they last stood in, and once turned by a grave or another ant,
 ## the other lane's tower they now walk at
+## the Goat Rider: the targets the goat has already rammed (instance id ->
+## true), and the picture timers for the ram, the chop and the wool puff
+var ram_cfg: Dictionary = {}
+var wool_cfg: Dictionary = {}
+var rammed: Dictionary = {}
+const RAM_SHOW := 0.35
+const CHOP_SHOW := 0.3
+const PUFF_SHOW := 0.3
+var ram_t := 0.0
+var chop_t := 0.0
+var puff_t := 0.0
+
 var trail_cfg: Dictionary = {}
 var ant_tile := Vector2i(-999, -999)
 var ant_turned := false
@@ -330,6 +342,8 @@ func setup(k: String, tm: int, ar: Node2D) -> void:
 	dagger_cfg = d.get("dagger", {})
 	pack_cfg = d.get("pack", {})
 	trail_cfg = d.get("trail", {})
+	ram_cfg = d.get("ram", {})
+	wool_cfg = d.get("wool", {})
 	base_dmg = dmg
 	base_interval = interval
 	beam = bool(d.get("beam", false))
@@ -471,6 +485,9 @@ func _physics_process(delta: float) -> void:
 	whip_t = maxf(0.0, whip_t - delta)
 	poke_t = maxf(0.0, poke_t - delta)
 	stab_t = maxf(0.0, stab_t - delta)
+	ram_t = maxf(0.0, ram_t - delta)
+	chop_t = maxf(0.0, chop_t - delta)
+	puff_t = maxf(0.0, puff_t - delta)
 	shield_hit_t = maxf(0.0, shield_hit_t - delta)
 	if spear_away > 0.0:
 		# the spear comes back on the clock, whatever he is doing
@@ -802,6 +819,16 @@ func _attack() -> void:
 	if absf(target.position.x - position.x) > 1.0:
 		facing = signf(target.position.x - position.x)
 	var hit_dmg := dmg
+	if not ram_cfg.is_empty():
+		# the goat rams each new target once; the tomahawk does the rest
+		var tid: int = target.get_instance_id()
+		if not rammed.has(tid):
+			rammed[tid] = true
+			hit_dmg = float(ram_cfg["dmg"])
+			ram_t = RAM_SHOW
+			arena.shake(2.5)
+		else:
+			chop_t = CHOP_SHOW
 	if not roll_cfg.is_empty() and roll_level > 0:
 		hit_dmg = dmg * (1.0 + float(roll_cfg["damage_bonus"]) * float(roll_level))
 		roll_level = 0
@@ -1559,6 +1586,27 @@ func _guard_hit(from: Vector2, attacker: Node) -> void:
 	apply_impulse(d.normalized(), float(guard_cfg["melee_push"]), float(guard_cfg["push_time"]))
 
 
+## The goat's wool: a melee blow (struck from the attacker's own body, by
+## something whose reach is under wool.melee) puffs it up and shoves the
+## attacker `push` tiles straight away from the goat. The blow still lands.
+func _wool_hit(from: Vector2, attacker: Node) -> void:
+	if attacker == null or not is_instance_valid(attacker) or attacker == self:
+		return
+	if not attacker.has_method("apply_impulse") or attacker.is_tower() or attacker.is_building():
+		return
+	if from.distance_to(attacker.position) > 1.0:
+		# a projectile or a thrown spear: hit from range
+		return
+	var r = attacker.get("reach")
+	if r == null or float(r) >= float(wool_cfg["melee"]):
+		return
+	var d: Vector2 = attacker.position - position
+	if d.length() < 0.01:
+		d = Vector2(facing, 0.0)
+	puff_t = PUFF_SHOW
+	attacker.apply_impulse(d.normalized(), float(wool_cfg["push"]), float(wool_cfg["push_time"]))
+
+
 ## The hedgehog's reach attack: ball up, quills out at everything inside thorn
 ## reach, and a short shove — short enough that nothing leaves the thorns, which
 ## is where the reflection happens. It never opens up again on its own; that is
@@ -2208,8 +2256,10 @@ func _tick_wolf(delta: float) -> void:
 ## into a tile where one of its own ants died in the last grave_time s: then it
 ## turns for the other lane's tower (crossing by that lane's bridge). A turned
 ## ant that touches one walking the other way turns that one too, so the turn
-## runs down the whole column. Any enemy troop or building in aggro range is
-## attacked first, whichever way it is going.
+## runs down the whole column. Troops are ignored, except one that has killed an
+## ant in the last mark_time s: the closest such killer in sight is chased for
+## as long as its mark lasts. Otherwise an enemy building in range comes first,
+## whichever way the ant is going.
 func _tick_ant(delta: float) -> void:
 	var tl: Vector2i = arena.tile_of(position)
 	if tl != ant_tile:
@@ -2231,10 +2281,13 @@ func _tick_ant(delta: float) -> void:
 		# the other lane's tower fell: back to the ordinary shortest way
 		ant_goal = null
 		ant_turned = false
-	# anything worth biting in range comes first; otherwise the lane
-	var foe: Node = _acquire()
-	if foe != null and foe.is_tower():
-		foe = null
+	# a marked ant-killer in sight comes first (the closest, not the latest);
+	# then a building in range (the card is buildings_only); otherwise the lane
+	var foe: Node = _ant_marked_foe()
+	if foe == null:
+		foe = _acquire()
+		if foe != null and foe.is_tower():
+			foe = null
 	if foe != null:
 		target = foe
 	elif ant_turned:
@@ -2258,6 +2311,36 @@ func _tick_ant(delta: float) -> void:
 		_move(delta, _ant_waypoint())
 	else:
 		_move(delta)
+
+
+## The closest enemy that killed one of this team's ants in the last mark_time s
+## and is within this ant's aggro range (edge to edge), or null. The marks are
+## pruned here as they expire.
+func _ant_marked_foe() -> Node:
+	if arena.ant_marks.is_empty():
+		return null
+	var now: int = Engine.get_physics_frames()
+	var best: Node = null
+	var best_d := INF
+	for k in arena.ant_marks.keys():
+		var m: Dictionary = arena.ant_marks[k]
+		var n = m["node"]
+		if now > int(m["until"]) or n == null or not is_instance_valid(n) or bool(n.get("dead")):
+			arena.ant_marks.erase(k)
+			continue
+		if int(m["team"]) != team:
+			continue
+		if n.get("flying") == true and not hits_air:
+			continue
+		var d: float = arena.gap_between(position, n.position, radius_t, float(n.get_radius_t()))
+		# one it is already after stays its target while the mark lasts, even if
+		# it runs out of sight; a new one has to be in sight
+		if d > aggro and n != target:
+			continue
+		if d < best_d - 0.0001 or (absf(d - best_d) <= 0.0001 and best != null and n.get_instance_id() < best.get_instance_id()):
+			best = n
+			best_d = d
+	return best
 
 
 func _ant_grave_at(tl: Vector2i) -> bool:
@@ -2455,6 +2538,8 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 				_curl_up()
 	if not guard_cfg.is_empty() and hp > 0.0:
 		_guard_hit(from, attacker)
+	if not wool_cfg.is_empty() and hp > 0.0:
+		_wool_hit(from, attacker)
 	if not staff_cfg.is_empty() and not rage_used and hp > 0.0 and hp < max_hp * float(staff_cfg["rage_hp"]):
 		_enter_rage()
 	if kind == "alchemist" and not phase2 and hp > 0.0 and hp <= max_hp * 0.5:
@@ -2514,6 +2599,13 @@ func _die() -> void:
 		# an ant's death marks its tile for its nest-mates (not drawn)
 		arena.ant_graves.append({"tile": arena.tile_of(position), "team": team,
 			"frame": Engine.get_physics_frames()})
+		# ...and whoever killed it, for mark_time s (towers are fought anyway)
+		if last_attacker != null and is_instance_valid(last_attacker) and not bool(last_attacker.get("dead")) \
+				and last_attacker.has_method("is_tower") and not last_attacker.is_tower() \
+				and int(last_attacker.get("team")) != team:
+			var ticks := int(float(trail_cfg.get("mark_time", 10.0)) * float(Engine.physics_ticks_per_second))
+			arena.ant_marks["%d:%d" % [team, last_attacker.get_instance_id()]] = {
+				"node": last_attacker, "team": team, "until": Engine.get_physics_frames() + ticks}
 	# death blast (snowman): damage + slow around the corpse
 	var da: Dictionary = DDCard.get_card(kind).get("death_aoe", {})
 	if not da.is_empty():
@@ -2670,6 +2762,11 @@ func _draw() -> void:
 			"bite": attack_stretch / ATTACK_STRETCH}, ink)
 	elif kind == "meerkats":
 		DDArt.meerkat(self, px, facing, clock, moved_this_frame, ink)
+	elif kind == "goatrider":
+		DDArt.goat_rider(self, px, facing, clock, {"walk": state == S.APPROACH and moved_this_frame,
+			"ram": 1.0 - ram_t / RAM_SHOW if ram_t > 0.0 else 0.0,
+			"chop": 1.0 - chop_t / CHOP_SHOW if chop_t > 0.0 else 0.0,
+			"puff": puff_t / PUFF_SHOW}, ink)
 	elif kind == "ant":
 		DDArt.ant(self, px, facing, clock, ink)
 		if ant_turned and target == ant_goal:

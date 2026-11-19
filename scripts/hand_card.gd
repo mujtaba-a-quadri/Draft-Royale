@@ -28,7 +28,8 @@ const EDGE := 8.0
 ## Over the board a lifted card shrinks to this and snaps to the grid, so the
 ## placement preview reads as the card itself landing on a tile.
 const GHOST_SIZE := Vector2(104.0, 128.0)
-const GHOST_ALPHA := 0.5
+## Faint and without art, so the placement preview underneath stays readable.
+const GHOST_ALPHA := 0.2
 
 ## A card the player cannot pay for yet: washed out, with a fill that climbs the
 ## card as the gold comes in.
@@ -59,6 +60,13 @@ var home := Rect2()
 var state: int = S.IDLE
 var on_board := false
 var rejected := false
+## The art window is drawn empty: a hovered card with troops behind its art, and
+## the ghost over the board.
+var art_hidden := false:
+	set(value):
+		if value != art_hidden:
+			art_hidden = value
+			queue_redraw()
 var alpha := 1.0:
 	set(value):
 		var c := clampf(value, 0.0, 1.0)
@@ -208,11 +216,15 @@ func _process(delta: float) -> void:
 		state = S.HOVER
 		var r := hover_rect()
 		_set_rect(r)
-		alpha = _panel_float("hover_alpha_for", Rect2(panel.global_position + r.position, r.size), 1.0)
+		var g := Rect2(panel.global_position + r.position, r.size)
+		alpha = _panel_float("hover_alpha_for", g, 1.0)
+		var a := DDCardFace.art_rect(kind, g)
+		art_hidden = _panel_bool("units_under", a)
 	else:
 		state = S.IDLE
 		_set_rect(home)
 		alpha = 1.0
+		art_hidden = false
 	_refresh_meter()
 
 
@@ -223,9 +235,11 @@ func _tick_drag(m: Vector2) -> void:
 		var at: Vector2 = _panel_vec("snap_world", m, m) - panel.global_position
 		_set_rect(Rect2(at - GHOST_SIZE * 0.5, GHOST_SIZE))
 		alpha = GHOST_ALPHA
+		art_hidden = true
 		return
 	_set_rect(Rect2(m - _lift_size * 0.5, _lift_size))
 	alpha = 1.0
+	art_hidden = false
 
 
 ## Redraw only when the gold meter visibly moved, not every frame. Floor, not
@@ -294,10 +308,9 @@ func _draw() -> void:
 		cost_col = COST_RED
 		if rejected:
 			cost_col = COST_RED.lerp(COST_FLASH, absf(sin(_t * 16.0)))
-	# over the board a swarm's art is blanked out: the placement preview already
-	# shows the formation there, and drawing it twice reads as two squads
-	var swarm: bool = not (DDCard.get_card(kind).get("swarm_offsets", []) as Array).is_empty()
-	var hide_art: bool = swarm and state == S.DRAG and on_board
+	# over the board the art is blanked so the placement preview reads clearly;
+	# a hovered card drops it only while troops stand behind the art window
+	var hide_art: bool = art_hidden and state != S.IDLE and state != S.RETURN
 	if paid >= 1.0:
 		DDCardFace.draw(self, kind, r, alpha, cost_col, hide_art)
 		_draw_used_charge(r)

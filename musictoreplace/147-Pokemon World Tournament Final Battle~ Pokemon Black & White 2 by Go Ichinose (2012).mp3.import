@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cpk00aecsgc78"
+path="res://.godot/imported/147-Pokemon World Tournament Final Battle~ Pokemon Black & White 2 by Go Ichinose (2012).mp3-3ddbfa77b50e9f3e775ac510af6adf8b.mp3str"
+
+[deps]
+
+source_file="res://musictoreplace/147-Pokemon World Tournament Final Battle~ Pokemon Black & White 2 by Go Ichinose (2012).mp3"
+dest_files=["res://.godot/imported/147-Pokemon World Tournament Final Battle~ Pokemon Black & White 2 by Go Ichinose (2012).mp3-3ddbfa77b50e9f3e775ac510af6adf8b.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

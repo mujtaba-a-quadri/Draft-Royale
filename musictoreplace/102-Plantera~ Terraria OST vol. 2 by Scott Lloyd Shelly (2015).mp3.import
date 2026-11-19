@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bhk2lg7piw24r"
+path="res://.godot/imported/102-Plantera~ Terraria OST vol. 2 by Scott Lloyd Shelly (2015).mp3-2c533db24eb6104c5bf61dde82f40f18.mp3str"
+
+[deps]
+
+source_file="res://musictoreplace/102-Plantera~ Terraria OST vol. 2 by Scott Lloyd Shelly (2015).mp3"
+dest_files=["res://.godot/imported/102-Plantera~ Terraria OST vol. 2 by Scott Lloyd Shelly (2015).mp3-2c533db24eb6104c5bf61dde82f40f18.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -97,6 +97,8 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			meerkat(ci, r, facing, t, false, ink_col)
 		"ant":
 			ant(ci, r, facing, t, ink_col)
+		"goatrider":
+			goat_rider(ci, r, facing, t, {}, ink_col)
 		"anthill":
 			anthill(ci, r, t, ink_col)
 		"chicken":
@@ -2570,6 +2572,155 @@ static func meerkat(ci: CanvasItem, r: float, facing: float, t: float, run: bool
 	ink = keep
 
 
+const GOAT_WOOL := Color(0.95, 0.94, 0.89)
+const GOAT_SHADE := Color(0.78, 0.77, 0.72)
+const RIDER_SKIN := Color(0.86, 0.6, 0.48)
+const RIDER_HIDE := Color(0.84, 0.78, 0.62)
+const RIDER_LEATHER := Color(0.52, 0.24, 0.16)
+const RIDER_GOLD := Color(0.93, 0.7, 0.24)
+const RIDER_BRAID := Color(0.62, 0.84, 0.74)
+const RIDER_CAP := Color(0.16, 0.2, 0.3)
+
+
+## The Goat Rider, side view: a huge shaggy white mountain goat with black
+## horns, beard and hooves, and on its back a painted warrior with braided hair
+## under a dark cap, fringed hide leg wraps, gold arm bands and a tomahawk.
+## pose: walk, ram 0..1 (head down and driven in), chop 0..1 (the tomahawk
+## comes down), puff 0..1 (the wool swells).
+static func goat_rider(ci: CanvasItem, r: float, facing: float, t: float, pose: Dictionary = {},
+		ink_col: Color = OUTLINE) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var walk: bool = bool(pose.get("walk", false))
+	var ram: float = sin(clampf(float(pose.get("ram", 0.0)), 0.0, 1.0) * PI)
+	var chop: float = clampf(float(pose.get("chop", 0.0)), 0.0, 1.0)
+	var puff: float = clampf(float(pose.get("puff", 0.0)), 0.0, 1.0)
+	var g: float = sin(t * 9.0) * 0.16 if walk else 0.0
+	var bob: float = absf(sin(t * 9.0)) * 0.04 if walk else 0.0
+	var black := Color(0.08, 0.08, 0.1)
+	var Leg := func(hip: Vector2, foot: Vector2, wool: Color) -> void:
+		# shaggy upper leg, a thin dark lower leg and a black hoof
+		var knee: Vector2 = hip.lerp(foot, 0.5)
+		ci.draw_line(hip, knee, ink, r * 0.3 + 2.0, true)
+		ci.draw_line(hip, knee, wool, r * 0.3, true)
+		ci.draw_line(knee, foot, ink, r * 0.13 + 2.0, true)
+		ci.draw_line(knee, foot, wool.darkened(0.08), r * 0.13, true)
+		ci.draw_rect(Rect2(foot - Vector2(r * 0.09, r * 0.02), Vector2(r * 0.18, r * 0.08)), black)
+	# far legs
+	Leg.call(P.call(-0.55, 0.3), P.call(-0.6 - g, 0.95), GOAT_SHADE)
+	Leg.call(P.call(0.5, 0.3), P.call(0.55 + g, 0.95), GOAT_SHADE)
+	# the body: a ragged mass of wool, swollen while it puffs
+	var sw: float = 1.0 + 0.16 * puff
+	var body := PackedVector2Array()
+	for i in 28:
+		var a := TAU * float(i) / 28.0
+		var shag: float = 1.0 + 0.07 * sin(float(i) * 2.7 + t * 0.6) + (0.06 if i % 2 == 0 else 0.0)
+		body.append(P.call(cos(a) * 0.9 * sw * shag, 0.12 - bob + sin(a) * 0.5 * sw * shag + (0.12 if sin(a) > 0.0 else 0.0)))
+	poly(ci, body, GOAT_WOOL, 2.2)
+	for k in 6:
+		var at: Vector2 = P.call(-0.6 + 0.24 * float(k), 0.05 + 0.18 * sin(float(k) * 1.9))
+		ci.draw_arc(at, r * 0.16, 0.3, PI - 0.3, 6, GOAT_SHADE, 1.4, true)
+	if puff > 0.05:
+		# loose tufts flying off the swell
+		for k in 5:
+			var a2: float = -2.6 + 0.5 * float(k)
+			var tuft: Vector2 = P.call(cos(a2) * 1.15, 0.1 + sin(a2) * 0.7) * (1.0 + 0.2 * puff)
+			ci.draw_circle(tuft, r * 0.07 * puff, GOAT_WOOL)
+	# near legs: woolly trousers to the knee
+	Leg.call(P.call(-0.5, 0.35), P.call(-0.5 + g, 0.98), GOAT_WOOL)
+	Leg.call(P.call(0.55, 0.35), P.call(0.6 - g, 0.98), GOAT_WOOL)
+	# the head: long white face, lowered and driven forward on the ram
+	var hc: Vector2 = P.call(0.95 + 0.25 * ram, -0.3 - bob + 0.35 * ram)
+	var face := PackedVector2Array([hc + P.call(-0.2, -0.18), hc + P.call(0.1, -0.22), hc + P.call(0.42, 0.05 + 0.1 * ram),
+		hc + P.call(0.42, 0.18 + 0.1 * ram), hc + P.call(0.2, 0.22), hc + P.call(-0.22, 0.15)])
+	# beard under the chin
+	poly(ci, PackedVector2Array([hc + P.call(0.05, 0.15), hc + P.call(0.3, 0.18), hc + P.call(0.2, 0.55),
+		hc + P.call(0.12, 0.45), hc + P.call(0.05, 0.55)]), GOAT_WOOL, 1.6)
+	poly(ci, face, GOAT_WOOL, 2.0)
+	ci.draw_circle(hc + P.call(0.4, 0.13 + 0.1 * ram), r * 0.045, black)
+	ci.draw_circle(hc + P.call(0.08, -0.05), r * 0.05, black)
+	# horns: short, black, curving back over the head
+	for k in 2:
+		var base_h: Vector2 = hc + P.call(-0.02 + 0.1 * float(k), -0.18)
+		var horn := PackedVector2Array([base_h, base_h + P.call(-0.12, -0.2), base_h + P.call(-0.3, -0.3)])
+		ci.draw_polyline(horn, ink, r * 0.09 + 1.6, true)
+		ci.draw_polyline(horn, black, r * 0.09, true)
+	ellipse(ci, hc + P.call(-0.2, -0.12), r * 0.07, r * 0.11, GOAT_SHADE, 1.2)
+	# --- the rider, sitting on its back
+	var hip: Vector2 = P.call(-0.05, -0.5 - bob)
+	var shoulder: Vector2 = P.call(-0.02, -1.12 - bob)
+	# a dark ponytail streaming back
+	ci.draw_polyline(PackedVector2Array([shoulder + P.call(-0.05, -0.32), shoulder + P.call(-0.4, -0.2),
+		shoulder + P.call(-0.65, -0.05 + 0.05 * sin(t * 4.0))]), RIDER_CAP, r * 0.09, true)
+	# near leg over the goat's side: thigh, knee, a fringed hide wrap down the shin
+	var knee_r: Vector2 = P.call(0.3, -0.28 - bob)
+	var foot_r: Vector2 = P.call(0.24, 0.18 - bob)
+	ci.draw_line(hip, knee_r, ink, r * 0.2 + 2.0, true)
+	ci.draw_line(hip, knee_r, RIDER_SKIN, r * 0.2, true)
+	ci.draw_line(knee_r, foot_r, ink, r * 0.2 + 2.0, true)
+	ci.draw_line(knee_r, foot_r, RIDER_HIDE, r * 0.2, true)
+	for k in 4:
+		var fr: Vector2 = knee_r.lerp(foot_r, 0.15 + 0.2 * float(k))
+		ci.draw_line(fr, fr + P.call(-0.14, 0.05), RIDER_HIDE.darkened(0.25), 1.2, true)
+	# torso: bare, with the leather chest piece and a hide loincloth
+	poly(ci, PackedVector2Array([shoulder + P.call(-0.28, -0.02), shoulder + P.call(0.28, -0.02), hip + P.call(0.19, 0.0),
+		hip + P.call(-0.19, 0.0)]), RIDER_SKIN, 1.8)
+	poly(ci, PackedVector2Array([shoulder.lerp(hip, 0.4) + P.call(-0.2, 0.0), shoulder.lerp(hip, 0.4) + P.call(0.22, 0.0),
+		hip + P.call(0.17, -0.08), hip + P.call(-0.17, -0.08)]), RIDER_LEATHER, 1.4)
+	poly(ci, PackedVector2Array([hip + P.call(-0.12, -0.06), hip + P.call(0.2, -0.06), hip + P.call(0.24, 0.22),
+		hip + P.call(-0.04, 0.2)]), RIDER_HIDE, 1.4)
+	# war paint across the chest
+	for k in 3:
+		var py: float = 0.1 + 0.07 * float(k)
+		ci.draw_line(shoulder + P.call(-0.12, py), shoulder + P.call(0.08, py - 0.02), Color(0.66, 0.18, 0.36), r * 0.04, true)
+	# the far arm resting on the hip
+	ci.draw_line(shoulder + P.call(-0.15, 0.04), hip + P.call(-0.2, -0.1), ink, r * 0.12 + 2.0, true)
+	ci.draw_line(shoulder + P.call(-0.15, 0.04), hip + P.call(-0.2, -0.1), RIDER_SKIN.darkened(0.12), r * 0.12, true)
+	# head: braids hanging forward under a dark cap
+	var head: Vector2 = shoulder + P.call(0.04, -0.3)
+	# the far braid, hanging behind the head
+	var braid_b := PackedVector2Array([head + P.call(-0.14, -0.02), head + P.call(-0.17, 0.2), head + P.call(-0.14, 0.38)])
+	ci.draw_polyline(braid_b, ink, r * 0.09 + 1.4, true)
+	ci.draw_polyline(braid_b, RIDER_BRAID.darkened(0.15), r * 0.09, true)
+	circle(ci, head, r * 0.21, RIDER_SKIN, 1.6)
+	# the dark cap over the crown, a band of it at the brow
+	var cap := PackedVector2Array()
+	for i in 9:
+		var a3: float = lerpf(PI, TAU, float(i) / 8.0)
+		cap.append(head + Vector2(cos(a3), sin(a3)) * r * 0.23)
+	cap.append(head + P.call(0.2, -0.04))
+	cap.append(head + P.call(-0.22, 0.0))
+	poly(ci, cap, RIDER_CAP, 1.4)
+	# the near braid, framing the face down to the chest
+	var braid_f := PackedVector2Array([head + P.call(-0.02, 0.0), head + P.call(-0.06, 0.2), head + P.call(-0.03, 0.42)])
+	ci.draw_polyline(braid_f, ink, r * 0.09 + 1.4, true)
+	ci.draw_polyline(braid_f, RIDER_BRAID, r * 0.09, true)
+	for b in [braid_b, braid_f]:
+		ci.draw_circle(b[2], r * 0.04, RIDER_GOLD)
+	ci.draw_circle(head + P.call(0.1, 0.0), r * 0.032, black)
+	ci.draw_line(head + P.call(0.2, 0.0), head + P.call(0.23, 0.07), ink, 1.2, true)
+	ci.draw_line(head + P.call(0.1, 0.12), head + P.call(0.17, 0.12), Color(0.45, 0.55, 0.8), r * 0.04, true)
+	# the tomahawk arm: held up, then brought down on the chop
+	var ang: float = lerpf(-2.0, 0.5, ease(chop, 0.6)) if chop > 0.0 else -2.0 + 0.05 * sin(t * 2.0)
+	var sh: Vector2 = shoulder + P.call(0.1, 0.04)
+	var hand: Vector2 = sh + Vector2(cos(ang) * f, sin(ang)) * r * 0.5
+	ci.draw_line(sh, hand, ink, r * 0.13 + 2.0, true)
+	ci.draw_line(sh, hand, RIDER_SKIN, r * 0.13, true)
+	ci.draw_line(sh.lerp(hand, 0.35), sh.lerp(hand, 0.6), RIDER_GOLD, r * 0.14, true)
+	var hd := Vector2(cos(ang - 0.4) * f, sin(ang - 0.4))
+	var haft_end: Vector2 = hand + hd * r * 0.55
+	ci.draw_line(hand - hd * r * 0.1, haft_end, ink, r * 0.07 + 1.6, true)
+	ci.draw_line(hand - hd * r * 0.1, haft_end, Color(0.5, 0.33, 0.18), r * 0.07, true)
+	var side := Vector2(-hd.y, hd.x) * f
+	poly(ci, PackedVector2Array([haft_end - hd * r * 0.14, haft_end + side * r * 0.24 - hd * r * 0.18,
+		haft_end + side * r * 0.26 + hd * r * 0.04, haft_end + hd * r * 0.02]), Color(0.75, 0.77, 0.8), 1.4)
+	if chop > 0.0 and chop < 0.6:
+		ci.draw_arc(sh, r * 0.95, ang - 0.9 * f, ang, 8, Color(1, 1, 1, 0.45 * (1.0 - chop)), r * 0.06, true)
+	ink = keep
+
+
 ## An ant from the Ant Hill, side view: three dark segments, six legs, feelers.
 static func ant(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Color = OUTLINE) -> void:
 	var keep := ink
@@ -2873,6 +3024,46 @@ static func tower(ci: CanvasItem, w: float, h: float, team_color: Color, hurt: f
 	ink = OUTLINE
 
 
+## A side tower as a diamond, seen from above: a square keep turned 45 degrees
+## (side `side`, so its tips sit side * 0.707 from the centre), merlons along the
+## walls, a turret on each tip, a courtyard and a hatch. Centred on `c`; it sets
+## and then clears the canvas transform itself. Trial art (--towers=diamond).
+static func diamond_tower(ci: CanvasItem, c: Vector2, side: float, team_color: Color, hurt: float = 0.0,
+		ink_col: Color = OUTLINE) -> void:
+	ink = ink_col
+	var hs := side * 0.5
+	# ground shadow, upright
+	ci.draw_set_transform(c + Vector2(0, side * 0.1), 0.0, Vector2(1.0, 0.55))
+	ci.draw_circle(Vector2.ZERO, side * 0.72, Color(0, 0, 0, 0.18))
+	ci.draw_set_transform(c, PI * 0.25, Vector2.ONE)
+	# merlons first, so the wall overlaps their inner half
+	var m := side * 0.15
+	for k in 4:
+		var rot := Transform2D(PI * 0.5 * float(k), Vector2.ZERO)
+		for f in [-0.27, 0.0, 0.27]:
+			var at: Vector2 = rot * Vector2(f * side, -hs)
+			rect_outlined(ci, Rect2(at - Vector2(m, m) * 0.5, Vector2(m, m)), team_color.lightened(0.1), 2.0)
+	rect_outlined(ci, Rect2(-hs, -hs, side, side), team_color)
+	# light falls from the upper left: a pale wall top on two sides
+	ci.draw_rect(Rect2(-hs + 3.0, -hs + 3.0, side - 6.0, side * 0.08), Color(1, 1, 1, 0.16), true)
+	ci.draw_rect(Rect2(-hs + 3.0, -hs + 3.0, side * 0.08, side - 6.0), Color(1, 1, 1, 0.12), true)
+	var yard := side * 0.56
+	rect_outlined(ci, Rect2(-yard * 0.5, -yard * 0.5, yard, yard), team_color.darkened(0.28), 2.0)
+	ci.draw_circle(Vector2.ZERO, side * 0.11, Color(0.12, 0.1, 0.16))
+	ci.draw_arc(Vector2.ZERO, side * 0.11, 0.0, TAU, 16, ink, 2.0, true)
+	# a round turret in each corner: the diamond's four tips. Set in so the
+	# turret's rim, not its centre, is the tip: nothing pokes past the keep
+	for k in 4:
+		var tc: Vector2 = Transform2D(PI * 0.5 * float(k), Vector2.ZERO) * Vector2(-hs, -hs) * 0.78
+		ci.draw_circle(tc, side * 0.15, team_color.lightened(0.14))
+		ci.draw_arc(tc, side * 0.15, 0.0, TAU, 20, ink, 2.5, true)
+		ci.draw_circle(tc, side * 0.06, team_color.darkened(0.3))
+	if hurt > 0.0:
+		ci.draw_rect(Rect2(-hs, -hs, side, side), Color(1, 1, 1, clampf(hurt, 0.0, 0.5)), true)
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	ink = OUTLINE
+
+
 ## Small card-sheet icon, drawn inside a rounded card.
 static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 0.0, lead: bool = false) -> void:
 	ci.draw_set_transform(c, 0.0, Vector2.ONE)
@@ -2929,6 +3120,9 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 			creature(ci, "meerkats", r, 1.0, t)
 		"ant":
 			creature(ci, "ant", r, 1.0, t)
+		"goatrider":
+			# the rider stands well above the goat: shrink to keep him on the card
+			creature(ci, "goatrider", r * 0.7, 1.0, t)
 		"anthill":
 			creature(ci, "anthill", r, 1.0, t)
 		"chicken":

@@ -217,6 +217,8 @@ func _draw() -> void:
 		# the tail sweeps away from the board: left side mirrors it outward
 		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col, int(team) == 0,
 			{"face": face_dir(), "throw": throw_t, "toss": toss_t})
+	elif area.get("diamond_towers") == true:
+		DDArt.diamond_tower(self, Vector2.ZERO, w, col, flash, area.team_ink(int(team)))
 	else:
 		DDArt.tower(self, w, h, col, flash, crown, area.team_ink(int(team)))
 	if hp <= 0.0:

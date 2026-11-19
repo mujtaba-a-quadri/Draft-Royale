@@ -68,19 +68,20 @@ static func _board(ci: CanvasItem, a) -> void:
 				ci.draw_line(Vector2(br.position.x + 2.0, y3), Vector2(br.end.x - 2.0, y3), Color(0.45, 0.31, 0.2), 1.5, true)
 		ci.draw_rect(br, DDArt.OUTLINE, false, 2.5)
 	# (control tint lives in DDControlLayer so it only repaints on change)
-	# dashed no-man's-land edges
-	for edge_row in [a.BAND_TOP, a.BAND_BOTTOM + 1]:
-		var er: Rect2 = a.tile_rect(a.col_min(edge_row), edge_row)
-		var across: float = a.board_rect().size.y if a.LANDSCAPE else a.board_rect().size.x
-		var start: float = a.board_rect().position.y if a.LANDSCAPE else a.board_rect().position.x
-		var at: float = er.position.x if a.LANDSCAPE else er.position.y
-		var k2 := 0.0
-		while k2 < across:
-			if a.LANDSCAPE:
-				ci.draw_line(Vector2(at, start + k2), Vector2(at, start + k2 + 9.0), Color(1.0, 0.9, 0.55, 0.55), 2.0)
-			else:
-				ci.draw_line(Vector2(start + k2, at), Vector2(start + k2 + 9.0, at), Color(1.0, 0.9, 0.55, 0.55), 2.0)
-			k2 += 18.0
+	# one dashed line down the middle of the arena, splitting the two lanes: it
+	# runs the whole length of the board, from one commander's end to the other
+	var bd: Rect2 = a.board_rect()
+	var length: float = bd.size.x if a.LANDSCAPE else bd.size.y
+	var start: float = bd.position.x if a.LANDSCAPE else bd.position.y
+	var mid: float = bd.get_center().y if a.LANDSCAPE else bd.get_center().x
+	var k2 := 0.0
+	while k2 < length:
+		var seg_end: float = minf(k2 + 9.0, length)
+		if a.LANDSCAPE:
+			ci.draw_line(Vector2(start + k2, mid), Vector2(start + seg_end, mid), Color(1.0, 0.9, 0.55, 0.55), 2.0)
+		else:
+			ci.draw_line(Vector2(mid, start + k2), Vector2(mid, start + seg_end), Color(1.0, 0.9, 0.55, 0.55), 2.0)
+		k2 += 18.0
 	# board silhouette: three slabs make the plus shape
 	ci.draw_rect(a.tile_rect(a.col_min(0), 0).merge(a.tile_rect(a.col_max(a.GRID_H - 1), a.BAND_TOP - 1)), DDArt.OUTLINE, false, 4.0)
 	ci.draw_rect(a.tile_rect(a.col_min(a.BAND_TOP), a.BAND_TOP).merge(a.tile_rect(a.col_max(a.BAND_BOTTOM), a.BAND_BOTTOM)), DDArt.OUTLINE, false, 4.0)
@@ -102,7 +103,12 @@ static func _deploy_hint(ci: CanvasItem, a) -> void:
 						continue
 					ci.draw_rect(a.tile_rect(col, row), Color(0.9, 0.95, 0.6, 0.13))
 		var m: Vector2 = a.get_global_mouse_position()
-		if a.board_rect().has_point(m):
+		var locks_only: bool = bool(DDCard.get_card(kind).get("unit_lock", false))
+		if a.board_rect().has_point(m) and locks_only and a.aim_lock(m) == null:
+			# a lock-on card with nothing under the cursor has nowhere to go: no preview
+			if a.preview != null:
+				a.preview.hide_preview()
+		elif a.board_rect().has_point(m):
 			var lock = a.aim_lock(m)
 			# hovering where the card cannot go pins the preview to the closest
 			# open tile instead (that is also where a click lands)
@@ -168,7 +174,8 @@ static func hovered(a, at: Vector2) -> Node:
 		if not is_instance_valid(t) or t.dead:
 			continue
 		var d2: float = a.tiles_between(at, t.position)
-		if d2 <= 1.1 and d2 < best_d:
+		# a boss standing in for the towers is a lot bigger than one
+		if d2 <= maxf(1.1, float(t.get_radius_t())) and d2 < best_d:
 			best = t
 			best_d = d2
 	return best

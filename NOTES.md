@@ -23,7 +23,7 @@ half-finished in the tree.
 | `card_db.gd` | 365 | the single balance surface: all card data + `ORDER` (deck) |
 | `projectile.gd` | 246 | bolts/darts/pellets, payloads: `burn`, `stun`, `knock`, `first_hit` |
 | `art.gd` | 738 | procedural outlined art; `creature()` for units, `icon()` for previews/cards |
-| `card_face.gd` | 165 | `DDCardFace.draw()` — the face on a hand card (name/damage map in `ATTACK_NAMES`) |
+| `card_face.gd` | 660 | `DDCardFace` — the trading-card face (hand, next slot, deck grid, reward screen), its attribute icons, `ATTACK_NAMES`, multi-hit `ATTACKS` |
 | `hand_panel.gd` / `hand_card.gd` | 509 / 351 | per-player hand; `DDHandCard` owns a card's rect, hover, drag, fly-back tween |
 | `card_grid.gd` | 233 | `DDCardGrid` — reusable filtered, scrolling card grid (debug overlay today; collection/deck view later) |
 | `bot.gd` / `bot2.gd` | 295 / 304 | v1 flat utility scorer (baseline) / v2 perception+states |
@@ -71,12 +71,21 @@ extraction candidate.**
    every wolf one shared dictionary; the first living wolf runs `_tick_pack` —
    prey, arrival, ring spin, turn clock — and each runs `_tick_wolf`; no
    `_attack`), `summon.quiet` (no screen shake per spawn: the Ant Hill),
+   `ram` + `wool` (Goat Rider: `_attack` swaps in the ram's damage on the first
+   hit per target, `rammed` keyed by instance id; `take_damage` calls
+   `_wool_hit`, which shoves a melee attacker whose blow came from its own body;
+   `--scenario=goat`, `--scenario=goatart`),
    `trail` (ants: `_die` records a grave in `arena.ant_graves` stamped with
    `Engine.get_physics_frames()`; `_tick_ant` turns on entering a fresh grave
    tile, `_ant_turn` picks the other lane's side tower and backs `back` tiles
    down the trail, turned ants turn any ant they touch whose `move_dir` points
    the other way, and `_ant_waypoint` crosses by the goal lane's bridge through
-   `arena.route_point(from, goal, bridge_col)`; `--scenario=antlane`),
+   `arena.route_point(from, goal, bridge_col)`; `--scenario=antlane`. Ants are
+   `buildings_only`; `_die` also marks the killer (`last_attacker`, never a
+   tower) in `arena.ant_marks` until frame + `mark_time` s, and
+   `_ant_marked_foe()` picks the closest marked killer within `aggro`, keeping
+   one it already chases even out of sight until the mark ends;
+   `--scenario=antaggro`),
    `chicken` + `kamikaze` (Hot Chicken,
    two phases), `spread` (Primal Aphid), `dodge` (Penny), `summon` (warren),
    `death_aoe` (snowman), `targets_weakest`, `troops_only`, `flying_unit`, `hits_air`,
@@ -279,7 +288,14 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   random, and draws within 3 physics frames of each other play once. The opening
   hand is sliced straight from the deck in `_build_decks`, never through
   `draw_card()`, so it keeps its own deal sound. Audio is silent under
-  `--headless` but the nodes still exist, so bot sims are unaffected.
+  `--headless` but the nodes still exist, so bot sims are unaffected. Match music
+  (`DDSfx.start_music`, songs in `musictoreplace/`) starts 4 deal slices + 0.3 s
+  after `_build_sfx()`; it is skipped entirely when headless, so its random song
+  pick never touches a bot sim's global RNG. The volume slider (`arena._build_volume`)
+  has `FOCUS_NONE` so it never eats arrow keys or hotkeys; it drives the Master
+  bus through `DDSfx.set_volume`, which also writes `user://settings.cfg`.
+  Hand cards poll the viewport mouse, so a scenario hovers them with
+  `viewport.warp_mouse`, not pushed motion events (`--scenario=hovervol`).
 * **Burning ground** (`scripts/ground_fire.gd`, no `class_name`, preloaded by
   `arena.gd`): a spell with a `ground_fire` block in `card_db.gd` (the Fireball)
   leaves a patch the size of its splash that adds `burn` to every enemy inside it
@@ -294,9 +310,16 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
 * **Two cases get no grab**: a `giant` card (the dragon) or a building — she cannot
   carry those, so she stops on their hitbox and hits there (`_is_giant()`). With no
   target left after the strafe she does not jump at all.
-* **Card face**: `DDCardFace.rate_text()` and the HP ribbon are type-aware
-  (troop / building / spell). New cards only need an `ATTACK_NAMES` entry and
-  data; put per-type stats in `rate_text`, never in the ribbon.
+* **Card face** (`DDCardFace.card()`, trading-card style): everything on it is
+  read from card data. Attributes come from `traits_of()`; the attack rows come
+  from `attacks_of()`, which derives one row from `dmg` / `reach` / `interval`, a
+  summon row from `summon`, and Ram + Tomahawk from `ram`. A card with more than
+  one hit needs a hand-written entry in `ATTACKS`, and those numbers do not follow
+  balance changes. The summon coin comes from `summon.unit` / `ritual.unit`. The
+  trim and the middle line are the static vars `trim` / `line`, set from the
+  arena's `card_trim` / `card_line` exports (or `--trim=` / `--line=`). Opacity
+  goes through `_c()`; any new colour in the face must go through it too, or it
+  will not fade with the card.
 * **Animation stills/GIFs**: `--scenario=pennygif` (dev_capture) renders a pair into a
   transparent SubViewport at 20 fps and dumps raw RGBA frames to
   `.godot/penny_frames`; `node docs/make_gif.mjs <frames> docs/penny.gif` encodes them.
@@ -394,7 +417,9 @@ Start it with **Tab, then S** (`arena.start_spider_encounter()`), or
   A web tile slows through the normal `slow()`, so it replaces a burn like any
   slow does. A trap **removes** a `DDUnit` without calling `_die`, on purpose.
 * **Her cycle** is the state machine in `_tick_skitter`: HOME (a random 3 – 7 s,
-  `back_min` / `back_max`, seeded RNG) → ADVANCE (`skitter_time`) → FORWARD
+  `back_min` / `back_max`, seeded RNG) → ADVANCE (`skitter_time`, 2 – 5 tiles:
+  one shorter than it was, so the wide pool, `pool_wide` 1.8 a side and
+  `pool_len` 1.8, fits before the river) → FORWARD
   (`cycle` minus that wait; `back_wait` / `stay_time` hold the current values)
   → egg → TO_BRIDGE → BUILD (`build_time`) → GLINT (`glint_time`) → RETREAT,
   walking at `walk_speed`.
@@ -491,11 +516,23 @@ survives `reload_current_scene()`, which is how a run moves between fights.
   won fight that is not the last, `_match_ended()` puts it on its own CanvasLayer
   (50) and hides the hand panels. Three different cards from `DDCard.ORDER`,
   seeded by run seed and fight (`Run.reward_choices()`), drawn with
-  `DDCardFace.draw_full` (the hand face plus the blurb, text size stepping down to
-  fit). Click / 1-3 picks (`Run.take_reward`), Skip / S skips; both then call
+  `DDCardFace.draw_full` (the trading-card face with the description, text size
+  stepping down to fit). Click / 1-3 picks (`Run.take_reward`), Skip / S skips; both then call
   `arena.continue_run()`. It eats the keyboard while up, and `continue_run()`
   refuses while `Run.reward_pending()`, so Enter cannot skip by accident.
-  Input waits for the 0.9 s appear delay.
+  Input waits for the 0.9 s appear delay. The control must be sized with
+  `set_anchors_and_offsets_preset`: with anchors alone it was 0 x 0 and got no
+  mouse input at all (only the keys worked). Hover grows a card by 6 % and the
+  Skip button by 10 %, eased by `lift` / `skip_lift`. Icon tooltips:
+  `DDCardFace.hit_log` collects every badge drawn that frame (`TIPS` holds the
+  player-facing text, `tip_for()` reads it). `--scenario=rewardui --run=7` drives
+  the mouse through hover, tooltip, Skip and a click (`push_input`).
+* **Lane pocket** (`arena.POCKET`, `pocket_tiles`, `in_pocket()`): rebuilt by
+  `_tick_pockets()` only when the set of fallen DDTower side towers changes; the
+  taker can deploy there regardless of presence (still subject to the 3.5-tile
+  live-tower buffer). `is_water()` (river rows minus bridge decks) is excluded from
+  presence, the pocket and all troop/building deploys. `--scenario=pocket` checks
+  both lanes, both teams and the river.
 * **Setup** (`_apply_run`, in `arena._ready`): `deck_lists = [Run.deck,
   encounter deck]`, a bot on side 1 only, abilities from the run, decks shuffled
   from `Run.deck_seed()` (run seed × fight). After the board is built your
