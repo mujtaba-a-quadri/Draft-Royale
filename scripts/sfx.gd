@@ -54,7 +54,17 @@ var slice_seconds := 0.0
 var voices: Array[AudioStreamPlayer] = []
 
 
+## The card voices' base level; Settings.sfx / Settings.music (the options page)
+## sit on top of these and of the master volume.
+const VOICE_DB := -6.0
+const Settings := preload("res://scripts/settings.gd")
+## the playing instance, so the options sliders are heard straight away
+static var live: DDSfx = null
+
+
 func _ready() -> void:
+	live = self
+	Settings.ensure()
 	draw_stream = load(DRAW_FILE)
 	place_stream = load(PLACE_FILE)
 	for path in TAKE_FILES:
@@ -65,7 +75,7 @@ func _ready() -> void:
 		slice_seconds = draw_stream.get_length() / float(DRAW_SLICES)
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
-		p.volume_db = -6.0
+		p.volume_db = VOICE_DB + Settings.level_db(Settings.sfx)
 		add_child(p)
 		voices.append(p)
 
@@ -113,7 +123,7 @@ func start_music(delay: float) -> void:
 			if "loop" in s:
 				s.set("loop", true)
 			music = AudioStreamPlayer.new()
-			music.volume_db = MUSIC_DB
+			music.volume_db = MUSIC_DB + Settings.level_db(Settings.music)
 			music.stream = s
 			add_child(music)
 			music.play()
@@ -172,6 +182,16 @@ static func set_volume(v: float) -> void:
 static func _apply_volume() -> void:
 	AudioServer.set_bus_mute(0, volume <= 0.001)
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume * volume, 0.0001)))
+
+
+## Re-read Settings.sfx / Settings.music into the playing voices and music.
+static func apply_levels() -> void:
+	if live == null or not is_instance_valid(live):
+		return
+	for v in live.voices:
+		v.volume_db = VOICE_DB + Settings.level_db(Settings.sfx)
+	if live.music != null and is_instance_valid(live.music):
+		live.music.volume_db = MUSIC_DB + Settings.level_db(Settings.music)
 
 
 ## A free voice, or the first one if everything is busy (a card game never needs

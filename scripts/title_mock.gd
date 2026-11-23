@@ -13,7 +13,7 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 	await get_tree().process_frame
 	for shot in [["rest", -1, false], ["hover_match", 0, false], ["hover_run", 1, false],
-			["hover_collection", 2, false], ["hover_exit", 3, false], ["collection", -1, true],
+			["hover_collection", 2, false], ["hover_options", 3, false], ["options", -1, false], ["collection", -1, true],
 			["collection_scrolled", -1, true]]:
 		await _shot(String(shot[0]), int(shot[1]), bool(shot[2]))
 	get_tree().quit()
@@ -33,6 +33,8 @@ func _shot(name: String, hover: int, open_collection: bool) -> void:
 		if name.ends_with("scrolled"):
 			# part way down: the eased scroll glides there over the frames below
 			t.collection.scroll_by(650.0)
+	if name == "options":
+		t._open_options()
 	t.hover = hover
 	# let the lift settle
 	for i in 40:

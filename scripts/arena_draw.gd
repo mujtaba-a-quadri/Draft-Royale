@@ -282,6 +282,7 @@ static func _hud(ci: CanvasItem, a) -> void:
 		ci.draw_string(ThemeDB.fallback_font, Vector2(strip.position.x + 96.0, strip.position.y + 23.0), "TAB to reveal",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.72, 0.72, 0.82))
 	a._draw_gold_pieces()
+	a._draw_pearl_flights()
 	# hero prompt
 	for p in 2:
 		if a.hero_prompt_active(p):

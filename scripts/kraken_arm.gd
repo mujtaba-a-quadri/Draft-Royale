@@ -44,7 +44,8 @@ var reach := 3.5
 var dmg := 30.0
 var interval := 2.5
 var cfg: Dictionary = {}
-## 1 normally; revived tentacles attack this many times slower
+## multiplies the wait between attacks: 1 normally; revived tentacles get
+## 1 / revive_speed (under 1: faster)
 var slow := 1.0
 var revived := false
 

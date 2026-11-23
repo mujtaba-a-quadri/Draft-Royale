@@ -416,53 +416,49 @@ func _next_progress_line(frac: float, full: bool) -> void:
 ## Seconds between the discard arrow's throbs.
 const DISCARD_PULSE := 2.0
 
-## Arrow pointing away from the card that a draw would throw away. Its tip is
-## a red warning sign lying on its side (apex pointing left, the "!" lying
-## along it). Every DISCARD_PULSE seconds the whole arrow throbs: it swells
-## from its right end, brightens, and a halo of the sign spreads and fades.
+## The discard arrow's size against its first layout (1.1: ten percent up).
+const DISCARD_SCALE := 1.1
+
+## Arrow pointing away from the card that a draw would throw away, red and
+## black. Its tip is DDArt.warning_glyph on its side (apex left, the feet
+## reaching back past the body like barbs). Every DISCARD_PULSE seconds the
+## whole arrow throbs: it swells from its right end, brightens, and a halo of
+## the sign spreads and fades.
 func _draw_discard_warning(font: Font) -> void:
 	var r := card_rect(0)
 	var y := r.position.y + r.size.y * 0.5
 	var phase: float = fmod(clock, DISCARD_PULSE)
 	var beat: float = exp(-phase * 5.0)  # 1 at the throb, gone in about half a second
-	var s: float = 1.0 + 0.14 * beat
+	var s: float = DISCARD_SCALE * (1.0 + 0.14 * beat)
 	# everything is laid out from the arrow's right end, so it swells away from the card
 	var anchor := Vector2(r.position.x - 6.0, y)
 	var at := func(v: Vector2) -> Vector2: return anchor + v * s
-	# dark grey body carrying the word
+	var black := Color(0.1, 0.08, 0.1)
+	var red := Color(0.86, 0.12, 0.1).lerp(Color(1.0, 0.32, 0.26), beat)
+	# a thin pale edge behind everything, so the black reads on the dark panel
+	var edge := Color(1.0, 0.82, 0.78, 0.7)
+	var h := 44.0
+	var mid := Vector2(-92.0 - 0.3 * h, 0.0)
 	var body := Rect2(at.call(Vector2(-92.0, -9.0)), Vector2(92.0, 18.0) * s)
-	draw_rect(body, Color(0.18, 0.18, 0.22, 0.95), true)
-	draw_rect(body, Color(1.0, 0.35, 0.35, 0.75 + 0.25 * beat), false, 1.5)
+	draw_rect(body.grow(2.0), edge, true)
+	DDArt.warning_glyph(self, at.call(mid), h * s, edge, edge, -PI * 0.5, 0.6, 0.085 + 4.0 / (h * s))
+	# red body, black rim, black word
+	draw_rect(body, red, true)
+	draw_rect(body, black, false, 2.0 * s)
 	draw_string(font, at.call(Vector2(-92.0, 5.0)), "DISCARD", HORIZONTAL_ALIGNMENT_CENTER, body.size.x,
-		int(round(13.0 * s)), Color(0.82, 0.82, 0.86).lerp(Color(1, 1, 1), beat))
-	# the sign: apex left, base overlapping the body's end
-	var apex := Vector2(-128.0, 0.0)
-	var top := Vector2(-90.0, -20.0)
-	var bot := Vector2(-90.0, 20.0)
-	var mid := (apex + top + bot) / 3.0
+		int(round(13.0 * s)), black)
+	# the sign: h tall along the arrow, its crossbar on the body's left end
 	# halo: the sign's outline spreading out from its middle as the throb fades
 	if beat > 0.02:
 		var grow: float = 1.0 + 0.7 * (1.0 - beat)
+		var half: float = 0.8 * 0.6 * h  # the glyph's half-width at its crossbar
+		var tri := [Vector2(-0.5 * h, 0.0), Vector2(0.3 * h, -half), Vector2(0.3 * h, half)]
+		var c0: Vector2 = (tri[0] + tri[1] + tri[2]) / 3.0
 		var halo := PackedVector2Array()
-		for v in [apex, top, bot, apex]:
-			halo.append(at.call(mid + (v - mid) * grow))
+		for v in [tri[0], tri[1], tri[2], tri[0]]:
+			halo.append(at.call(mid + c0 + (v - c0) * grow))
 		draw_polyline(halo, Color(1.0, 0.25, 0.2, 0.6 * beat), 2.5, true)
-	var corners := PackedVector2Array([at.call(apex), at.call(top), at.call(bot)])
-	var rim := Color(0.42, 0.03, 0.03)
-	var red := Color(0.86, 0.12, 0.1).lerp(Color(1.0, 0.32, 0.26), beat)
-	# rounded corners: a thick rim with a disc at each corner, the red laid over it
-	draw_colored_polygon(corners, rim)
-	draw_polyline(PackedVector2Array([corners[0], corners[1], corners[2], corners[0]]), rim, 6.0 * s, true)
-	for c in corners:
-		draw_circle(c, 3.0 * s, rim)
-	draw_colored_polygon(corners, red)
-	draw_polyline(PackedVector2Array([corners[0], corners[1], corners[2], corners[0]]), red, 2.0 * s, true)
-	# the "!" on its side: the bar toward the apex, the dot toward the base
-	var glyph := Color(1.0, 0.97, 0.92)
-	draw_line(at.call(Vector2(-116.0, 0.0)), at.call(Vector2(-106.0, 0.0)), glyph, 4.6 * s, true)
-	draw_circle(at.call(Vector2(-116.0, 0.0)), 2.3 * s, glyph)
-	draw_circle(at.call(Vector2(-106.0, 0.0)), 2.3 * s, glyph)
-	draw_circle(at.call(Vector2(-98.0, 0.0)), 2.6 * s, glyph)
+	DDArt.warning_glyph(self, at.call(mid), h * s, red, black, -PI * 0.5)
 
 
 ## The opponent does not show a hand: their gold reads as ten coins instead.

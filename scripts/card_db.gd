@@ -471,6 +471,23 @@ const CARDS := {
 		"wool": {"push": 1.0, "push_time": 0.2, "melee": 2.0},
 		"accent": Color(0.9, 0.88, 0.8),
 	},
+	"valkyrie": {
+		"name": "Valkyrie",
+		"cost": 5,
+		"type": "troop",
+		"blurb": "A rider on a black warhorse, headed for the nearest building. After 1.5 seconds on the move the horse breaks into a charge and she drops her lance: anything small in her path is run through, and the building takes the full charge.",
+		# dmg / reach / interval: her lance once she has stopped at the building
+		"hp": 280.0, "dmg": 32.0, "speed": 0.9, "reach": 0.5, "interval": 1.5,
+		"radius": 0.65, "splash": 0.0, "aggro": 7.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": true,
+		# after `delay` s moving without a break the horse charges at speed x
+		# `speed_mult`. Charging, every enemy ground troop within `reach` tiles of
+		# her (edge to edge, ahead of her) takes `lance` once per charge, enough
+		# for any swarm body (ants 8 ... Shiesty 32); the first blow on her target
+		# lands for `hit`. Stopping, a stun or a shove ends the charge.
+		"charge": {"delay": 1.5, "speed_mult": 2.0, "lance": 35.0, "reach": 0.35, "hit": 64.0},
+		"accent": Color(0.2, 0.17, 0.16),
+	},
 	"magma": {
 		"name": "Magma Whelp",
 		"cost": 1,
@@ -775,13 +792,14 @@ const CARDS := {
 			"center": [9.0, 7.0],
 			"arm_tiles": [[8, 3], [2, 6], [15, 6], [5, 11], [13, 11]],
 			"emerge_time": 1.0,
-			# revived tentacles: this share of their HP, attacks this much slower
-			"revive_hp": 0.5, "revive_slow": 2.0,
+			# revived tentacles: this share of their HP, and their attacks (swings and
+			# arrows) come this many times as fast as in phase 1
+			"revive_hp": 0.5, "revive_speed": 1.5,
 			# red orbs: orb_count big ones every orb_every s
 			"orb_every": 25.0, "orb_count": 3,
 			"orb_speed": 1.6, "orb_turn": 1.6, "orb_life": 6.0, "orb_dmg": 30.0, "orb_splash": 1.2,
 			"orb_split_min": 3, "orb_split_max": 5,
-			"small_speed": 2.6, "small_turn": 3.0, "small_life": 1.5, "small_dmg": 12.0, "small_splash": 0.7,
+			"small_speed": 2.6, "small_turn": 3.0, "small_life": 4.5, "small_dmg": 12.0, "small_splash": 0.7,
 			# one revived tentacle burrows every burrow_every s
 			"burrow_every": 8.0,
 		},
@@ -892,7 +910,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider", "mantis", "elf", "militia", "ballista", "brawler", "dominion_puissance", "dominion_armor"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider", "valkyrie", "mantis", "elf", "militia", "ballista", "brawler", "dominion_puissance", "dominion_armor"]
 
 
 ## The pool a run's card reward draws from: ORDER less `exclude` (the run passes

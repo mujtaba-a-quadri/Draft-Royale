@@ -151,6 +151,10 @@ func _ready() -> void:
 		# with --shots: the relic column mid-window (2 columns: 8 relics)
 		shot_times = [4.6, 12.0]
 		run_time = 30.0
+	elif scenario == "pearl":
+		# with --shots: floating down, in the purse, floating back up
+		shot_times = [1.3, 1.9, 2.3]
+		run_time = 5.0
 	elif scenario == "lizard":
 		shot_times = []
 		run_time = 7.5
@@ -165,7 +169,7 @@ func _ready() -> void:
 		run_time = 3.0
 	elif scenario == "laniakea":
 		shot_times = [7.1]
-		run_time = 8.2
+		run_time = 9.2
 	elif scenario == "femme":
 		shot_times = []
 		run_time = 9.5
@@ -302,6 +306,12 @@ func _ready() -> void:
 		shot_times = [3.3, 3.9]
 		run_time = 4.2
 	elif scenario == "goatart":
+		shot_times = [0.8]
+		run_time = 1.0
+	elif scenario == "valkyrie":
+		shot_times = [2.6]
+		run_time = 10.0
+	elif scenario == "valkart":
 		shot_times = [0.8]
 		run_time = 1.0
 	elif scenario == "whelpart":
@@ -471,6 +481,8 @@ func _process(delta: float) -> void:
 		_scaling_steps()
 	elif scenario == "relics":
 		_relic_steps()
+	elif scenario == "pearl":
+		_pearl_steps()
 	elif scenario == "lizard":
 		_lizard_steps()
 	elif scenario == "cross":
@@ -557,6 +569,10 @@ func _process(delta: float) -> void:
 		_rewardui_steps()
 	elif scenario == "goatart":
 		_goatart_steps()
+	elif scenario == "valkyrie":
+		_valkyrie_steps()
+	elif scenario == "valkart":
+		_valkart_steps()
 	elif scenario == "shiestyfx":
 		_shiesty_fx_steps()
 	elif scenario == "dupes":
@@ -1500,6 +1516,42 @@ func _relic_line(label: String) -> void:
 		str(arena.relic_window(0, "sleight").size()), float(arena.relic_idle[0])])
 
 
+## The Abyssal Pearl's cycle: spend to 0 -> the pearl drops in as the first gold
+## (the gold that was filling carries on); spend it -> back to the bar, resting;
+## a first gold of your own -> ready; spend to 0 again -> it drops again.
+func _pearl_line(what: String) -> void:
+	var names := ["READY", "BANKED", "RESTING"]
+	print("[pearl] t%.1f %s: gold %.2f, pearl %s" % [elapsed, what, float(arena.gold[0]),
+		names[int(arena.pearl_state[0])]])
+
+
+func _pearl_steps() -> void:
+	if _at(0.3):
+		for b in arena.bots:
+			if b != null and is_instance_valid(b):
+				b.enabled = false
+		arena.relics[0] = ["abyssal_pearl"]
+		arena.gold[0] = 3.4
+		_pearl_line("start (expect READY)")
+	# each "spend" spends every whole gold, keeping the part still filling
+	if _at(1.0):
+		arena.gold[0] = fmod(float(arena.gold[0]), 1.0)
+		_pearl_line("spent every whole gold")
+	if _at(1.1):
+		_pearl_line("next tick (expect BANKED, gold 1 + what was filling)")
+	if _at(2.0):
+		arena.gold[0] = fmod(float(arena.gold[0]), 1.0)
+		_pearl_line("spent the pearl and the rest")
+	if _at(2.1):
+		_pearl_line("next tick (expect RESTING, gold under 1)")
+	if _at(4.6):
+		_pearl_line("a first gold of our own (expect READY)")
+		arena.gold[0] = fmod(float(arena.gold[0]), 1.0)
+	if _at(4.7):
+		_pearl_line("spent to 0 again (expect BANKED)")
+		print("[pearl] drops: %d (expect 2)" % int(arena.relic_fires.get("abyssal_pearl", 0)))
+
+
 func _relic_steps() -> void:
 	if _at(0.3):
 		for b in arena.bots:
@@ -1684,6 +1736,18 @@ func _laniakea_steps() -> void:
 	if _at(7.8):
 		print("[laniakea] hero hp=%d (expect 100: 150 - 50) stunned=%s" % [
 			int(lani_marks[0].hp), str(lani_marks[0].stunned > 0.0)])
+	if _at(8.2):
+		_lani_clear()
+		probe = arena.spawn_troop("laniakea", 0, arena.tile_center(9.5, 20.5), true)
+		probe.deploy_timer = 0.0
+		var p5: Vector2 = probe.position
+		var fwd5: Vector2 = (arena.tile_center(9.5, 19.5) - p5).normalized()
+		lani_marks = [_lani_dummy("warren", p5 + fwd5 * 3.3 * t)]
+		print("[laniakea] building leap: warren (radius 0.75) at 3.3, 3.0 measured from its edge")
+	if _at(8.4):
+		print("[laniakea] leaping=%s (expect true)" % str(probe.leaping))
+	if _at(9.0):
+		print("[laniakea] warren hp=%d (expect 80: 130 - 50)" % int(lani_marks[0].hp))
 
 
 ## Femme Fatale: the dash (4.0 tiles: wind-up, lunge to 1.5, 25 on the tip), then
@@ -3861,6 +3925,96 @@ func _goatart_steps() -> void:
 		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		DDCardFace.draw_full(c, "goatrider", Rect2(60.0, 560.0, 250.0, 390.0))
 		DDCardFace.draw(c, "goatrider", Rect2(340.0, 640.0, 216.0, 264.0))
+	)
+	c.queue_redraw()
+
+
+# ------------------------------------------------------------------- valkyrie
+
+## The Valkyrie rides up the lane at a building: the charge starts 1.5 s in,
+## doubles her speed, her lance kills a swarm in her path (ants, rat skeletons)
+## but leaves a flyer over it alone, and the building takes 64 then 32s.
+var vk: Node = null
+var vk_wall: Node = null
+var vk_wall_hp := 0.0
+var vk_hits: Array = []
+var vk_swarm: Array = []
+var vk_hawk: Node = null
+var vk_charge_at := -1.0
+var vk_speed := 0.0
+func _valkyrie_steps() -> void:
+	var t: float = float(arena.TILE)
+	if _at(0.3):
+		vk_wall = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 16.5), true)
+		vk_wall.deploy_timer = 0.0
+		vk_wall.lifetime = 0.0
+		vk_wall.max_hp = 5000.0
+		vk_wall.hp = 5000.0
+		vk_wall_hp = vk_wall.hp
+		# the towers hold fire, so whatever kills the swarm is her lance
+		for tw in arena.towers:
+			if is_instance_valid(tw) and "dmg" in tw:
+				tw.dmg = 0.0
+		vk = arena.spawn_troop("valkyrie", 0, arena.tile_center(9.5, 27.5), true)
+		vk.deploy_timer = 0.0
+		vk.max_hp = 5000.0
+		vk.hp = 5000.0
+		for p in [Vector2(9.5, 22.0), Vector2(9.9, 22.6), Vector2(9.1, 22.4)]:
+			var a: Node = arena.spawn_troop("ant", 1, arena.tile_center(p.x, p.y), true)
+			a.deploy_timer = 0.0
+			a.speed = 0.0
+			vk_swarm.append(a)
+		var rb: Node = arena.spawn_troop("ratbones", 1, arena.tile_center(9.5, 21.0), true)
+		rb.deploy_timer = 0.0
+		rb.speed = 0.0
+		vk_swarm.append(rb)
+		vk_hawk = arena.spawn_troop("hawk", 1, arena.tile_center(9.5, 21.5), true)
+		vk_hawk.deploy_timer = 0.0
+		vk_hawk.speed = 0.0
+		vk_hawk.dmg = 0.0
+		vk_hawk.max_hp = 5000.0
+		vk_hawk.hp = 5000.0
+	if not is_instance_valid(vk):
+		return
+	if vk_charge_at < 0.0 and vk.charging:
+		vk_charge_at = elapsed
+		vk_speed = vk.speed
+	if is_instance_valid(vk_wall) and vk_wall.hp < vk_wall_hp - 0.01:
+		vk_hits.append([snappedf(elapsed, 0.01), int(roundf(vk_wall_hp - vk_wall.hp))])
+		vk_wall_hp = vk_wall.hp
+	if _at(9.5):
+		var alive := vk_swarm.filter(func(u): return is_instance_valid(u) and not u.dead)
+		print("[valk] charge at %.2f (expect ~1.8: 0.3 + 1.5), speed %.2f -> %.2f (expect 0.9 -> 1.8)" % [vk_charge_at,
+			vk.ground_speed, vk_speed])
+		print("[valk] lanced %d (expect 4)" % vk.lanced.size())
+		print("[valk] swarm left %d / %d (expect 0), hawk lanced %s (expect false: flyers are not in her path)" % [
+			alive.size(), vk_swarm.size(), is_instance_valid(vk_hawk) and vk.lanced.has(vk_hawk.get_instance_id())])
+		print("[valk] hits on the building [time, dmg] %s (expect 64 first, then 32 every 1.5 s)" % str(vk_hits))
+		print("[valk] charging now %s (expect false)" % vk.charging)
+
+
+func _valkart_steps() -> void:
+	if not _at(0.3):
+		return
+	var poses := [{}, {"run": true}, {"run": true, "charge": 0.5}, {"run": true, "charge": 1.0},
+		{"run": true, "charge": 1.0, "strike": 0.8}]
+	var layer := CanvasLayer.new()
+	layer.layer = 60
+	arena.add_child(layer)
+	var c := Control.new()
+	c.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(c)
+	var ink: Color = arena.team_ink(0)
+	var cols := [arena.team_color(0), arena.team_color(1), Color(0.72, 0.3, 0.85), Color(0.94, 0.47, 0.1), arena.team_color(0)]
+	c.draw.connect(func() -> void:
+		c.draw_rect(Rect2(Vector2.ZERO, c.get_viewport_rect().size), Color(0.36, 0.52, 0.32))
+		for i in poses.size():
+			c.draw_set_transform(Vector2(150.0 + 305.0 * float(i), 330.0), 0.0, Vector2(3.0, 3.0))
+			DDArt.valkyrie(c, 0.65 * 38.0, 1.0, 0.4, poses[i], ink, cols[i])
+		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		DDCardFace.draw_full(c, "valkyrie", Rect2(60.0, 560.0, 250.0, 390.0))
+		DDCardFace.draw(c, "valkyrie", Rect2(340.0, 640.0, 216.0, 264.0))
+		DDArt.icon(c, "valkyrie", Vector2(700.0, 760.0), 40.0, 0.4)
 	)
 	c.queue_redraw()
 

@@ -16,6 +16,9 @@ extends RefCounted
 ##                                  income comes as 2
 ##   lucky {at}                     arena: natural income carrying gold up past `at`
 ##                                  (from below it) gives 1 more
+##   pearl                          arena._tick_pearl(): the Abyssal Pearl's cycle (bar ->
+##                                  purse at 0 gold -> bar once spent -> armed again
+##                                  when a first gold of your own comes in)
 ##   king_mult                      tower.gd: the king tower's shots hit this much harder
 ##   fuel                           run_state.gd / reward_screen.gd: Fuel for the Fire
 ## `starter` relics belong to a commander and are never awarded; `placeholder`
@@ -77,8 +80,8 @@ const RELICS := {
 	},
 	"abyssal_pearl": {
 		"name": "Abyssal Pearl",
-		"text": "The Celestial Jelly's relic. (Placeholder: does nothing yet.)",
-		"placeholder": true,
+		"text": "When your gold drops to 0, the pearl comes down as your first gold. Once you spend it, it goes back up and drops again after a first gold of your own has come in and gone.",
+		"pearl": true,
 		"starter": "tentacle",
 	},
 	"hive_shard": {

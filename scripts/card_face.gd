@@ -85,7 +85,7 @@ static func tip_for(hit: Dictionary) -> Array:
 	return [String(tip[0]), body]
 
 const ATTACK_NAMES := {
-	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "mantis": "Claws", "mantisf": "Scythe", "elf": "Longbow", "militia": "Spear", "ballista": "Siege Bolt", "frog": "Poison Leap", "phalanx": "Spear", "wolves": "Bite", "meerkats": "Bite", "ant": "Bite", "anthill": "Ants", "goatrider": "Tomahawk","ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
+	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "mantis": "Claws", "mantisf": "Scythe", "elf": "Longbow", "militia": "Spear", "ballista": "Siege Bolt", "frog": "Poison Leap", "phalanx": "Spear", "wolves": "Bite", "meerkats": "Bite", "ant": "Bite", "anthill": "Ants", "goatrider": "Tomahawk", "valkyrie": "Lance","ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
 	"snowman": "—", "idol": "Taunt", "lizard": "Rifle", "warren": "Burrow",
@@ -165,6 +165,8 @@ const ATTACKS := {
 	"hedgehog": [["melee", "Quills", 12, "curl burst + 8 thorns"]],
 	"snowman": [["special", "Meltdown", 30, "on death: 3 tiles, slows"]],
 	"idol": [["special", "Taunt", 0, "lures enemies, a boulder on death"]],
+	"valkyrie": [["melee", "Charge", 64, "after 1.5 s moving: 2x speed"], ["melee", "Lance", 35, "every troop in her path"],
+		["melee", "Lance", 32, "standing at the building"]],
 }
 const SHORT_LABEL := {
 	"flag": "Buildings", "troops": "Troops only", "weakest": "Weakest", "flies": "Flies", "antiair": "Hits air",
@@ -529,8 +531,10 @@ static func traits_of(kind: String) -> Array:
 		out.append(["leap", ""])
 	if pd.has("devour"):
 		out.append(["regen", ""])
-	if d.has("roll") and kind != "snowball":
+	if (d.has("roll") and kind != "snowball") or d.has("charge"):
 		out.append(["charge", ""])
+	if d.has("charge"):
+		out.append(["pierce", ""])
 	if d.has("guard") or d.has("curl") or d.has("shield"):
 		out.append(["shield", ""])
 	if d.has("staff"):

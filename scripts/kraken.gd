@@ -6,7 +6,7 @@ extends Node2D
 ## The body is under water: it is not in arena.towers and cannot be hit.
 ## Phase 2, once every tentacle is down: the body surfaces in the middle of its
 ## side as the crown "tower" (killing it wins), raises every tentacle again with
-## revive_hp of its HP and revive_slow times slower attacks, and from then on
+## revive_hp of its HP, attacking revive_speed times as fast, and from then on
 ##   orbs    every orb_every s it spews orb_count big red orbs. Each turns slowly
 ##           toward the nearest enemy, bursts on touch or on timeout, and splits
 ##           into 3-5 small orbs that chase for a moment and burst too.
@@ -169,7 +169,7 @@ func _surface() -> void:
 	burrow_clock = float(cfg["burrow_every"])
 	arena.towers.append(self)
 	for a in arms:
-		a.revive(float(cfg["revive_hp"]), float(cfg["revive_slow"]))
+		a.revive(float(cfg["revive_hp"]), 1.0 / maxf(0.1, float(cfg["revive_speed"])))
 	_stagger_arrows()
 	arena.shake(8.0)
 	arena.banner_flash("The KRAKEN surfaces!")

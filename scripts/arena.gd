@@ -201,7 +201,104 @@ func _tick_relics(team: int, delta: float, income: float, gold_before: float = 0
 			var line: float = float(d["lucky"]["at"])
 			if gold_before < line and float(gold[team]) >= line:
 				_relic_fire(team, String(id), "gold")
+		if d.has("pearl"):
+			_tick_pearl(team, String(id))
 	relic_income[team] = float(relic_income[team]) + income
+
+
+## The Abyssal Pearl, per team. READY: it waits on the relic bar. The moment
+## the team is down to no whole gold it floats down and becomes their first
+## gold (BANKED); the gold that was filling carries on as the second. Spent
+## (no whole gold again), it floats back up and RESTs until a first gold of
+## the team's own has come in, then is READY to drop at the next 0.
+const PEARL_READY := 0
+const PEARL_BANKED := 1
+const PEARL_RESTING := 2
+## How long the pearl takes to float between the bar and the purse.
+const PEARL_FLIGHT := 0.7
+var pearl_state := [PEARL_READY, PEARL_READY]
+## clock time the pearl's current flight started (-1: none), and which way
+var pearl_fly := [-1.0, -1.0]
+var pearl_down := [false, false]
+## where side 0's pearl medal was last drawn: the flight's top end
+var pearl_bar_at := Vector2(-1.0, -1.0)
+
+
+func _tick_pearl(team: int, id: String) -> void:
+	var g: float = float(gold[team])
+	match int(pearl_state[team]):
+		PEARL_READY:
+			if g < 1.0:
+				gold[team] = g + 1.0
+				pearl_state[team] = PEARL_BANKED
+				_pearl_launch(team, true)
+				relic_glow["%d:%s" % [team, id]] = 0.8
+				relic_fires[id] = int(relic_fires.get(id, 0)) + 1
+		PEARL_BANKED:
+			if g < 1.0:
+				pearl_state[team] = PEARL_RESTING
+				_pearl_launch(team, false)
+		PEARL_RESTING:
+			if g >= 1.0:
+				pearl_state[team] = PEARL_READY
+
+
+func _pearl_launch(team: int, down: bool) -> void:
+	# only side 0 has a relic bar to fly from; the other side's pearl just appears
+	if team != 0 or pearl_bar_at.x < 0.0:
+		pearl_fly[team] = -1.0
+		return
+	pearl_fly[team] = clock
+	pearl_down[team] = down
+
+
+## How far through its flight `team`'s pearl is (0..1), or -1 when it is not flying.
+func pearl_flight(team: int) -> float:
+	if float(pearl_fly[team]) < 0.0:
+		return -1.0
+	var u: float = (clock - float(pearl_fly[team])) / PEARL_FLIGHT
+	if u >= 1.0:
+		pearl_fly[team] = -1.0
+		return -1.0
+	return u
+
+
+## Is `team`'s pearl sitting in the purse as its first gold (landed, not flying)?
+func pearl_in_purse(team: int) -> bool:
+	return int(pearl_state[team]) == PEARL_BANKED and pearl_flight(team) < 0.0
+
+
+## Is `team`'s pearl at home in its medal on the bar?
+func pearl_at_bar(team: int) -> bool:
+	return int(pearl_state[team]) != PEARL_BANKED and pearl_flight(team) < 0.0
+
+
+func pearl_coin_at(team: int) -> Vector2:
+	return tile_center(17.5, 29.5 if team == 0 else 0.5)
+
+
+## The pearl on its way between the bar and the purse: an eased drift with a
+## slow sideways sway and a few fading glints behind it. Drawn over the coins.
+func _draw_pearl_flights() -> void:
+	var u: float = pearl_flight(0)
+	if u < 0.0:
+		return
+	var a: Vector2 = pearl_bar_at
+	var b: Vector2 = pearl_coin_at(0)
+	if not bool(pearl_down[0]):
+		var sw := a
+		a = b
+		b = sw
+	var r: float = TILE * 0.3
+	for k in range(5, -1, -1):
+		var uk: float = clampf(u - float(k) * 0.035, 0.0, 1.0)
+		var e: float = uk * uk * (3.0 - 2.0 * uk)
+		var p: Vector2 = a.lerp(b, e) + Vector2(sin(uk * PI * 2.0) * TILE * 0.35, 0.0)
+		if k == 0:
+			draw_circle(p, r * 1.9, Color(0.85, 0.85, 1.0, 0.22))
+			DDArt.pearl(self, p, r * 1.05)
+		else:
+			draw_circle(p, r * (0.5 - 0.06 * float(k)), Color(0.9, 0.9, 1.0, 0.5 - 0.07 * float(k)))
 
 
 func _relic_fire(team: int, id: String, gives: String) -> void:
@@ -230,6 +327,9 @@ func relic_progress(team: int, id: String) -> Array:
 		# the way up to the lucky line; full (and quiet) once past it
 		var at := float(d["lucky"]["at"])
 		return [clampf(float(gold[team]) / at, 0.0, 1.0) if float(gold[team]) < at else 0.0, -1]
+	if d.has("pearl") and int(pearl_state[team]) == PEARL_RESTING:
+		# resting: the ring is the first gold of your own coming in
+		return [clampf(float(gold[team]), 0.0, 1.0), -1]
 	if d.has("ledger"):
 		var every := float(d["ledger"]["every"])
 		var inc := float(relic_income[team])
@@ -258,8 +358,12 @@ func _draw_relics() -> void:
 		var row: int = int(i / 2) if two_cols else i
 		var c := Vector2(16.0 + rad + float(col) * 100.0, top + 18.0 + rad + float(row) * row_h)
 		var prog: Array = relic_progress(0, id)
+		var empty := false
+		if RELIC_DB.get_relic(id).has("pearl"):
+			pearl_bar_at = c
+			empty = not pearl_at_bar(0)
 		DDArt.relic_medal(self, id, c, rad, float(prog[0]), int(prog[1]),
-			float(relic_glow.get("0:%s" % id, 0.0)), fight_t)
+			float(relic_glow.get("0:%s" % id, 0.0)), fight_t, empty)
 		if not two_cols:
 			draw_string(font, Vector2(c.x + rad + 10.0, c.y + 5.0), RELIC_DB.relic_name(id), HORIZONTAL_ALIGNMENT_LEFT,
 				ORIGIN.x - (c.x + rad + 10.0) - 6.0, 14, Color(0.92, 0.9, 0.84))
@@ -439,6 +543,7 @@ var dot_hit := false
 ## --relics=a,b for a plain match); side 1 has none yet. Their timers run on
 ## fight_t, the fight's own physics clock, so they are deterministic.
 const RELIC_DB := preload("res://scripts/relic_db.gd")
+const Settings := preload("res://scripts/settings.gd")
 var relics := [[], []]
 var fight_t := 0.0
 ## per team, per windowed relic id: the fight_t of each card played that is
@@ -473,7 +578,12 @@ func _ready() -> void:
 		arr.fill(false)
 		control[t] = arr
 	var forced := ""
+	var colors_forced := false
 	for a in OS.get_cmdline_user_args():
+		# the bot sim and the dev captures keep the stock colours, so their output
+		# does not depend on what this machine picked in the options
+		if a.begins_with("--botsim=") or a.begins_with("--scenario=") or a.begins_with("--shots=") or a == "--demo":
+			colors_forced = true
 		if a == "--bots=both":
 			bot_players = [true, true]
 		elif a == "--bots=off":
@@ -487,6 +597,7 @@ func _ready() -> void:
 		elif a.begins_with("--colors="):
 			var parts := String(a.substr(9)).split(",")
 			if parts.size() == 2:
+				colors_forced = true
 				team_colors = [
 					Color.from_string(String(parts[0]).strip_edges(), Left_Color),
 					Color.from_string(String(parts[1]).strip_edges(), Right_Color),
@@ -515,6 +626,9 @@ func _ready() -> void:
 	rest.erase(mine)
 	ability = [mine, String(rest[arng.randi() % rest.size()])]
 	var in_run := _apply_run()
+	# after the run, which brings its own commanders
+	if not colors_forced:
+		_apply_color_settings()
 	for rid in forced_relics:
 		if not (relics[0] as Array).has(rid):
 			relics[0].append(rid)
@@ -948,6 +1062,16 @@ func _draw_gold_pieces() -> void:
 			var ty := 29.5 - float(i) if team == 0 else 0.5 + float(i)
 			var at: Vector2 = tile_center(17.5, ty)
 			var filled: float = clampf(float(gold[team]) - float(i), 0.0, 1.0)
+			if i == 0 and int(pearl_state[team]) == PEARL_BANKED:
+				# the Abyssal Pearl is this team's first gold: the pearl sits in
+				# the slot once it has landed (an empty slot while it floats down)
+				if pearl_in_purse(team):
+					draw_circle(at, r * 1.5, Color(0.8, 0.82, 1.0, 0.18 + 0.08 * sin(clock * 2.5)))
+					DDArt.pearl(self, at, r * 1.05)
+				else:
+					draw_circle(at, r, Color(0.28, 0.28, 0.32))
+					draw_arc(at, r, 0.0, TAU, 18, Color(0.44, 0.44, 0.5), 1.2, true)
+				continue
 			if filled >= 1.0:
 				if full:
 					# a full purse rattles: each coin jitters on its own beat
@@ -2143,6 +2267,31 @@ func ability_name(player: int) -> String:
 		"drone":
 			return "DRONE"
 	return "SHIESTY"
+
+
+## Each commander's own colour, for a side that plays in its commander's colour
+## (the options page): taken from the art (jelly core, goblin skin, the flame,
+## the mantis's red).
+const COMMANDER_COLORS := {
+	"tentacle": Color(0.55, 0.35, 0.95),
+	"shiesty": Color(0.42, 0.62, 0.24),
+	"flame": Color(0.95, 0.45, 0.08),
+	"drone": Color(0.82, 0.22, 0.14),
+}
+
+
+static func commander_color(kind: String) -> Color:
+	return COMMANDER_COLORS.get(kind, Left_Color)
+
+
+## The options page's side colours: a fixed pick, or that side's commander's.
+func _apply_color_settings() -> void:
+	Settings.ensure()
+	var cols: Array = []
+	for side in 2:
+		cols.append(commander_color(String(ability[side])) if bool(Settings.commander[side])
+			else Settings.side_color(side))
+	team_colors = cols
 
 
 ## The commander behind each ability, for banners and the hover inspector.

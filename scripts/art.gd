@@ -129,6 +129,8 @@ static func creature(ci: CanvasItem, kind: String, r: float, facing: float, t: f
 			ant(ci, r, facing, t, ink_col)
 		"goatrider":
 			goat_rider(ci, r, facing, t, {}, ink_col)
+		"valkyrie":
+			valkyrie(ci, r, facing, t, {"charge": 1.0}, ink_col)
 		"anthill":
 			anthill(ci, r, t, ink_col)
 		"chicken":
@@ -1022,15 +1024,17 @@ static func _goblin_commander(ci: CanvasItem, r: float, t: float, ready: bool, t
 ## glyph. `frac` 0..1 fills a ring round it clockwise from the top (a timer
 ## relic's clock); `count` >= 0 is shown in a little badge at its foot (cards
 ## in the window, gold toward the Ledger's double). `glow` > 0: it just fired.
+## `empty`: the relic's token is away from it (the Abyssal Pearl down in the
+## purse), so the medal shows the empty setting.
 static func relic_medal(ci: CanvasItem, id: String, c: Vector2, r: float, frac: float = 0.0, count: int = -1,
-		glow: float = 0.0, t: float = 0.0) -> void:
+		glow: float = 0.0, t: float = 0.0, empty: bool = false) -> void:
 	if glow > 0.0:
 		ci.draw_circle(c, r * (1.25 + 0.25 * (1.0 - glow)), Color(1.0, 0.92, 0.55, 0.45 * glow))
 	ci.draw_circle(c, r, Color(0.13, 0.11, 0.16))
 	ci.draw_arc(c, r, 0.0, TAU, 40, Color(0.78, 0.62, 0.3), 2.5, true)
 	if frac > 0.0:
 		ci.draw_arc(c, r + 4.0, -PI * 0.5, -PI * 0.5 + TAU * frac, 48, Color(1.0, 0.86, 0.4), 4.0, true)
-	_relic_glyph(ci, id, c, r * 0.62, t)
+	_relic_glyph(ci, id, c, r * 0.62, t, empty)
 	if count >= 0:
 		var b := c + Vector2(r * 0.72, r * 0.72)
 		ci.draw_circle(b, r * 0.36, Color(0.95, 0.85, 0.5))
@@ -1039,7 +1043,7 @@ static func relic_medal(ci: CanvasItem, id: String, c: Vector2, r: float, frac: 
 			r * 0.72, int(maxf(9.0, r * 0.48)), Color(0.15, 0.1, 0.05))
 
 
-static func _relic_glyph(ci: CanvasItem, id: String, c: Vector2, s: float, t: float) -> void:
+static func _relic_glyph(ci: CanvasItem, id: String, c: Vector2, s: float, t: float, empty: bool = false) -> void:
 	var gold := Color(0.98, 0.79, 0.26)
 	match id:
 		"whetstone":
@@ -1107,8 +1111,25 @@ static func _relic_glyph(ci: CanvasItem, id: String, c: Vector2, s: float, t: fl
 			poly(ci, horn, Color(0.9, 0.84, 0.66), 1.4)
 			ci.draw_line(c + Vector2(-s * 0.1, -s * 0.2), c + Vector2(-s * 0.1, s * 0.6), gold, s * 0.12, true)
 		"abyssal_pearl":
-			ci.draw_circle(c, s * 0.7, Color(0.82, 0.8, 0.95))
-			ci.draw_circle(c + Vector2(-s * 0.22, -s * 0.22), s * 0.22, Color(1, 1, 1, 0.8))
+			# an open clam: the upper valve tipped back, the lower one holding the
+			# pearl (or, while the pearl is down in the purse, a dark hollow)
+			var shell := Color(0.3, 0.52, 0.6)
+			var up := PackedVector2Array()
+			var low := PackedVector2Array()
+			for k in 13:
+				var a: float = PI * float(k) / 12.0
+				up.append(c + Vector2(-cos(a) * s * 0.78, -s * 0.02 - sin(a) * s * 0.62))
+				low.append(c + Vector2(-cos(a) * s * 0.92, s * 0.18 + sin(a) * s * 0.66))
+			poly(ci, up, shell.darkened(0.35), 1.2)
+			poly(ci, low, shell, 1.2)
+			for k in 5:
+				var a2: float = PI * (0.2 + 0.15 * float(k))
+				ci.draw_line(c + Vector2(0, s * 0.3), c + Vector2(-cos(a2) * s * 0.8, s * 0.18 + sin(a2) * s * 0.58),
+					shell.lightened(0.25), maxf(1.0, s * 0.07), true)
+			if empty:
+				ellipse(ci, c + Vector2(0, s * 0.14), s * 0.32, s * 0.12, Color(0.06, 0.05, 0.1), 1.0)
+			else:
+				pearl(ci, c + Vector2(0, s * 0.02), s * 0.36)
 		"hive_shard":
 			for k in 3:
 				var hc := c + Vector2.from_angle(-PI * 0.5 + TAU * float(k) / 3.0) * s * 0.42
@@ -1143,6 +1164,63 @@ static func dominion_banner(ci: CanvasItem, r: float, t: float, stat: String) ->
 		poly(ci, PackedVector2Array([e + Vector2(-r * 0.3, -r * 0.32), e + Vector2(r * 0.3, -r * 0.32),
 			e + Vector2(r * 0.26, r * 0.12), e + Vector2(0, r * 0.38), e + Vector2(-r * 0.26, r * 0.12)]),
 			Color(0.86, 0.9, 0.96), 1.6)
+
+
+## A pearl: lilac in its shadow, near white where the light falls, a sharp
+## glint and a faint pink rim.
+static func pearl(ci: CanvasItem, c: Vector2, r: float) -> void:
+	ci.draw_circle(c, r, Color(0.72, 0.7, 0.88))
+	ci.draw_circle(c + Vector2(-r * 0.12, -r * 0.14), r * 0.8, Color(0.88, 0.87, 0.97))
+	ci.draw_circle(c + Vector2(-r * 0.22, -r * 0.24), r * 0.5, Color(0.97, 0.96, 1.0))
+	ci.draw_arc(c, r * 0.9, PI * 0.1, PI * 0.75, 12, Color(1.0, 0.78, 0.86, 0.6), maxf(1.0, r * 0.12), true)
+	ci.draw_circle(c + Vector2(-r * 0.38, -r * 0.4), r * 0.18, Color(1, 1, 1))
+	ci.draw_arc(c, r, 0.0, TAU, 24, Color(0.36, 0.33, 0.5), maxf(1.0, r * 0.1), true)
+
+
+## A warning sign that is also a letter, centred on `c`, `h` tall:
+##   ⚠  a filled triangle with a mark down its middle;
+##   A  the sides run on past the base, so the base is an A's crossbar and the
+##      overrun its feet;
+##   i  the mark is dot / bar / dot: read from the top it is an i (the tittle
+##      over the stem), read from the bottom a "!" (the stem over its point).
+## `rot` turns the whole thing about `c` (-PI/2 points the apex left).
+## `spread` is how fast the sides open: half-width per unit of height below the
+## apex (0.6 a full sign; about 0.4 sits in a line of text as a letter).
+## `stroke` is the rim's width as a fraction of `h`; `mark` scales the dots and
+## the stem's width (a narrow glyph needs them bolder to read at all).
+## `foot` is where the feet end (0.5 = the bottom of the `h` box; more runs the
+## legs on further, as a letter's descender would).
+static func warning_glyph(ci: CanvasItem, c: Vector2, h: float, fill: Color, ink_col: Color,
+		rot: float = 0.0, spread: float = 0.6, stroke: float = 0.085, mark: float = 1.0, foot: float = 0.5) -> void:
+	var at := func(x: float, y: float) -> Vector2: return c + Vector2(x, y).rotated(rot) * h
+	var t: float = stroke * h
+	var apex_y := -0.5
+	var base_y := 0.3
+	var foot_y := foot
+	var bw: float = (base_y - apex_y) * spread
+	var fw: float = (foot_y - apex_y) * spread
+	var apex: Vector2 = at.call(0.0, apex_y)
+	var bl: Vector2 = at.call(-bw, base_y)
+	var br: Vector2 = at.call(bw, base_y)
+	var fl: Vector2 = at.call(-fw, foot_y)
+	var fr: Vector2 = at.call(fw, foot_y)
+	ci.draw_colored_polygon(PackedVector2Array([apex, br, bl]), fill)
+	# legs apex -> feet, then the crossbar; round joints and ends
+	for seg in [[apex, fl], [apex, fr], [bl, br]]:
+		ci.draw_line(seg[0], seg[1], ink_col, t, true)
+	for p in [apex, fl, fr, bl, br]:
+		ci.draw_circle(p, t * 0.5, ink_col)
+	# the mark: dot, stem, dot, with clear air between them so neither end
+	# reads as part of the stem
+	var d: float = 0.05 * mark
+	var sw: float = 0.085 * mark  # stem width
+	ci.draw_circle(at.call(0.0, -0.205), d * h, ink_col)
+	var s0: Vector2 = at.call(0.0, -0.065)
+	var s1: Vector2 = at.call(0.0, 0.055)
+	ci.draw_line(s0, s1, ink_col, sw * h, true)
+	ci.draw_circle(s0, sw * 0.5 * h, ink_col)
+	ci.draw_circle(s1, sw * 0.5 * h, ink_col)
+	ci.draw_circle(at.call(0.0, 0.19), d * h, ink_col)
 
 
 ## A side's per-fight scaling, centred on `at`: a red sword with its
@@ -3798,6 +3876,183 @@ static func goat_rider(ci: CanvasItem, r: float, facing: float, t: float, pose: 
 	ink = keep
 
 
+const HORSE_BLACK := Color(0.14, 0.12, 0.13)
+const HORSE_SHADE := Color(0.08, 0.07, 0.08)
+const VALK_STEEL := Color(0.8, 0.82, 0.88)
+const VALK_STEEL_DARK := Color(0.52, 0.55, 0.62)
+const VALK_SKIN := Color(0.96, 0.8, 0.68)
+const VALK_HAIR := Color(0.97, 0.84, 0.5)
+const VALK_LEATHER := Color(0.42, 0.26, 0.16)
+
+
+## The Valkyrie, side view: a black warhorse at the gallop, its mane and tail in
+## the team colour, and on its back a rider in steel with a winged helm and a
+## golden braid, holding a lance. pose: run (the gallop), charge 0..1 (the horse
+## stretches out, she leans in and the lance comes down level), strike 0..1 (a
+## hit: the lance thrusts on).
+static func valkyrie(ci: CanvasItem, r: float, facing: float, t: float, pose: Dictionary = {},
+		ink_col: Color = OUTLINE, team_col: Color = Color(0.306, 0.517, 0.151)) -> void:
+	var keep := ink
+	ink = ink_col
+	var f := facing if absf(facing) > 0.01 else 1.0
+	# local (x forward, y down) in units of r -> screen
+	var P := func(x: float, y: float) -> Vector2: return Vector2(x * f * r, y * r)
+	var V := func(v: Vector2) -> Vector2: return Vector2(v.x * f * r, v.y * r)
+	var run: bool = bool(pose.get("run", false))
+	var charge: float = clampf(float(pose.get("charge", 0.0)), 0.0, 1.0)
+	var strike: float = clampf(float(pose.get("strike", 0.0)), 0.0, 1.0)
+	var hair_col := banner_color(team_col)
+	var ph: float = t * (9.0 + 7.0 * charge) if run else 0.0
+	var bob: float = absf(sin(ph)) * (0.05 + 0.03 * charge) if run else 0.0
+	var reach_leg: float = 0.5 + 0.3 * charge
+	if charge > 0.05:
+		# speed lines streaming off behind
+		for k in 4:
+			var y: float = -0.5 + 0.3 * float(k)
+			var x0: float = -1.2 - 0.3 * fmod(t * 3.0 + float(k) * 0.37, 1.0)
+			ci.draw_line(P.call(x0, y), P.call(x0 - 0.6, y), Color(1, 1, 1, 0.35 * charge), 2.0, true)
+	# a leg: hip -> knee -> hoof; `off` is its place in the gallop, `hind` bends
+	# the hock the other way
+	var Leg := func(hip: Vector2, off: float, hind: bool, col: Color) -> void:
+		var a: float = sin(ph + off) * reach_leg if run else 0.08 * (1.0 if hind else -1.0)
+		var fold: float = maxf(0.0, sin(ph + off + 1.4)) * 1.1 if run else 0.0
+		var knee: Vector2 = hip + Vector2(sin(a), cos(a)) * 0.4
+		var b: float = a + (fold if hind else -fold)
+		var hoof: Vector2 = knee + Vector2(sin(b), cos(b)) * 0.42
+		var ph_ := PackedVector2Array([P.call(hip.x, hip.y), P.call(knee.x, knee.y), P.call(hoof.x, hoof.y)])
+		ci.draw_polyline(ph_, ink, r * 0.15 + 2.0, true)
+		ci.draw_polyline(ph_, col, r * 0.15, true)
+		ci.draw_circle(P.call(hoof.x, hoof.y), r * 0.07, HORSE_SHADE)
+	var body_y: float = 0.05 - bob
+	# far legs
+	Leg.call(Vector2(0.55, body_y + 0.2), 2.4, false, HORSE_SHADE)
+	Leg.call(Vector2(-0.55, body_y + 0.2), 0.9, true, HORSE_SHADE)
+	# the tail: a long flowing plume, streaming out flat at the charge
+	var tail := PackedVector2Array()
+	for k in 7:
+		var u := float(k) / 6.0
+		tail.append(P.call(-0.82 - u * (0.65 + 0.35 * charge),
+			body_y - 0.2 + u * (0.55 - 0.45 * charge) + 0.08 * sin(ph * 0.5 - u * 3.0) * u))
+	ci.draw_polyline(tail, ink, r * 0.24 + 2.0, true)
+	ci.draw_polyline(tail, hair_col, r * 0.24, true)
+	for k in 2:
+		var strand := PackedVector2Array()
+		for p in tail:
+			strand.append(p + Vector2(0.0, r * (0.06 if k == 0 else -0.06)))
+		ci.draw_polyline(strand, hair_col.darkened(0.25), r * 0.04, true)
+	# the body
+	var body := PackedVector2Array()
+	for i in 30:
+		var a2 := TAU * float(i) / 30.0
+		var x: float = cos(a2) * 0.88
+		var y2: float = sin(a2) * (0.36 if cos(a2) < 0.3 else 0.4)
+		body.append(P.call(x, body_y + y2))
+	poly(ci, body, HORSE_BLACK, 2.2)
+	ci.draw_arc(P.call(-0.45, body_y - 0.02), r * 0.3, -2.2, -1.0, 8, Color(1, 1, 1, 0.12), r * 0.06, true)
+	# the neck and head, reaching on at the charge
+	var hb: Vector2 = Vector2(0.98 + 0.22 * charge, -0.72 + 0.28 * charge - bob)
+	var neck := PackedVector2Array([P.call(0.3, body_y - 0.32), P.call(hb.x - 0.08, hb.y - 0.04),
+		P.call(hb.x + 0.12, hb.y + 0.2), P.call(0.82, body_y + 0.05)])
+	poly(ci, neck, HORSE_BLACK, 2.0)
+	var head := PackedVector2Array([P.call(hb.x - 0.1, hb.y - 0.06), P.call(hb.x + 0.08, hb.y - 0.1),
+		P.call(hb.x + 0.44, hb.y + 0.14), P.call(hb.x + 0.44, hb.y + 0.28), P.call(hb.x + 0.28, hb.y + 0.32),
+		P.call(hb.x + 0.0, hb.y + 0.16)])
+	poly(ci, head, HORSE_BLACK, 2.0)
+	poly(ci, PackedVector2Array([P.call(hb.x - 0.04, hb.y - 0.06), P.call(hb.x + 0.0, hb.y - 0.26),
+		P.call(hb.x + 0.09, hb.y - 0.07)]), HORSE_BLACK, 1.6)
+	ci.draw_circle(P.call(hb.x + 0.12, hb.y + 0.03), r * 0.04, Color(0.9, 0.85, 0.8))
+	ci.draw_circle(P.call(hb.x + 0.38, hb.y + 0.22), r * 0.025, Color(0.35, 0.3, 0.3))
+	# bridle and rein
+	ci.draw_line(P.call(hb.x + 0.05, hb.y + 0.08), P.call(hb.x + 0.3, hb.y + 0.3), VALK_LEATHER, r * 0.04, true)
+	# the mane: locks along the crest, blown back
+	for k in 6:
+		var u2 := float(k) / 5.0
+		var root: Vector2 = Vector2(hb.x - 0.06, hb.y - 0.04).lerp(Vector2(0.3, body_y - 0.34), u2)
+		var tip: Vector2 = root + Vector2(-0.22 - 0.12 * charge, -0.02 + 0.1 * (1.0 - charge) + 0.05 * sin(ph * 0.7 + float(k)))
+		ci.draw_line(P.call(root.x, root.y), P.call(tip.x, tip.y), ink, r * 0.13 + 2.0, true)
+	for k in 6:
+		var u3 := float(k) / 5.0
+		var root2: Vector2 = Vector2(hb.x - 0.06, hb.y - 0.04).lerp(Vector2(0.3, body_y - 0.34), u3)
+		var tip2: Vector2 = root2 + Vector2(-0.22 - 0.12 * charge, -0.02 + 0.1 * (1.0 - charge) + 0.05 * sin(ph * 0.7 + float(k)))
+		ci.draw_line(P.call(root2.x, root2.y), P.call(tip2.x, tip2.y), hair_col, r * 0.13, true)
+	# forelock
+	ci.draw_line(P.call(hb.x + 0.0, hb.y - 0.06), P.call(hb.x + 0.14, hb.y + 0.04), hair_col, r * 0.08, true)
+	# near legs
+	Leg.call(Vector2(0.6, body_y + 0.22), 0.0, false, HORSE_BLACK)
+	Leg.call(Vector2(-0.5, body_y + 0.22), -1.5, true, HORSE_BLACK)
+	# saddle
+	poly(ci, PackedVector2Array([P.call(-0.32, body_y - 0.36), P.call(0.22, body_y - 0.36), P.call(0.18, body_y - 0.08),
+		P.call(-0.28, body_y - 0.08)]), VALK_LEATHER, 1.6)
+	# --- the rider, leaning in at the charge
+	var lean: float = 0.35 * charge
+	var hip := Vector2(-0.05, body_y - 0.42)
+	var up := Vector2(sin(lean), -cos(lean))
+	var shoulder: Vector2 = hip + up * 0.6
+	# her braid, streaming back behind everything of hers
+	var hd: Vector2 = shoulder + up * 0.28 + Vector2(0.04, 0.0)
+	var braid := PackedVector2Array([P.call(hd.x - 0.12, hd.y + 0.02), P.call(hd.x - 0.35, hd.y + 0.12 - 0.1 * charge),
+		P.call(hd.x - 0.6 - 0.15 * charge, hd.y + 0.2 - 0.18 * charge + 0.05 * sin(ph * 0.5))])
+	ci.draw_polyline(braid, ink, r * 0.1 + 1.6, true)
+	ci.draw_polyline(braid, VALK_HAIR, r * 0.1, true)
+	# near leg in a steel greave
+	var knee_r := Vector2(0.24, body_y - 0.2)
+	var foot_r := Vector2(0.16, body_y + 0.16)
+	ci.draw_line(P.call(hip.x, hip.y), P.call(knee_r.x, knee_r.y), ink, r * 0.17 + 2.0, true)
+	ci.draw_line(P.call(hip.x, hip.y), P.call(knee_r.x, knee_r.y), VALK_LEATHER.lightened(0.15), r * 0.17, true)
+	ci.draw_line(P.call(knee_r.x, knee_r.y), P.call(foot_r.x, foot_r.y), ink, r * 0.16 + 2.0, true)
+	ci.draw_line(P.call(knee_r.x, knee_r.y), P.call(foot_r.x, foot_r.y), VALK_STEEL, r * 0.16, true)
+	# torso: a steel breastplate over a mail skirt
+	var side := Vector2(-up.y, up.x)  # forward, square to her spine
+	poly(ci, PackedVector2Array([V.call(hip - side * 0.2 + up * 0.02), V.call(hip + side * 0.2 + up * 0.02),
+		V.call(hip + side * 0.24 - up * 0.12), V.call(hip - side * 0.24 - up * 0.12)]), VALK_STEEL_DARK, 1.4)
+	poly(ci, PackedVector2Array([V.call(shoulder - side * 0.22), V.call(shoulder + side * 0.24),
+		V.call(hip + side * 0.18 + up * 0.05), V.call(hip - side * 0.18 + up * 0.05)]), VALK_STEEL, 1.8)
+	ci.draw_line(V.call(shoulder + side * 0.05 - up * 0.05), V.call(hip + side * 0.04 + up * 0.12),
+		Color(1, 1, 1, 0.55), r * 0.04, true)
+	# head: face, then the helm with its wings
+	circle(ci, V.call(hd), r * 0.17, VALK_SKIN, 1.6)
+	var helm := PackedVector2Array()
+	for i in 9:
+		# tilted with her lean, so its ends meet the brow band
+		var a3: float = lerpf(PI, TAU, float(i) / 8.0) + lean
+		helm.append(V.call(hd + Vector2(cos(a3), sin(a3)) * 0.19))
+	# the brow band, a little below the dome's ends
+	helm.append(V.call(hd + side * 0.2 - up * 0.04))
+	helm.append(V.call(hd - side * 0.2 - up * 0.04))
+	poly(ci, helm, VALK_STEEL, 1.4)
+	for k in 3:
+		# a white wing swept back off the side of the helm
+		var w0: Vector2 = hd - side * 0.08 + up * 0.08
+		var w1: Vector2 = w0 - side * (0.2 + 0.07 * float(k)) + up * (0.22 - 0.07 * float(k))
+		ci.draw_line(V.call(w0), V.call(w1), ink, r * 0.07 + 1.6, true)
+		ci.draw_line(V.call(w0), V.call(w1), Color(0.98, 0.98, 1.0), r * 0.07, true)
+	ci.draw_circle(V.call(hd + side * 0.09 - up * 0.02), r * 0.028, Color(0.15, 0.2, 0.35))
+	# the lance: upright at rest, couched level for the charge; a strike drives it on
+	var rest := Vector2(0.28, -1.0).normalized()
+	var level := Vector2(1.0, 0.08).normalized()
+	var dir: Vector2 = rest.slerp(level, ease(charge, 0.7))
+	var hand: Vector2 = shoulder + side * 0.22 - up * 0.3 + dir * (0.18 * strike)
+	ci.draw_line(V.call(shoulder + side * 0.05), V.call(hand), ink, r * 0.13 + 2.0, true)
+	ci.draw_line(V.call(shoulder + side * 0.05), V.call(hand), VALK_STEEL_DARK, r * 0.13, true)
+	var butt: Vector2 = hand - dir * 0.45
+	var tip: Vector2 = hand + dir * 1.45
+	ci.draw_line(V.call(butt), V.call(tip), ink, r * 0.08 + 2.0, true)
+	ci.draw_line(V.call(butt), V.call(tip), LANCE_WOOD, r * 0.08, true)
+	var nrm := Vector2(-dir.y, dir.x)
+	# the vamplate guarding her hand, and the steel head
+	poly(ci, PackedVector2Array([V.call(hand + dir * 0.06 + nrm * 0.12), V.call(hand + dir * 0.3 + nrm * 0.04),
+		V.call(hand + dir * 0.3 - nrm * 0.04), V.call(hand + dir * 0.06 - nrm * 0.12)]), VALK_STEEL, 1.4)
+	poly(ci, PackedVector2Array([V.call(tip - dir * 0.05 + nrm * 0.06), V.call(tip + dir * 0.28),
+		V.call(tip - dir * 0.05 - nrm * 0.06)]), VALK_STEEL, 1.4)
+	circle(ci, V.call(hand), r * 0.08, VALK_STEEL_DARK, 1.2)
+	if strike > 0.05:
+		ci.draw_arc(V.call(tip + dir * 0.28), r * 0.22 * (1.0 + strike), 0.0, TAU, 14, Color(1, 1, 1, 0.6 * strike), 2.0, true)
+	ink = keep
+
+
+const LANCE_WOOD := Color(0.6, 0.42, 0.24)
+
+
 ## An ant from the Ant Hill, side view: three dark segments, six legs, feelers.
 static func ant(ci: CanvasItem, r: float, facing: float, t: float, ink_col: Color = OUTLINE) -> void:
 	var keep := ink
@@ -4466,6 +4721,9 @@ static func icon(ci: CanvasItem, kind: String, c: Vector2, r: float, t: float = 
 		"goatrider":
 			# the rider stands well above the goat: shrink to keep him on the card
 			creature(ci, "goatrider", r * 0.7, 1.0, t)
+		"valkyrie":
+			# horse, rider and lance are wide: shrink to fit
+			creature(ci, "valkyrie", r * 0.55, 1.0, t)
 		"anthill":
 			creature(ci, "anthill", r, 1.0, t)
 		"chicken":

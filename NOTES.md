@@ -95,6 +95,11 @@ extraction candidate.**
    hit per target, `rammed` keyed by instance id; `take_damage` calls
    `_wool_hit`, which shoves a melee attacker whose blow came from its own body;
    `--scenario=goat`, `--scenario=goatart`),
+   `charge` (Valkyrie: `_tick_charge` after `_move` counts unbroken movement,
+   then doubles `speed` and lances each enemy ground troop ahead once per
+   charge (`lanced`); `_attack` lands `charge.hit` while `charging`;
+   `_end_charge` on stopping, stun or shove; `charge_anim` is the picture only;
+   `--scenario=valkyrie`, `--scenario=valkart`),
    `trail` (ants: the old grave / lane-reversal rule is gone. Ants are
    `buildings_only`; `_die` marks the killer (`last_attacker`, never a
    tower) in `arena.ant_marks` until frame + `mark_time` s, and
@@ -130,7 +135,7 @@ card cycles back as the same id, and a `becomes` / `gives` card (Pen, either
 whelp) is a new id. `--scenario=cardcycle` checks the Penny / Pen / whelp hand
 and deck, the draft pool and Esc pause. Anything that rewrites a hand or deck wholesale gets fresh ids from
 `_sync_ids()`; code that moves single cards must move the id with the kind.
-`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 37).
+`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 40).
 Opening hand `OPENING_HAND` 3, `HAND_MAX` 6. Draws every `DRAW_INTERVAL` 12 s, and every gold spent
 takes `DRAW_PER_GOLD` 1 s off the wait (`spend_gold_draw()`; overflow carries) —
 except a `draws` card, whose gold pulls nothing: its one drawn card is all it gives.
