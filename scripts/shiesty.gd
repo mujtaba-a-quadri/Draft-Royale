@@ -98,7 +98,7 @@ func _physics_process(delta: float) -> void:
 		poison_timer -= delta
 		if poison_timer <= 0.0:
 			poison_timer += DDUnit.POISON_PERIOD
-			take_damage(poison * DDUnit.POISON_MULT, position)
+			arena.tick_damage(self, poison * DDUnit.POISON_MULT)
 			if dead:
 				return
 	if knock_time > 0.0:
@@ -166,20 +166,30 @@ func _land() -> void:
 ## enemy troops that could attack him. Ties go to the nearer bridge. He never
 ## changes his mind on the way.
 func _pick_bridge() -> float:
-	var a: float = float(arena.BRIDGE_COL_A)
-	var b: float = float(arena.BRIDGE_COL_B)
-	var split: float = (a + b) * 0.5 + 0.5
-	var threat := [0, 0]
+	var cols: Array = []
+	for br in arena.bridges:
+		cols.append(float(br[0]))
+	var threat: Array = []
+	threat.resize(cols.size())
+	threat.fill(0)
 	for u in arena.units:
 		# checked before the call: a freed entry cannot even be passed as a Node
 		if not is_instance_valid(u) or not _can_hit_me(u):
 			continue
-		var col: float = float(arena.tile_of(u.position).x) + 0.5
-		threat[0 if col < split else 1] += 1
+		# each troop counts against the bridge its lane crosses by
+		threat[cols.find(arena.nearest_bridge_col(arena.tile_of(u.position).x))] += 1
 	lane_threat = threat
-	if threat[0] != threat[1]:
-		return a if threat[0] < threat[1] else b
-	return arena.nearest_bridge_col(arena.tile_of(position).x)
+	var least: int = threat.min()
+	var mine: float = arena.nearest_bridge_col(arena.tile_of(position).x)
+	if int(threat[cols.find(mine)]) == least:
+		return mine
+	# the quietest bridge; among equals, the one nearest him
+	var best := -1
+	var here: float = float(arena.tile_of(position).x) + 0.5
+	for i in cols.size():
+		if int(threat[i]) == least and (best < 0 or absf(float(cols[i]) - here) < absf(float(cols[best]) - here)):
+			best = i
+	return float(cols[best])
 
 
 ## An enemy troop or building that would pick him as a target.
@@ -208,7 +218,7 @@ func _route_home(from_p: Vector2, goal: Vector2) -> Vector2:
 	var lane: Vector2 = arena.tile_center(bc, top + 0.5).lerp(arena.tile_center(bc, bottom + 0.5), 0.5)
 	var far_bank: Vector2 = arena.tile_center(bc, top - 1.2) if toward_enemy else arena.tile_center(bc, bottom + 1.2)
 	var off: float = absf(from_p.y - lane.y) if arena.LANDSCAPE else absf(from_p.x - lane.x)
-	if off > float(arena.TILE) * (float(arena.BRIDGE_HALF) - 0.3):
+	if off > float(arena.TILE) * (float(arena.bridge_half(bc)) - 0.3):
 		return arena.tile_center(bc, bottom + 1.0) if toward_enemy else arena.tile_center(bc, top - 1.0)
 	return far_bank
 
@@ -217,8 +227,8 @@ func _escape() -> void:
 	arena.stat_shiesty_escaped += 1
 	arena.gold[team] = minf(float(arena.gold_max), float(arena.gold[team]) + stolen)
 	arena.banner_flash("Shiesty gets away with %d gold" % int(stolen))
-	# the card is the reward for the trip itself; the coin is the bonus
-	arena.draw_card(team)
+	# the card (with the relic: arena.ability_draws) is for the trip itself; the coin is the bonus
+	arena.ability_payoff(team)
 	_finish()
 
 
@@ -237,7 +247,7 @@ func _tick_status(delta: float) -> void:
 				burn_stack = maxf(0.0, burn_stack - tick_dmg)
 				burn_ticks += 1
 				burn_pulse = 1.0
-				take_damage(tick_dmg, position)
+				arena.tick_damage(self, tick_dmg)
 				if dead or burn_ticks >= burn_max_ticks or burn_stack <= 0.0:
 					clear_status()
 	elif status == DDUnit.Status.SLOW:
@@ -301,15 +311,15 @@ func apply_impulse(dir: Vector2, tiles: float, duration: float) -> void:
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0 or untargetable:
 		return
-	hp -= amount
+	hp -= arena.scale_hit(amount, team)
 	if hp <= 0.0:
 		var enemy_team := 1 - team
 		arena.stat_shiesty_caught += 1
 		if stolen > 0.0:
 			arena.gold[enemy_team] = minf(float(arena.gold_max), float(arena.gold[enemy_team]) + stolen)
 			arena.banner_flash("Shiesty is caught — %d gold recovered" % int(stolen))
-		# caught or not, the trip pays a card; only the coin has to get home
-		arena.draw_card(team)
+		# caught or not, the trip pays a card (with the relic); only the coin has to get home
+		arena.ability_payoff(team)
 		_finish()
 	queue_redraw()
 

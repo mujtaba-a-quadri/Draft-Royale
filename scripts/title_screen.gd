@@ -26,8 +26,8 @@ const MARGIN := -90.0
 const ARROWS := false
 ## gap between a resting quadrant and the axes, and how far a hovered one lifts
 const AXIS_GAP := 9.0
-const LIFT_PX := 22.0
-const GROW := 0.04
+const LIFT_PX := 30.0
+const GROW := 0.06
 const LIFT_RATE := 12.0
 const CIRCLE_R := 150.0
 
@@ -173,15 +173,23 @@ func _choose(i: int) -> void:
 
 # ----------------------------------------------------------------- collection
 
-## The debug all-cards view, enlarged: fewer columns, full-height cards.
+## Every card's full face, description included, straight on the graph paper
+## (no backing). A face only carries its description at COLLECTION_CARD_W px
+## or wider, so the columns are as many as fit at that width (5 at 1600 px).
+const COLLECTION_CARD_W := 270.0
+
+
 func _open_collection() -> void:
 	hover = -1
 	collection = DDCardGrid.new()
 	collection.name = "Collection"
-	collection.cols = 6
+	collection.full = true
+	collection.backing = false
 	collection.aspect = 1.4
 	collection.position = Vector2(40.0, 92.0)
-	collection.size = Vector2(size.x - 80.0, size.y - 120.0)
+	collection.size = Vector2(size.x - 80.0, size.y - 92.0)
+	var room: float = collection.size.x - DDCardGrid.PAD * 2.0 + DDCardGrid.GAP
+	collection.cols = maxi(1, int(floorf(room / (COLLECTION_CARD_W + DDCardGrid.GAP))))
 	collection.set_kinds(DDCard.all_kinds())
 	collection.card_pressed.connect(_open_preview)
 	add_child(collection)
@@ -253,16 +261,13 @@ func _draw() -> void:
 	if collection != null:
 		_draw_collection_header()
 		return
-	# resting quadrants first, the lifted one over the axes
+	# quadrants, resting ones first, then the axes: the thick axis lines always sit
+	# over the quadrant edges, even while a button is lifting or settling
 	var order: Array = [0, 1, 2, 3]
 	order.sort_custom(func(a, b): return float(lift[a]) < float(lift[b]))
 	for i in order:
-		if float(lift[i]) < 0.02:
-			_draw_quadrant(i)
+		_draw_quadrant(i)
 	_draw_axes()
-	for i in order:
-		if float(lift[i]) >= 0.02:
-			_draw_quadrant(i)
 	_draw_title_circle()
 
 
@@ -291,14 +296,21 @@ func _draw_quadrant(i: int) -> void:
 	var ink: Color = o["ink"]
 	var l: float = float(lift[i])
 	var r := quad_rect(i)
-	# lifted: pushed away from the origin and grown about its own middle
-	var at: Vector2 = r.get_center() + quad_dir(i) * LIFT_PX * l
+	# lifted: up off the paper and away from both axes. The inner corner (the one
+	# at the origin) moves out diagonally and the quadrant grows outward from it,
+	# so its two inner edges both pull clear of the axes; growing about its middle
+	# would push them back in, since most of a quadrant is off screen.
+	var away := Vector2(-1.0 if i % 2 == 0 else 1.0, -1.0 if i < 2 else 1.0)
 	var s: float = 1.0 + GROW * l
-	var drawn := Rect2(at - r.size * s * 0.5, r.size * s)
+	var inner := Vector2(r.end.x if i % 2 == 0 else r.position.x, r.end.y if i < 2 else r.position.y)
+	inner += away * LIFT_PX * l
+	var far: Vector2 = inner + away * r.size * s
+	var drawn := Rect2(Vector2(minf(inner.x, far.x), minf(inner.y, far.y)), r.size * s)
 	if l > 0.02:
+		# its shadow stays down on the paper, showing in the gap it left
 		var shadow := drawn
-		shadow.position += Vector2(8.0, 10.0) * l
-		draw_rect(shadow, Color(0.1, 0.06, 0.16, 0.22 * l), true)
+		shadow.position += -away * LIFT_PX * 0.55 * l + Vector2(6.0, 9.0) * l
+		draw_rect(shadow, Color(0.1, 0.06, 0.16, 0.26 * l), true)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = fill.lerp(Color(1, 1, 1), 0.25 * l)
 	sb.border_color = ink

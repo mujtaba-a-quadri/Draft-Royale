@@ -10,6 +10,9 @@ var dmg := 12.0
 var reach := 7.0
 var interval := 1.0
 var radius_t := 0.9
+## A side tower is drawn as an 8/2 star with its tips this many tiles from the
+## centre: just past the hitbox (radius_t), so the hitbox nearly reaches them.
+const STAR_TIP_T := 1.0
 var crown := false
 var dead := false
 var atk_cd := 0.0
@@ -32,13 +35,23 @@ var poison_timer := 0.0
 ## hand and since he scooped Shiesty up. Nothing in the simulation reads them.
 var throw_t := 9.0
 var toss_t := 9.0
+## Flammenmeister / Man-Mantis: seconds since he cast his aimed ability, and
+## where at (cosmetic, like throw_t).
+var cast_t := 9.0
+var cast_at := Vector2.ZERO
 
 
 ## The goblin commander is the crown tower of whoever holds the Shiesty ability.
 func is_goblin() -> bool:
 	if not crown or area == null or area.ability.size() <= int(team):
 		return false
-	return String(area.ability[int(team)]) != "tentacle"
+	return String(area.ability[int(team)]) == "shiesty"
+
+
+## Called by the arena when an aimed ability goes off: the commander points.
+func play_cast(at: Vector2) -> void:
+	cast_t = 0.0
+	cast_at = at
 
 
 ## +1 when the enemy is to the right of this tower, -1 when to the left.
@@ -83,6 +96,7 @@ func _physics_process(delta: float) -> void:
 	clock += delta
 	throw_t += delta
 	toss_t += delta
+	cast_t += delta
 	flash = maxf(0.0, flash - delta * 5.0)
 	if area.match_over:
 		queue_redraw()
@@ -92,7 +106,7 @@ func _physics_process(delta: float) -> void:
 		poison_timer -= delta
 		if poison_timer <= 0.0:
 			poison_timer += DDUnit.POISON_PERIOD
-			take_damage(poison * DDUnit.POISON_MULT * DDUnit.POISON_BUILDING, position)
+			area.tick_damage(self, poison * DDUnit.POISON_MULT * DDUnit.POISON_BUILDING)
 			if dead:
 				return
 	# burn: towers take 20 % of the stack per tick instead of a troop's 40 %
@@ -104,14 +118,19 @@ func _physics_process(delta: float) -> void:
 			var tick_dmg := floorf(burn_stack * BURN_RATE)
 			burn_ticks += 1
 			burn_pulse = 1.0
-			if tick_dmg <= 0.0 or burn_ticks >= burn_max_ticks:
+			if tick_dmg <= 0.0:
 				burn_stack = 0.0
 				burn_ticks = 0
 				burn_timer = 0.0
 			else:
 				burn_stack = maxf(0.0, burn_stack - tick_dmg)
 				burn_timer = 1.0
-				take_damage(tick_dmg, position)
+				area.tick_damage(self, tick_dmg)
+				# the last tick still lands, as on a troop; then the fire is out
+				if burn_ticks >= burn_max_ticks:
+					burn_stack = 0.0
+					burn_ticks = 0
+					burn_timer = 0.0
 	# a curled whelp or hedgehog is the last thing worth a shot: while the
 	# current target is curled, look again every tick for anything better
 	if target == null or not _target_valid(target) or area.tiles_between(position, target.position) > reach + 1.5 \
@@ -128,7 +147,9 @@ func _physics_process(delta: float) -> void:
 		if is_goblin():
 			shot = "spear"
 			throw_t = 0.0
-		area.spawn_projectile(position, target.position, team, dmg, 0.0, shot,
+		# the king tower's shots carry its side's relic multiplier (Warlord's Horn)
+		var shot_dmg: float = dmg * float(area.king_mult(int(team))) if crown else dmg
+		area.spawn_projectile(position, target.position, team, shot_dmg, 0.0, shot,
 			0, "bolt", false, null, 0.0, target)
 	queue_redraw()
 
@@ -186,7 +207,8 @@ func apply_burn(amount: float, max_ticks: int = 4) -> void:
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0:
 		return
-	hp -= amount
+	# the attacker's Puissance and this side's Armor (direct hits only)
+	hp -= area.scale_hit(amount, int(team))
 	flash = 0.5
 	if hp <= 0.0:
 		hp = 0.0
@@ -217,18 +239,25 @@ func _draw() -> void:
 		var team_col: Color = col.lightened(0.18)
 		# the tail sweeps away from the board: left side mirrors it outward
 		DDArt.commander(self, ab, w * 0.62, clock, ready, team_col, int(team) == 0,
-			{"face": face_dir(), "throw": throw_t, "toss": toss_t})
+			{"face": face_dir(), "throw": throw_t, "toss": toss_t, "cast": cast_t})
 	elif area.get("diamond_towers") == true:
 		DDArt.diamond_tower(self, Vector2.ZERO, w, col, flash, area.team_ink(int(team)))
 	else:
-		DDArt.tower(self, w, h, col, flash, crown, area.team_ink(int(team)))
+		DDArt.star_tower(self, Vector2.ZERO, STAR_TIP_T * float(area.TILE), col, flash, area.team_ink(int(team)))
 	if hp <= 0.0:
 		return
 	if burn_timer > 0.0:
 		var bc := DDUnit.burn_color(burn_ticks, burn_max_ticks)
 		var a := 0.18 + 0.42 * burn_pulse
-		draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, a), true)
-		draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, 0.8), false, 2.0)
+		if crown or area.get("diamond_towers") == true:
+			draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, a), true)
+			draw_rect(Rect2(-w * 0.55, -h * 0.6, w * 1.1, h * 1.15), Color(bc.r, bc.g, bc.b, 0.8), false, 2.0)
+		else:
+			# the burn glow takes the star's shape
+			var star := DDArt.star8_points(Vector2.ZERO, STAR_TIP_T * float(area.TILE) * 1.06)
+			draw_colored_polygon(star, Color(bc.r, bc.g, bc.b, a))
+			star.append(star[0])
+			draw_polyline(star, Color(bc.r, bc.g, bc.b, 0.8), 2.0, true)
 	if poison > 0.0:
 		DDArt.poison_badge(self, Vector2(-w * 0.62, -h * 0.5 - 18.0), poison, poison_timer / DDUnit.POISON_PERIOD)
 	var bw := w * 1.05
@@ -239,3 +268,6 @@ func _draw() -> void:
 	draw_rect(Rect2(-bw * 0.5 + 1.5, by + 1.5, (bw - 3.0) * frac, 4.0), hc, true)
 	draw_string(ThemeDB.fallback_font, Vector2(bw * 0.5 + 6.0, by + 9.0), "%d" % int(ceil(hp)),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.95, 0.95, 0.9))
+	if crown and area.get("puissance") != null:
+		# the side's Puissance and Armor for this fight, over its commander
+		DDArt.scaling_badges(self, Vector2(0.0, by - 13.0), float(area.puissance[int(team)]), float(area.armor[int(team)]))

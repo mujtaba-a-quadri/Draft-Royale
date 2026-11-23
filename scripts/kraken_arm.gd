@@ -418,14 +418,19 @@ func _tick_burn(delta: float) -> void:
 		return
 	var tick_dmg := floorf(burn_stack * BURN_RATE)
 	burn_ticks += 1
-	if tick_dmg <= 0.0 or burn_ticks >= burn_max_ticks:
+	if tick_dmg <= 0.0:
 		burn_stack = 0.0
 		burn_ticks = 0
 		burn_timer = 0.0
 	else:
 		burn_stack = maxf(0.0, burn_stack - tick_dmg)
 		burn_timer = 1.0
-		take_damage(tick_dmg, position)
+		arena.tick_damage(self, tick_dmg)
+		# the last tick still lands, as on a troop; then the fire is out
+		if burn_ticks >= burn_max_ticks:
+			burn_stack = 0.0
+			burn_ticks = 0
+			burn_timer = 0.0
 
 
 func apply_burn(amount: float, max_ticks: int = 4) -> void:
@@ -441,7 +446,7 @@ func apply_burn(amount: float, max_ticks: int = 4) -> void:
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0:
 		return
-	hp -= amount
+	hp -= arena.scale_hit(amount, team)
 	flash = 0.5
 	if arena.show_damage():
 		arena.spawn_damage_text(position + Vector2(0.0, -float(arena.TILE) * 1.6), amount,

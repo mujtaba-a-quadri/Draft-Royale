@@ -46,6 +46,9 @@ func _decide() -> void:
 			continue
 		if arena.card_locked(player, i):
 			continue
+		# Dominion cards have no target: DDBot._play_dominion casts them
+		if DDCard.get_card(kind).has("dominion"):
+			continue
 		for pos in _anchors(kind):
 			if not arena.can_deploy(player, kind, pos):
 				continue

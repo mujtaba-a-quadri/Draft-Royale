@@ -21,6 +21,13 @@ const RIVER_TOP := 14
 const RIVER_BOTTOM := 15
 const BRIDGE_COL_A := 5.0
 const BRIDGE_COL_B := 13.0
+## This match's bridges, each [middle x, half width] in tile columns (see
+## BRIDGE_HALF below). Runs, elites, the bot sim and the dev scenarios keep the
+## two 3-tile bridges; a plain match has three: a 4-tile one in the middle and a
+## 2.5-tile one a tile in from each edge (`--bridges=2|3` forces either).
+const TWO_BRIDGES := [[5.0, 1.5], [13.0, 1.5]]
+const THREE_BRIDGES := [[2.25, 1.25], [9.0, 2.0], [15.75, 1.25]]
+var bridges: Array = TWO_BRIDGES
 const CLAIM_TIME := 4.0
 const TOWER_BUFFER := 3.5
 const ABILITY_COST := 2
@@ -53,6 +60,236 @@ const TENTACLE_TIME := 4.0
 static func tentacle_total_damage() -> float:
 	return TENTACLE_DMG * float(int(ceil(TENTACLE_TIME / TENTACLE_INTERVAL)))
 const GOBLIN_DMG := 30.0
+
+## Every commander's ability, the random pool a match (and a run) draws from.
+## tentacle: the jelly; shiesty: the goblin; flame: Flammenmeister; drone:
+## Man-Mantis. The last two are aimed: the button arms them, the next click on a
+## unit fires them (use_ability_on).
+const ABILITIES := ["tentacle", "shiesty", "flame", "drone"]
+const AIMED_ABILITIES := ["flame", "drone"]
+## Flammenmeister (1 gold): on a friendly unit, FLAME_REGEN hp a second for
+## FLAME_REGEN_TIME s; on an enemy unit, a firebolt from his tower with
+## FLAME_BOLT_BURN burn (the Firebolt card's is 60).
+const FLAME_COST := 1
+const FLAME_REGEN := 6.0
+const FLAME_REGEN_TIME := 4.0
+const FLAME_BOLT_BURN := 30.0
+## Man-Mantis (2 gold): the drone eats DRONE_DPS a second out of an enemy unit
+## until it dies, then a parasite bursts out on the caster's side. Its size by
+## the damage the drone did: up to each PARASITE_TIERS limit, that tier's unit.
+const DRONE_DPS := 5.0
+const PARASITE_TIERS := [[20.0, "parasite1"], [60.0, "parasite2"], [150.0, "parasite3"], [INF, "parasite4"]]
+
+
+## A hit of `amount` on a body of `victim_team`, after the attacker's Puissance
+## and the victim's Armor. Every direct hit on a unit, tower or boss passes
+## through here (their take_damage); damage over time does not (dot_hit). A
+## direct hit always comes from the other side, so the attacker is never
+## needed. With both at zero the hit is returned untouched, bit for bit.
+func scale_hit(amount: float, victim_team: int) -> float:
+	if dot_hit:
+		# consumed by the tick itself, so anything its death sets off (a
+		# snowman's blast) counts as a direct hit again
+		dot_hit = false
+		return amount
+	if amount <= 0.0 or victim_team < 0 or victim_team > 1:
+		return amount
+	var p: float = float(puissance[1 - victim_team])
+	var a: float = float(armor[victim_team])
+	if p == 0.0 and a == 0.0:
+		return amount
+	return maxf(1.0, amount + p - a)
+
+
+## A damage-over-time tick (burn, poison, the drone) on `body`, from its own
+## spot: marked so Puissance and Armor leave it alone.
+func tick_damage(body: Node, amount: float) -> void:
+	dot_hit = true
+	body.take_damage(amount, body.position)
+	dot_hit = false
+
+
+func add_puissance(team: int, n: float) -> void:
+	puissance[team] = float(puissance[team]) + n
+
+
+func add_armor(team: int, n: float) -> void:
+	armor[team] = float(armor[team]) + n
+
+
+# ----------------------------------------   b----------------------------- relics
+
+func has_relic(team: int, id: String) -> bool:
+	return team >= 0 and team <= 1 and (relics[team] as Array).has(id)
+
+
+## The start-of-fight relics: Puissance, Armor, the commander's heal.
+func _apply_relics_start() -> void:
+	for team in 2:
+		for id in relics[team]:
+			var d: Dictionary = RELIC_DB.get_relic(String(id))
+			if d.has("start_puissance"):
+				add_puissance(team, float(d["start_puissance"]))
+			if d.has("start_armor"):
+				add_armor(team, float(d["start_armor"]))
+			if d.has("start_heal"):
+				var king: Node = _king_of(team)
+				if king != null and is_instance_valid(king):
+					king.hp = minf(float(king.max_hp), float(king.hp) + float(d["start_heal"]))
+
+
+## How much harder `team`'s king tower hits (the Warlord's Horn).
+func king_mult(team: int) -> float:
+	var m := 1.0
+	for id in relics[team]:
+		m *= float(RELIC_DB.get_relic(String(id)).get("king_mult", 1.0))
+	return m
+
+
+## A card was just played: the Hourglass starts over, and each windowed relic
+## notes the time, drops what has fallen out of its window, and fires (then
+## empties) once it holds enough.
+func _relics_card_played(team: int) -> void:
+	if (relics[team] as Array).is_empty():
+		return
+	relic_idle[team] = 0.0
+	for id in relics[team]:
+		var w: Dictionary = RELIC_DB.get_relic(String(id)).get("window", {})
+		if w.is_empty():
+			continue
+		var plays: Array = relic_window(team, String(id))
+		plays.append(fight_t)
+		if plays.size() >= int(w["need"]):
+			plays.clear()
+			_relic_fire(team, String(id), String(w["gives"]))
+		relic_plays[team][String(id)] = plays
+
+
+## The plays still inside a windowed relic's window, oldest first (pruned now).
+func relic_window(team: int, id: String) -> Array:
+	var w: Dictionary = RELIC_DB.get_relic(id).get("window", {})
+	var plays: Array = relic_plays[team].get(id, [])
+	if w.is_empty():
+		return plays
+	while not plays.is_empty() and fight_t - float(plays[0]) > float(w["secs"]):
+		plays.pop_front()
+	relic_plays[team][id] = plays
+	return plays
+
+
+func _tick_relics(team: int, delta: float, income: float, gold_before: float = 0.0) -> void:
+	relic_idle[team] = float(relic_idle[team]) + delta
+	for id in relics[team]:
+		var d: Dictionary = RELIC_DB.get_relic(String(id))
+		if d.has("window"):
+			# the oldest card falls out of the window on time, not only on a play
+			relic_window(team, String(id))
+		if d.has("idle"):
+			var secs: float = float(d["idle"]["secs"])
+			if float(relic_idle[team]) >= secs:
+				relic_idle[team] = float(relic_idle[team]) - secs
+				_relic_fire(team, String(id), "draw")
+		if d.has("ledger"):
+			var every: int = int(d["ledger"]["every"])
+			var before: int = int(floorf(float(relic_income[team])))
+			var after: int = int(floorf(float(relic_income[team]) + income))
+			for n in range(before + 1, after + 1):
+				if n % every == 0:
+					_relic_fire(team, String(id), "gold")
+		if d.has("lucky"):
+			# only the income itself crossing the line counts, not a gold gift
+			var line: float = float(d["lucky"]["at"])
+			if gold_before < line and float(gold[team]) >= line:
+				_relic_fire(team, String(id), "gold")
+	relic_income[team] = float(relic_income[team]) + income
+
+
+func _relic_fire(team: int, id: String, gives: String) -> void:
+	if gives == "gold":
+		gold[team] = minf(gold_max, float(gold[team]) + 1.0)
+	elif gives == "draw":
+		draw_card(team)
+	relic_glow["%d:%s" % [team, id]] = 0.8
+	relic_fires[id] = int(relic_fires.get(id, 0)) + 1
+
+
+## How far round a relic's ring is (0..1) and the count it shows (-1: none).
+## A windowed relic: the oldest card still counting, as a share of the window,
+## and how many cards are in it. The Hourglass: the wait so far. The Ledger:
+## progress to the next doubled gold, and which gold of the four it is on.
+func relic_progress(team: int, id: String) -> Array:
+	var d: Dictionary = RELIC_DB.get_relic(id)
+	if d.has("window"):
+		var plays: Array = relic_window(team, id)
+		if plays.is_empty():
+			return [0.0, 0]
+		return [clampf((fight_t - float(plays[0])) / float(d["window"]["secs"]), 0.0, 1.0), plays.size()]
+	if d.has("idle"):
+		return [clampf(float(relic_idle[team]) / float(d["idle"]["secs"]), 0.0, 1.0), -1]
+	if d.has("lucky"):
+		# the way up to the lucky line; full (and quiet) once past it
+		var at := float(d["lucky"]["at"])
+		return [clampf(float(gold[team]) / at, 0.0, 1.0) if float(gold[team]) < at else 0.0, -1]
+	if d.has("ledger"):
+		var every := float(d["ledger"]["every"])
+		var inc := float(relic_income[team])
+		return [fmod(inc, every) / every, int(fmod(inc, every))]
+	return [0.0, -1]
+
+
+## The relic column, in the margin left of the board under the run's lines:
+## one column of big medallions with their names while there are a few, two
+## columns of medallions once there are more. Ringed relics show their clock.
+## The one under the mouse explains itself.
+func _draw_relics() -> void:
+	relic_hits = []
+	var list: Array = relics[0]
+	if list.is_empty():
+		return
+	var font := ThemeDB.fallback_font
+	var top: float = ORIGIN.y + 140.0 if (Run.active and not Run.encounter().is_empty()) else ORIGIN.y + 10.0
+	var two_cols: bool = list.size() > 6
+	var rad: float = 24.0 if two_cols else 26.0
+	var row_h: float = 66.0 if two_cols else 68.0
+	draw_string(font, Vector2(16.0, top), "RELICS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.86, 0.55, 0.9))
+	for i in list.size():
+		var id := String(list[i])
+		var col: int = i % 2 if two_cols else 0
+		var row: int = int(i / 2) if two_cols else i
+		var c := Vector2(16.0 + rad + float(col) * 100.0, top + 18.0 + rad + float(row) * row_h)
+		var prog: Array = relic_progress(0, id)
+		DDArt.relic_medal(self, id, c, rad, float(prog[0]), int(prog[1]),
+			float(relic_glow.get("0:%s" % id, 0.0)), fight_t)
+		if not two_cols:
+			draw_string(font, Vector2(c.x + rad + 10.0, c.y + 5.0), RELIC_DB.relic_name(id), HORIZONTAL_ALIGNMENT_LEFT,
+				ORIGIN.x - (c.x + rad + 10.0) - 6.0, 14, Color(0.92, 0.9, 0.84))
+		relic_hits.append({"id": id, "c": c, "r": rad})
+	var m := get_global_mouse_position()
+	for h in relic_hits:
+		if m.distance_to(h["c"]) <= float(h["r"]):
+			_draw_relic_tip(String(h["id"]), h["c"] + Vector2(float(h["r"]) + 10.0, -float(h["r"])))
+
+
+func _draw_relic_tip(id: String, at: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var w := 280.0
+	var body := String(RELIC_DB.get_relic(id).get("text", ""))
+	var body_h: float = font.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, w - 20.0, 13).y
+	var box := Rect2(at, Vector2(w, 34.0 + body_h))
+	draw_rect(box, Color(0.08, 0.07, 0.11, 0.96), true)
+	draw_rect(box, Color(1.0, 0.88, 0.5, 0.9), false, 2.0)
+	draw_string(font, box.position + Vector2(10.0, 22.0), RELIC_DB.relic_name(id), HORIZONTAL_ALIGNMENT_LEFT, w - 20.0, 16,
+		Color(1.0, 0.9, 0.6))
+	draw_multiline_string(font, box.position + Vector2(10.0, 42.0), body, HORIZONTAL_ALIGNMENT_LEFT, w - 20.0, 13, -1,
+		Color(0.9, 0.9, 0.92))
+
+
+## Which parasite a drone that did `dealt` damage leaves behind.
+static func parasite_for(dealt: float) -> String:
+	for tier in PARASITE_TIERS:
+		if dealt <= float(tier[0]):
+			return String(tier[1])
+	return "parasite4"
 
 ## Orientation. LANDSCAPE = true  â†’ your half on the LEFT, enemy on the RIGHT,
 ##                                   hand along the bottom of the screen.
@@ -141,7 +378,7 @@ const HAND_MAX := 6
 const OPENING_HAND := 3
 ## A draw every DRAW_INTERVAL seconds, and every gold spent takes DRAW_PER_GOLD
 ## seconds off the wait for the next one (spend 5, draw 5 s sooner).
-const DRAW_INTERVAL := 12.0
+const DRAW_INTERVAL := 10.0
 const DRAW_PER_GOLD := 1.0
 var draw_timer := [DRAW_INTERVAL, DRAW_INTERVAL]
 var hands := [[], []]
@@ -179,6 +416,45 @@ var debug_shelf := false
 var debug_kind := ""
 var ability := ["tentacle", "shiesty"]
 var ability_cd := [ABILITY_COOLDOWN, ABILITY_COOLDOWN]
+## Per player: does the hero ability pay a card when its payload lands
+## (tentacle on death, Shiesty home or caught)? Off by default; meant to come
+## from a relic. See ability_payoff().
+var ability_draws := [false, false]
+## The player whose aimed ability (flame, drone) is armed and waiting for a
+## click on a unit, or -1. Right-click or Esc puts it away.
+var ability_aim := -1
+## Per-fight scaling, per team (Slay the Spire's Strength and Dexterity):
+## Puissance adds that much to every direct hit the team lands; Armor takes that
+## much off every direct hit the team takes (never below 1). Damage over time
+## (burn, poison, the drone) is untouched. Both live and die with the arena, so
+## every fight starts from the run's base (Run.puissance / Run.armor, for
+## relics) and builds from there. See scale_hit().
+var puissance := [0.0, 0.0]
+var armor := [0.0, 0.0]
+## True only while a damage-over-time tick is being dealt (tick_damage), so
+## scale_hit leaves it alone.
+var dot_hit := false
+
+## Relics (scripts/relic_db.gd), per team: side 0's come from the run (or
+## --relics=a,b for a plain match); side 1 has none yet. Their timers run on
+## fight_t, the fight's own physics clock, so they are deterministic.
+const RELIC_DB := preload("res://scripts/relic_db.gd")
+var relics := [[], []]
+var fight_t := 0.0
+## per team, per windowed relic id: the fight_t of each card played that is
+## still inside that relic's window (oldest first)
+var relic_plays := [{}, {}]
+## per team: seconds since the last card played (the Hourglass)
+var relic_idle := [0.0, 0.0]
+## per team: gold earned over time this fight, before the cap (Miser's Ledger)
+var relic_income := [0.0, 0.0]
+## "team:id" -> seconds left of the glow a relic gives off when it fires
+var relic_glow := {}
+## the relic icons as last drawn, for the tooltip and tests: [{id, c, r}]
+var relic_hits: Array = []
+var forced_relics: Array = []
+## how many times each relic has fired this fight (tests, and the curious)
+var relic_fires := {}
 var stat_shiesty_escaped := 0
 var stat_shiesty_caught := 0
 var control := [[], []]
@@ -204,6 +480,10 @@ func _ready() -> void:
 			bot_players = [false, false]
 		elif a.begins_with("--ability="):
 			forced = a.substr(10)
+		elif a.begins_with("--relics="):
+			for rid in String(a.substr(9)).split(",", false):
+				if not RELIC_DB.get_relic(rid).is_empty():
+					forced_relics.append(rid)
 		elif a.begins_with("--colors="):
 			var parts := String(a.substr(9)).split(",")
 			if parts.size() == 2:
@@ -220,15 +500,25 @@ func _ready() -> void:
 	# the static colours outlive a scene reload: make them this arena's
 	DDCardFace.trim = card_trim
 	DDCardFace.line = card_line
-	if forced == "tentacle":
-		ability = ["tentacle", "shiesty"]
-	elif forced == "shiesty" or forced == "goblin":
-		ability = ["shiesty", "tentacle"]
-	else:
-		var arng := RandomNumberGenerator.new()
-		arng.randomize()
-		ability = ["tentacle", "shiesty"] if arng.randf() < 0.5 else ["shiesty", "tentacle"]
+	# two different commanders out of the pool; --ability= fixes yours (the enemy
+	# still gets a random other one)
+	if forced == "goblin":
+		forced = "shiesty"
+	elif forced == "flammenmeister":
+		forced = "flame"
+	elif forced == "manmantis" or forced == "mantis":
+		forced = "drone"
+	var arng := RandomNumberGenerator.new()
+	arng.randomize()
+	var mine: String = forced if ABILITIES.has(forced) else String(ABILITIES[arng.randi() % ABILITIES.size()])
+	var rest: Array = ABILITIES.duplicate()
+	rest.erase(mine)
+	ability = [mine, String(rest[arng.randi() % rest.size()])]
 	var in_run := _apply_run()
+	for rid in forced_relics:
+		if not (relics[0] as Array).has(rid):
+			relics[0].append(rid)
+	_pick_bridges(in_run)
 	_build_board_state()
 	if in_run:
 		# the run's commander comes in as wounded as it left the last fight; the
@@ -236,6 +526,7 @@ func _ready() -> void:
 		var king := _king_of(0)
 		if king != null:
 			king.hp = minf(float(king.max_hp), float(Run.commander_hp))
+	_apply_relics_start()
 	_build_control_layer()
 	_build_preview()
 	_build_decks(Run.deck_seed() if in_run else -1)
@@ -289,7 +580,26 @@ func _apply_run() -> bool:
 	# side 1 is always the encounter's bot; side 0 is yours (or a bot with --bots=both)
 	bot_players[1] = true
 	ability = [Run.ability, Run.enemy_ability()]
+	# the run's base scaling for your side; the fight builds on it
+	puissance[0] = float(Run.puissance)
+	armor[0] = float(Run.armor)
+	relics[0] = (Run.relics as Array).duplicate()
 	return true
+
+
+## Three bridges for a plain match; two for runs, the bot sim and the scenarios
+## (which are laid out around them). `--bridges=2|3` overrides.
+func _pick_bridges(in_run: bool) -> void:
+	var three := not in_run
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--botsim=") or a.begins_with("--scenario=") or a.begins_with("--shots=") or a == "--demo":
+			three = false
+	for a in OS.get_cmdline_user_args():
+		if a == "--bridges=3":
+			three = true
+		elif a == "--bridges=2":
+			three = false
+	bridges = THREE_BRIDGES if three else TWO_BRIDGES
 
 
 ## From the result screen: the next fight after a win, a fresh run once this one
@@ -711,6 +1021,8 @@ func draw_card(team: int) -> bool:
 	_sync_ids(team)
 	if hands[team].size() >= HAND_MAX:
 		var dropped: String = hands[team][0]
+		if team < panels.size() and panels[team] != null and is_instance_valid(panels[team]):
+			panels[team].note_discard(dropped)
 		hands[team].remove_at(0)
 		queues[team].append(dropped)
 		queue_ids[team].append(hand_ids[team].pop_front())
@@ -1112,9 +1424,18 @@ func _physics_process(delta: float) -> void:
 	_tick_clock(delta)
 	if match_over:
 		return
+	fight_t += delta
+	for k in relic_glow.keys():
+		relic_glow[k] = float(relic_glow[k]) - delta
+		if float(relic_glow[k]) <= 0.0:
+			relic_glow.erase(k)
 	for p in 2:
-		gold[p] = minf(gold_max, gold[p] + gold_rate_now() * delta)
+		var income: float = gold_rate_now() * delta
+		var gold_before: float = float(gold[p])
+		gold[p] = minf(gold_max, gold[p] + income)
 		ability_cd[p] = maxf(0.0, float(ability_cd[p]) - delta)
+		if not (relics[p] as Array).is_empty():
+			_tick_relics(p, delta, income, gold_before)
 	_tick_control(delta)
 	_tick_pockets()
 	separate_units()
@@ -1355,27 +1676,35 @@ func on_bridge_deck(world: Vector2) -> bool:
 	if t.y < RIVER_TOP or t.y > RIVER_BOTTOM:
 		return false
 	var c := col_f(world)
-	for bx in [BRIDGE_COL_A, BRIDGE_COL_B]:
-		if absf(c - float(bx)) <= BRIDGE_HALF:
+	for b in bridges:
+		if absf(c - float(b[0])) <= float(b[1]):
 			return true
 	return false
 
 
-## The deck's screen rect, for drawing.
-func bridge_rect(bx: float) -> Rect2:
-	var p0: Vector2 = tile_center(bx - BRIDGE_HALF, float(RIVER_TOP))
-	var p1: Vector2 = tile_center(bx + BRIDGE_HALF, float(RIVER_BOTTOM) + 1.0)
+## The deck's screen rect, for drawing. `half` defaults to BRIDGE_HALF.
+func bridge_rect(bx: float, half: float = BRIDGE_HALF) -> Rect2:
+	var p0: Vector2 = tile_center(bx - half, float(RIVER_TOP))
+	var p1: Vector2 = tile_center(bx + half, float(RIVER_BOTTOM) + 1.0)
 	return Rect2(Vector2(minf(p0.x, p1.x), minf(p0.y, p1.y)), (p1 - p0).abs())
 
 
-## River water: the two river rows except the bridge decks' whole tiles. Nothing
-## is placed there and no presence reaches it (the decks' outer half tiles
-## count as water here, so nothing is played on them).
+## Half the deck width of the bridge whose middle is bx (BRIDGE_HALF if none is).
+func bridge_half(bx: float) -> float:
+	for b in bridges:
+		if is_equal_approx(float(b[0]), bx):
+			return float(b[1])
+	return BRIDGE_HALF
+
+
+## River water: the two river rows except the tiles lying wholly on a bridge
+## deck. Nothing is placed there and no presence reaches it (a deck's part
+## tiles at its edges count as water here, so nothing is played on them).
 func is_water(t: Vector2i) -> bool:
 	if t.y < RIVER_TOP or t.y > RIVER_BOTTOM:
 		return false
-	for bx in [int(BRIDGE_COL_A), int(BRIDGE_COL_B)]:
-		if t.x == bx or t.x == bx - 1:
+	for b in bridges:
+		if float(t.x) >= float(b[0]) - float(b[1]) - 0.001 and float(t.x) + 1.0 <= float(b[0]) + float(b[1]) + 0.001:
 			return false
 	return true
 
@@ -1646,7 +1975,7 @@ func route_point(from: Vector2, goal: Vector2, bridge_col: float = -1.0) -> Vect
 	# oscillate on the bank forever. Anything still over the deck counts as
 	# lined up, so a shove sideways on the bridge does not send it back.
 	var off := absf(from.y - lane.y) if LANDSCAPE else absf(from.x - lane.x)
-	if off > TILE * (BRIDGE_HALF - 0.3):
+	if off > TILE * (bridge_half(bc) - 0.3):
 		# aim at the bridge mouth on our own bank so the walk in is diagonal
 		var bank: Vector2 = tile_center(bc, float(RIVER_BOTTOM) + 1.0) if toward_enemy else tile_center(bc, float(RIVER_TOP) - 1.0)
 		return bank
@@ -1657,11 +1986,18 @@ func route_point(from: Vector2, goal: Vector2, bridge_col: float = -1.0) -> Vect
 ## the board's midline (between the two) splits the lanes. Measure from the
 ## tile's centre (col + 0.5): measuring from its edge put the first column
 ## south of the midline at an exact tie, which went to the north bridge.
+## With three bridges the distance is to the deck's edge, so the wide middle
+## bridge takes the columns it spans and the ones nearer it than a side deck.
 func nearest_bridge_col(col: int) -> float:
-	var a := BRIDGE_COL_A
-	var b := BRIDGE_COL_B
 	var c := float(col) + 0.5
-	return a if absf(a - c) <= absf(b - c) else b
+	var best := float(bridges[0][0])
+	var best_d := INF
+	for b in bridges:
+		var d: float = absf(float(b[0]) - c) if bridges.size() == 2 else maxf(0.0, absf(float(b[0]) - c) - float(b[1]))
+		if d < best_d:
+			best_d = d
+			best = float(b[0])
+	return best
 
 
 # --------------------------------------------------------------------- spawns
@@ -1799,20 +2135,51 @@ func banner_flash(text: String) -> void:
 # --------------------------------------------------------------- hero abilities
 
 func ability_name(player: int) -> String:
-	return "TENTACLE" if String(ability[player]) == "tentacle" else "SHIESTY"
+	match String(ability[player]):
+		"tentacle":
+			return "TENTACLE"
+		"flame":
+			return "KINDLE"
+		"drone":
+			return "DRONE"
+	return "SHIESTY"
+
+
+## The commander behind each ability, for banners and the hover inspector.
+static func commander_name(kind: String) -> String:
+	match kind:
+		"tentacle":
+			return "Celestial Jelly"
+		"flame":
+			return "Flammenmeister"
+		"drone":
+			return "Man-Mantis"
+	return "Goblin Warlord"
+
+
+func ability_cost(player: int) -> int:
+	return FLAME_COST if String(ability[player]) == "flame" else ABILITY_COST
+
+
+func ability_aimed(player: int) -> bool:
+	return AIMED_ABILITIES.has(String(ability[player]))
 
 
 func ability_status(player: int) -> String:
 	if match_over:
-		return "â€”"
+		return "-"
 	if float(ability_cd[player]) > 0.0:
 		return "%ds" % int(ceil(float(ability_cd[player])))
-	if float(gold[player]) < float(ABILITY_COST):
-		return "%dg" % ABILITY_COST
+	if float(gold[player]) < float(ability_cost(player)):
+		return "%dg" % ability_cost(player)
+	if ability_aim == player:
+		return "PICK"
 	if String(ability[player]) == "tentacle" and _highest_hp_enemy_unit(player) == null:
 		return "no target"
 	if String(ability[player]) == "shiesty" and _highest_hp_enemy_tower(player) == null:
 		return "no tower"
+	if ability_aimed(player) and ability_targets(player).is_empty():
+		return "no target"
 	return "READY"
 
 
@@ -1821,11 +2188,51 @@ func ability_valid(player: int) -> bool:
 		return false
 	if float(ability_cd[player]) > 0.0:
 		return false
-	if float(gold[player]) < float(ABILITY_COST):
+	if float(gold[player]) < float(ability_cost(player)):
 		return false
 	if String(ability[player]) == "tentacle":
 		return _highest_hp_enemy_unit(player) != null
+	if ability_aimed(player):
+		return not ability_targets(player).is_empty()
 	return _highest_hp_enemy_tower(player) != null
+
+
+## Can `player`'s aimed ability be fired at `u`? Flammenmeister: any troop or
+## building on the board, either side. Man-Mantis: an enemy one not already
+## carrying a drone. Only real units (DDUnit): not towers, Shiesty, tentacles.
+func ability_can_target(player: int, u: Node) -> bool:
+	if u == null or not is_instance_valid(u) or not (u is DDUnit) or u.dead or u.held:
+		return false
+	if u.get("untargetable") == true:
+		return false
+	match String(ability[player]):
+		"flame":
+			return true
+		"drone":
+			return int(u.team) != player and int(u.drone_team) < 0
+	return false
+
+
+## Every unit the aimed ability could be fired at right now.
+func ability_targets(player: int) -> Array:
+	var out: Array = []
+	for u in units:
+		if ability_can_target(player, u):
+			out.append(u)
+	return out
+
+
+## The aimed ability's target under a board point: the nearest valid body whose
+## circle (plus a little slack) holds it.
+func ability_target_at(player: int, world: Vector2) -> Node:
+	var best: Node = null
+	var best_d := INF
+	for u in ability_targets(player):
+		var d: float = tiles_between(world, u.position)
+		if d <= float(u.get_radius_t()) + 0.35 and d < best_d:
+			best_d = d
+			best = u
+	return best
 
 
 ## Circular ability button under the feet of the player's commander (goblin or
@@ -1852,13 +2259,58 @@ func _draw_ability_button(player: int) -> void:
 		Color(0.85, 0.95, 0.85) if ready else Color(0.7, 0.7, 0.8))
 
 
+## While an aimed ability is armed: a faint ring round everything it could hit,
+## a bright one round the body under the cursor (green: Flammenmeister's warmth
+## on a friend; orange: his fire on a foe; red: Man-Mantis's drone).
+func _draw_ability_aim() -> void:
+	if ability_aim < 0 or match_over:
+		return
+	var p: int = ability_aim
+	var mouse := get_global_mouse_position()
+	var hot: Node = ability_target_at(p, mouse)
+	for u in ability_targets(p):
+		var col := Color(1.0, 0.25, 0.2)
+		if String(ability[p]) == "flame":
+			col = Color(0.45, 0.95, 0.5) if int(u.team) == p else Color(1.0, 0.6, 0.15)
+		var rad: float = (float(u.get_radius_t()) + 0.25) * float(TILE)
+		if u == hot:
+			draw_arc(u.position, rad, 0.0, TAU, 32, col, 3.0, true)
+			draw_circle(u.position, rad, Color(col.r, col.g, col.b, 0.15))
+		else:
+			draw_arc(u.position, rad, 0.0, TAU, 24, Color(col.r, col.g, col.b, 0.35), 1.5, true)
+	# the cursor: a small reticle
+	var rc := Color(1, 1, 1, 0.8)
+	draw_arc(mouse, 10.0, 0.0, TAU, 20, rc, 1.5, true)
+	for d in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
+		draw_line(mouse + d * 6.0, mouse + d * 14.0, rc, 1.5, true)
+
+
 func ability_ready(player: int) -> bool:
 	if player < 0 or player > 1:
 		return false
 	return float(ability_cd[player]) <= 0.0
 
 
+## An ability's payload has landed: a card for `team`, if it has the draw
+## (ability_draws, the relic's hook).
+func ability_payoff(team: int) -> void:
+	if team >= 0 and team <= 1 and bool(ability_draws[team]):
+		draw_card(team)
+
+
 func use_ability(player: int) -> bool:
+	if ability_aimed(player):
+		# the button arms it (or puts it away again); the click on a unit fires it
+		if ability_aim == player:
+			ability_aim = -1
+			return false
+		if not ability_valid(player):
+			return false
+		clear_selection()
+		ability_aim = player
+		banner_flash("%s: pick a unit" % commander_name(String(ability[player])) if String(ability[player]) == "drone"
+			else "%s: pick a friendly unit to heal, or an enemy to burn" % commander_name("flame"))
+		return true
 	if not ability_valid(player):
 		return false
 	if String(ability[player]) == "tentacle":
@@ -1902,6 +2354,41 @@ func use_ability(player: int) -> bool:
 	return true
 
 
+## Fire `player`'s aimed ability at `u` (the click after arming it, or the bot
+## directly). Pays and starts the cooldown only if it goes off.
+func use_ability_on(player: int, u: Node) -> bool:
+	if ability_aim == player:
+		ability_aim = -1
+	if not ability_aimed(player) or not ability_valid(player) or not ability_can_target(player, u):
+		return false
+	var cost := float(ability_cost(player))
+	gold[player] = float(gold[player]) - cost
+	spend_gold_draw(player, cost)
+	ability_cd[player] = ability_cooldown_time()
+	var king := _king_of(player)
+	if String(ability[player]) == "flame":
+		if int(u.team) == player:
+			u.start_regen(FLAME_REGEN, FLAME_REGEN_TIME)
+			banner_flash("Flammenmeister warms %s" % DDCard.pretty(String(u.kind)))
+		else:
+			# a weaker Firebolt, out of his own tower, homing on the unit
+			var origin: Vector2 = u.position
+			if is_instance_valid(king):
+				origin = king.position + Vector2(0.0, -float(TILE) * 0.9)
+			var fb: Dictionary = DDCard.get_card("firebolt")
+			spawn_projectile(origin, u.position, player, 0.0, 0.0, "firebolt", 0, "bolt", false, null, 0.0, null,
+				{"burn": FLAME_BOLT_BURN, "burn_ticks": int(fb.get("burn_ticks", 4)),
+				"tower_mult": float(fb.get("tower_mult", 1.0)), "spell": true, "seek": u})
+			banner_flash("Flammenmeister hurls fire at %s" % DDCard.pretty(String(u.kind)))
+		ability_payoff(player)
+	else:
+		u.infect_drone(player)
+		banner_flash("Man-Mantis plants a drone in %s" % DDCard.pretty(String(u.kind)))
+	if is_instance_valid(king) and king.has_method("play_cast"):
+		king.play_cast(u.position)
+	return true
+
+
 func _highest_hp_enemy_unit(player: int) -> Node:
 	var best: Node = null
 	var best_hp := -1.0
@@ -1939,6 +2426,7 @@ func clear_selection() -> void:
 	selected_player = -1
 	selected_index = -1
 	debug_kind = ""
+	ability_aim = -1
 	_sync_shelf_selection()
 
 
@@ -2034,6 +2522,8 @@ func pick_card(player: int, index: int) -> void:
 	# only checked when the placement actually lands
 	selected_player = player
 	selected_index = index
+	# picking a card puts an armed ability away
+	ability_aim = -1
 
 
 func can_deploy(team: int, kind: String, world: Vector2) -> bool:
@@ -2116,6 +2606,7 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 	if sfx != null:
 		sfx.place_card()
 	spawn_troop(kind, team, world)
+	_relics_card_played(team)
 	_sync_ids(team)
 	var id: int = int(hand_ids[team][index])
 	# a card with uses left (Firebolt) stays in the hand AND stays lifted, so the
@@ -2165,6 +2656,20 @@ func deploy(team: int, index: int, world: Vector2) -> void:
 
 
 func spawn_troop(kind: String, team: int, world: Vector2, single: bool = false) -> Node:
+	var dominion: Dictionary = DDCard.get_card(kind).get("dominion", {})
+	if not dominion.is_empty():
+		# a Dominion card: the stat goes up for the rest of the fight, nothing lands
+		var amt := float(dominion.get("amount", 1.0))
+		if String(dominion["stat"]) == "puissance":
+			add_puissance(team, amt)
+		else:
+			add_armor(team, amt)
+		var king: Node = _king_of(team)
+		if is_instance_valid(king):
+			spawn_splash_ring(king.position, 1.6, team)
+		banner_flash("%s: %s %d" % [DDCard.pretty(kind), "Puissance" if String(dominion["stat"]) == "puissance" else "Armor",
+			int(puissance[team] if String(dominion["stat"]) == "puissance" else armor[team])])
+		return null
 	if DDCard.is_spell(kind):
 		if kind == "snowball":
 			# a rolling lane cleaner, not a bolt from a tower
@@ -2428,8 +2933,8 @@ func on_tower_destroyed(tower: Node) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		# a held card is dropped first; with nothing held, Esc pauses
-		if selected_index >= 0 or debug_kind != "":
+		# a held card (or an armed ability) is dropped first; with nothing held, Esc pauses
+		if selected_index >= 0 or debug_kind != "" or ability_aim >= 0:
 			clear_selection()
 		else:
 			set_paused(true)
@@ -2474,6 +2979,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_K:
 			start_kraken_encounter()
 			return
+		# P: +1 Puissance, O: +1 Armor, for player 1 (with Shift: player 2)
+		if event.keycode == KEY_P or event.keycode == KEY_O:
+			var who := 1 if event.shift_pressed else 0
+			if event.keycode == KEY_P:
+				add_puissance(who, 1.0)
+			else:
+				add_armor(who, 1.0)
+			banner_flash("DEBUG: player %d Puissance %d, Armor %d" % [who + 1, int(puissance[who]), int(armor[who])])
+			return
 	if event is InputEventKey and event.pressed and not event.echo and match_over and Run.active:
 		# in a run the result screen moves the run on; R does not replay a fight
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER or event.keycode == KEY_SPACE:
@@ -2496,6 +3010,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		if match_over:
 			return
 		var world: Vector2 = event.position
+		if ability_aim >= 0:
+			# an armed ability owns the click: a unit under it fires it; anywhere
+			# else keeps it armed (right-click or Esc puts it away)
+			var who: int = ability_aim
+			var hit: Node = ability_target_at(who, world)
+			if hit != null:
+				use_ability_on(who, hit)
+			else:
+				banner_flash("No unit there for %s" % commander_name(String(ability[who])))
+			return
 		for p in 2:
 			if hero_prompt_active(p) and hero_prompt_rect(p).has_point(world):
 				launch_hero(p)

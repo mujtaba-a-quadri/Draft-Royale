@@ -15,9 +15,11 @@ godot --path . -- --match                       # one plain match, straight past
 godot --path . -- --colors=#ff8800,#22ccaa      # recolour teams
 godot --path . -- --trim=#9aa6b8 --line=#3b4a66 # card face trim and middle line
 godot --path . -- --towers=diamond              # trial art: diamond princess towers
+godot --path . -- --match --bridges=2|3         # force the two-bridge or three-bridge layout
 godot --path . -- --bots=both|off               # bot on both hands / off
-godot --path . -- --ability=tentacle|shiesty    # force hero ability assignment
+godot --path . -- --ability=tentacle|shiesty|flame|drone    # force hero ability assignment
 godot --path . -- --run=<seed>                  # a run with a fixed seed
+godot --path . -- --match --relics=metronome,hourglass   # give yourself relics in a plain match
 ```
 
 Bot A/B harness (headless, one match per run, byte-identical for a given seed):
@@ -57,7 +59,11 @@ Live evals run through the `addons/godot_ai` editor plugin (enabled in `project.
 
 **Bot.** `bot.gd` (v1, flat utility scorer) is kept deliberately as the baseline. `bot2.gd` (v2) runs perception → state (DEFEND / COUNTER / ATTACK / HOLD) → scored (card × anchor) play → softmax pick → 0.55 s telegraph. Card roles are derived from card data by `bot_matrix.gd` (`roles_of()`), and only `bot_matrix.ANSWER` is hand-tuned. `bot_sim.gd` (`DDBotSim`) is the headless harness and is wired in `arena.gd` via `--botsim=`.
 
-**Hero abilities.** `tentacle.gd` and `shiesty.gd` are the two abilities, each player gets one per match, and both pay a card draw only when their payload lands. The bot's trigger for them is the known weak spot in `NOTES.md` §3.
+**Hero abilities.** Four commanders, one per side per match, from `arena.ABILITIES`: `tentacle` (`tentacle.gd`), `shiesty` (`shiesty.gd`), and two aimed ones (`AIMED_ABILITIES`: the button arms `ability_aim`, a click on a unit calls `use_ability_on`): `flame` (Flammenmeister: regen on a friend or a 30-burn firebolt) and `drone` (Man-Mantis: `unit.infect_drone`, a parasite token `parasite1-4` bursts out on death, sized by `arena.parasite_for`). Each player gets one per match, and neither draws a card unless the player has the draw (`arena.ability_draws`, meant to come from a relic), and then only when the payload lands. The bot's trigger for them is the known weak spot in `NOTES.md` §3.
+
+**Per-fight scaling.** `arena.puissance` / `arena.armor` (Strength / Dexterity): every direct hit passes `arena.scale_hit` inside the victim's `take_damage`; damage over time must go through `arena.tick_damage` so it is left alone. `NOTES.md` §13.
+
+**Relics and Dominion cards.** `relic_db.gd` (no class_name) defines relics; `Run.relics` carries them, `arena.relics` runs them (`_relics_card_played` from `deploy`, `_tick_relics` on `fight_t`). Dominion cards are spells with a `dominion` flag that raise Puissance / Armor for the fight. Fuel for the Fire lives in `Run` and `reward_screen.gd`. `NOTES.md` §14.
 
 **Elite encounter.** `spider.gd` (no `class_name`, preloaded by `arena.gd`) is a boss that duck-types a crown tower and replaces the whole enemy side; start it with Tab then S. Poison (a counter on units and towers, never cleared) came in with it. Details: `NOTES.md` §9. `kraken.gd` + `kraken_arm.gd` (same pattern, Tab then K) are the second: five tentacle "towers", then the body surfaces as the crown. Details: `NOTES.md` §10.
 

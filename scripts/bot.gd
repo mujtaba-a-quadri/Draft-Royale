@@ -50,8 +50,13 @@ func _physics_process(delta: float) -> void:
 		return
 	think_cd = DECISION_INTERVAL + rng.randf() * 0.25
 	# hero ability: only when it will actually do its job
+	if _play_dominion():
+		return
 	if _wants_ability():
-		arena.use_ability(player)
+		if arena.ability_aimed(player):
+			arena.use_ability_on(player, _aimed_pick())
+		else:
+			arena.use_ability(player)
 		return
 	_decide()
 
@@ -66,6 +71,9 @@ func _decide() -> void:
 		if float(arena.gold[player]) < float(DDCard.cost(kind)):
 			continue
 		if arena.card_locked(player, i):
+			continue
+		# Dominion cards have no target: _play_dominion casts them
+		if DDCard.get_card(kind).has("dominion"):
 			continue
 		for pos in _anchors(kind):
 			if not arena.can_deploy(player, kind, pos):
@@ -121,19 +129,100 @@ func _commit() -> void:
 ## Both abilities buy a temporary body for 2 gold, so firing them blindly is gold
 ## thrown away: a tentacle dropped where three of their troops are standing is cut
 ## apart on reveal, and Shiesty is a thief who only pays out if he gets home.
-## (The card draw lives on the payload now — tentacle on death, Shiesty on
-## delivery — so "will it survive" is about the gold and the damage, not the card.)
+## (No card draw unless the player has the relic's arena.ability_draws, and then
+## on the payload — so "will it survive" is about the gold and the damage.)
 const SHIESTY_SAFE_DPS := 20.0  ## enemy damage at his target tower that dooms him
 
 
 func _wants_ability() -> bool:
 	if not arena.ability_valid(player):
 		return false
+	if arena.ability_aimed(player):
+		# Flammenmeister's costs 1, so it can go off on a thinner purse
+		var floor_gold: float = 3.0 if String(arena.ability[player]) == "flame" else 5.0
+		return float(arena.gold[player]) >= floor_gold and _aimed_pick() != null
 	if float(arena.gold[player]) < 5.0:
 		return false
 	if String(arena.ability[player]) == "tentacle":
 		return _wants_tentacle()
 	return _wants_shiesty()
+
+
+## A Dominion card pays off for the whole rest of the fight, so the earlier the
+## better: cast it (on its own king tower, any tile will do) once there is gold
+## to spare for a play after it. Not scored with the other cards: it has no
+## target and no damage of its own for the scorer to see.
+func _play_dominion() -> bool:
+	var hand: Array = arena.hands[player]
+	for i in hand.size():
+		var kind := String(hand[i])
+		if not DDCard.get_card(kind).has("dominion"):
+			continue
+		if float(arena.gold[player]) < float(DDCard.cost(kind)) + 3.0 or arena.card_locked(player, i):
+			continue
+		var king: Node = arena._king_of(player)
+		if king == null:
+			return false
+		var before: float = float(arena.gold[player])
+		arena.deploy(player, i, king.position)
+		gold_spent += before - float(arena.gold[player])
+		plays += 1
+		return true
+	return false
+
+
+## The unit an aimed ability is worth firing at now, or null.
+## Flammenmeister: finish off a foe the bolt's burn would kill; else warm a
+## friend that is fighting and has lost at least the full regen; else, with
+## gold to spare, burn whichever foe is deepest into our half.
+## Man-Mantis: the healthiest foe (the more it can soak, the bigger the
+## parasite), if it is big enough to grow more than a larva.
+func _aimed_pick() -> Node:
+	var targets: Array = arena.ability_targets(player)
+	if targets.is_empty():
+		return null
+	if String(arena.ability[player]) == "flame":
+		var kill: Node = null
+		var kill_hp := 0.0
+		var heal: Node = null
+		var heal_missing := float(arena.FLAME_REGEN) * float(arena.FLAME_REGEN_TIME)
+		for u in targets:
+			if int(u.team) != player:
+				var uhp: float = float(u.hp)
+				if uhp <= float(arena.FLAME_BOLT_BURN) * 0.8 and uhp >= 12.0 and uhp > kill_hp:
+					kill = u
+					kill_hp = uhp
+			elif int(u.state) == DDUnit.S.ATTACK:
+				var missing: float = float(u.max_hp) - float(u.hp)
+				if missing >= heal_missing:
+					heal = u
+					heal_missing = missing
+		if kill != null:
+			return kill
+		if heal != null:
+			return heal
+		if float(arena.gold[player]) < 8.0:
+			return null
+		var deep: Node = null
+		var deep_d := INF
+		var king: Node = arena._king_of(player)
+		if king == null:
+			return null
+		for u in targets:
+			if int(u.team) == player:
+				continue
+			var d: float = arena.tiles_between(u.position, king.position)
+			if d < deep_d:
+				deep_d = d
+				deep = u
+		return deep
+	var best: Node = null
+	var best_hp := 40.0
+	for u in targets:
+		if float(u.hp) > best_hp:
+			best_hp = float(u.hp)
+			best = u
+	return best
 
 
 func _wants_tentacle() -> bool:
@@ -158,8 +247,9 @@ func _wants_tentacle() -> bool:
 			allied += _dps_of(tw)
 	if allied * float(arena.TENTACLE_TIME) * 0.75 >= hp:
 		return true
-	# a starved hand makes the draw the reason to spend at all
-	if int(arena.hands[player].size()) <= 3:
+	# a starved hand makes the draw the reason to spend at all (only with the
+	# draw relic: arena.ability_draws)
+	if bool(arena.ability_draws[player]) and int(arena.hands[player].size()) <= 3:
 		return true
 	# otherwise keep it in the pocket while their side has the bodies to cut the
 	# tentacle down the instant it surfaces
@@ -202,6 +292,10 @@ func _dps_of(e: Node) -> float:
 	var iv := float(e.get("interval") if e.get("interval") != null else 1.0)
 	if iv <= 0.01:
 		iv = 1.0
+	# its side's Puissance adds to every hit it lands
+	var tm = e.get("team")
+	if dmg > 0.0 and tm != null and int(tm) >= 0 and int(tm) <= 1:
+		dmg += float(arena.puissance[int(tm)])
 	return dmg / iv
 
 

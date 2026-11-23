@@ -88,10 +88,12 @@ const ATTACK_NAMES := {
 	"dragon": "Claw", "chicken": "Burst", "penny": "Swipes", "pen": "Blowgun", "obsidian": "Nip", "wu": "Staff", "neko": "Beam", "gilgamesh": "Serpent Lash", "enkidu": "Spear", "mantis": "Claws", "mantisf": "Scythe", "elf": "Longbow", "militia": "Spear", "ballista": "Siege Bolt", "frog": "Poison Leap", "phalanx": "Spear", "wolves": "Bite", "meerkats": "Bite", "ant": "Bite", "anthill": "Ants", "goatrider": "Tomahawk","ratbones": "Bite","magma": "Flame Feathers","aphid": "Spit Spread", "fu": "Boomerang",
 	"slate": "Jawbreaker", "hawk": "Dive", "hedgehog": "Quills",
 	"hero": "Sword", "alchemist": "Splash Potion", "zombie": "Claw",
-	"snowman": "—", "idol": "Taunt", "lizard": "Spear", "warren": "Burrow",
+	"snowman": "—", "idol": "Taunt", "lizard": "Rifle", "warren": "Burrow",
 	"ovomachine": "Hatch", "laniakea": "Greatsword", "femme": "Needle",
 	"kraken": "Red Orbs", "krakenarm": "Tentacle Slam",
-	"spider": "Front Legs","spideregg": "—", "spiderling": "Venom Bite", "troll": "Tree Club",
+	"parasite1": "Bite", "parasite2": "Hooks", "parasite3": "Scythes", "parasite4": "Claws",
+	"dominion_puissance": "Decree", "dominion_armor": "Decree",
+	"spider": "Front Legs","spideregg": "—", "spiderling": "Venom Bite", "troll": "Tree Club", "brawler": "Claw Swipe",
 	"fireball": "Fireball", "firebolt": "Firebolt", "snowball": "Snowball",
 }
 
@@ -273,7 +275,7 @@ static func _card(ci: CanvasItem, kind: String, r: Rect2, with_desc: bool, cost_
 	var art := art_rect(kind, r, with_desc)
 	# type tag, cost, name, HP
 	if level >= 2:
-		var tag := String(d.get("type", "troop")).to_upper()
+		var tag := "DOMINION" if d.has("dominion") else String(d.get("type", "troop")).to_upper()
 		ci.draw_string(font, Vector2(x0 + 38.0 * s, y0 + 10.0 * s), tag, HORIZONTAL_ALIGNMENT_LEFT, -1,
 			maxi(6, int(9.0 * s)), _c(Color(0.25, 0.2, 0.15, 0.8)))
 	var cost_r := maxf(7.0, 15.0 * s)
@@ -403,6 +405,8 @@ static func _card(ci: CanvasItem, kind: String, r: Rect2, with_desc: bool, cost_
 		for a in attacks:
 			_attack_row_mid(ci, a, Rect2(x0 + 6.0 * s, y2, pw - 12.0 * s, row_h2), s)
 			y2 += row_h2
+	elif level == 1 and not attacks.is_empty():
+		_attack_chips_named(ci, attacks, Rect2(x0 + 4.0 * s, atk_top, pw - 8.0 * s, atk_bottom - atk_top), chip_r, s)
 	else:
 		# chips: icon + damage side by side
 		var cx := x0 + 6.0 * s + chip_r
@@ -468,6 +472,8 @@ static func _minion_of(d: Dictionary) -> String:
 
 
 static func _info_text(d: Dictionary) -> String:
+	if d.has("dominion"):
+		return "Dominion  -  cast anywhere  -  lasts the fight"
 	match String(d.get("type", "troop")):
 		"spell":
 			return "Spell  -  from your %s tower" % ("king" if String(d.get("launch", "")) == "king" else "nearest")
@@ -635,6 +641,52 @@ static func _attack_row_mid(ci: CanvasItem, a: Array, r: Rect2, s: float) -> voi
 	if dt != "":
 		ci.draw_string(font, Vector2(r.end.x - dw - 2.0, r.get_center().y + dsz * 0.36), dt, HORIZONTAL_ALIGNMENT_LEFT, -1,
 			dsz, _c(OUT))
+
+
+## The small face's attacks: icon, name, damage. One per row while the rows fit;
+## otherwise two columns, the second starting just right of the card's middle
+## (attack 2 beside attack 1, a third under the first).
+static func _attack_chips_named(ci: CanvasItem, attacks: Array, r: Rect2, chip_r: float, s: float) -> void:
+	var font: Font = ThemeDB.fallback_font
+	var n := attacks.size()
+	var row_h: float = chip_r * 2.0 + 4.0
+	var fit_rows: int = maxi(1, int(floorf(r.size.y / row_h)))
+	var cols := 1 if n <= fit_rows else 2
+	var rows := n if cols == 1 else int(ceilf(float(n) / 2.0))
+	var top: float = r.position.y + maxf(0.0, (r.size.y - float(rows) * row_h) * 0.5)
+	var col_x := [r.position.x, r.position.x + r.size.x * 0.5 + 4.0 * s]
+	var col_end := [r.end.x if cols == 1 else r.position.x + r.size.x * 0.5 - 2.0, r.end.x]
+	var dsz := maxi(8, int(chip_r * 1.45))
+	for i in n:
+		var a: Array = attacks[i]
+		var c: int = 0 if cols == 1 else i % 2
+		var row: int = i if cols == 1 else int(float(i) / 2.0)
+		var x: float = float(col_x[c])
+		var cy: float = top + (float(row) + 0.5) * row_h
+		badge(ci, String(a[0]), Vector2(x + chip_r, cy), chip_r)
+		var nx: float = x + chip_r * 2.0 + 3.0
+		var dt := str(int(a[2])) if int(a[2]) > 0 else ""
+		var dw: float = font.get_string_size(dt, HORIZONTAL_ALIGNMENT_LEFT, -1, dsz).x
+		var avail: float = float(col_end[c]) - nx - dw - (5.0 if dt != "" else 0.0)
+		var nm := String(a[1])
+		var nsz := fitted(font, nm, avail, maxf(chip_r * 1.4, 12.0 * s), 7.0)
+		nm = _clip(font, nm, avail, nsz)
+		var nw: float = font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, nsz).x
+		ci.draw_string(font, Vector2(nx, cy + float(nsz) * 0.36), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, nsz, _c(OUT))
+		if dt != "":
+			# one column: damage at the right edge; two: right after the name
+			var dx: float = float(col_end[c]) - dw if cols == 1 else nx + nw + 4.0
+			ci.draw_string(font, Vector2(dx, cy + float(dsz) * 0.36), dt, HORIZONTAL_ALIGNMENT_LEFT, -1, dsz, _c(OUT))
+
+
+## `text` cut short with an ellipsis until it fits `avail` at size `sz`.
+static func _clip(font: Font, text: String, avail: float, sz: int) -> String:
+	if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x <= avail:
+		return text
+	var t := text
+	while t.length() > 1 and font.get_string_size(t + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > avail:
+		t = t.substr(0, t.length() - 1)
+	return t.strip_edges() + "…"
 
 
 ## Icon + word for each attribute, two columns, top down. False (and nothing

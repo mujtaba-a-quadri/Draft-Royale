@@ -93,6 +93,33 @@ const CARDS := {
 		"uses": 2,
 		"accent": Color(1.0, 0.78, 0.28),
 	},
+	# Dominion cards (the power cards): cast anywhere on the board, they raise a
+	# per-fight stat for the rest of the fight and are then gone until the next
+	# fight ("spent"). They are spells to the deploy rules.
+	"dominion_puissance": {
+		"name": "Dominion of Puissance",
+		"cost": 2,
+		"type": "spell",
+		"blurb": "For the rest of this fight, every direct hit your side lands deals 1 more damage. Used up when played, until the next fight.",
+		"hp": 0.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.0, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"dominion": {"stat": "puissance", "amount": 1.0},
+		"spent": true,
+		"accent": Color(0.9, 0.35, 0.3),
+	},
+	"dominion_armor": {
+		"name": "Dominion of Armor",
+		"cost": 2,
+		"type": "spell",
+		"blurb": "For the rest of this fight, every direct hit your side takes deals 1 less damage (never below 1). Used up when played, until the next fight.",
+		"hp": 0.0, "dmg": 0.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
+		"radius": 0.0, "splash": 0.0, "aggro": 0.0, "stationary": true, "lifetime": 0.0,
+		"buildings_only": false,
+		"dominion": {"stat": "armor", "amount": 1.0},
+		"spent": true,
+		"accent": Color(0.5, 0.66, 0.92),
+	},
 	"chicken": {
 		"name": "Hot Chicken",
 		"cost": 2,
@@ -104,7 +131,8 @@ const CARDS := {
 		"buildings_only": false,
 		"hits_air": true,
 		"burn": 5.0,
-		"chicken": {"hits_to_fly": 3, "fire_speed": 620.0, "burst_reach": 0.3},
+		# takeoff: seconds it climbs straight up, on the spot, before the dive
+		"chicken": {"hits_to_fly": 3, "fire_speed": 620.0, "burst_reach": 0.3, "takeoff": 0.6},
 		# the ram does no damage of its own: it sets the splash alight
 		"kamikaze": {"radius": 1.4, "burn": 30.0, "speed_mult": 2.0},
 		"accent": Color(1.0, 0.55, 0.2),
@@ -248,6 +276,17 @@ const CARDS := {
 		"buildings_only": false,
 		"accent": Color(0.7, 0.58, 0.42),
 	},
+	"brawler": {
+		"name": "Lizard Brawlers",
+		"cost": 4,
+		"type": "troop",
+		"blurb": "Two frilled lizards in belted gis, side by side. No weapons, no plan: they walk up to the nearest thing and claw at it, roaring.",
+		"hp": 95.0, "dmg": 14.0, "speed": 1.1, "reach": 0.5, "interval": 1.0,
+		"radius": 0.4, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"swarm_offsets": [[-0.55, 0.0], [0.55, 0.0]],
+		"accent": Color(0.5, 0.74, 0.26),
+	},
 	# the first building that moves: a building in every rule (troops that hunt
 	# buildings go for it, shoves do nothing, it takes no tile), but it is not
 	# stationary, so it walks like a troop. Its reach outranges a side tower: it
@@ -273,6 +312,7 @@ const CARDS := {
 		"hp": 110.0, "dmg": 20.0, "speed": 1.0, "reach": 5.5, "interval": 1.3,
 		"radius": 0.45, "splash": 0.0, "aggro": 6.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
+		"hits_air": true,
 		"shoots": "arrow",
 		"accent": Color(0.4, 0.66, 0.36),
 	},
@@ -481,7 +521,7 @@ const CARDS := {
 		"name": "Lizard Soldiers",
 		"cost": 3,
 		"type": "troop",
-		"blurb": "Three small spear-carriers in a wedge. They ignore the nearest threat and go for whoever is weakest.",
+		"blurb": "Three lizardfolk riflemen in a wedge. They ignore the nearest threat and go for whoever is weakest.",
 		"hp": 28.0, "dmg": 10.0, "speed": 0.85, "reach": 3.5, "interval": 1.0,
 		"shoots": "rifle",
 		"radius": 0.38, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
@@ -506,7 +546,7 @@ const CARDS := {
 	},
 	"snowball": {
 		"name": "Snowball",
-		"cost": 4,
+		"cost": 3,
 		"type": "spell",
 		"blurb": "Thrown in an arc out of your nearest tower onto the tile you pick, then rolls eight tiles forward, river and all: one tile of snow, a tile taller for every two it covers, 10 damage per tile of height with a shove to match (once per enemy), then a 30 damage burst and a 3.5 second slow.",
 		"hp": 0.0, "dmg": 30.0, "speed": 0.0, "reach": 0.0, "interval": 0.0,
@@ -575,7 +615,7 @@ const CARDS := {
 		"cost": 6,
 		"type": "troop",
 		"blurb": "Six bruisers that refuse to stay dead. Anything they kill gets back up as one of theirs.",
-		"hp": 88.0, "dmg": 15.0, "speed": 0.85, "reach": 0.5, "interval": 1.0,
+		"hp": 50.0, "dmg": 15.0, "speed": 0.85, "reach": 0.5, "interval": 1.0,
 		"radius": 0.42, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
 		"swarm_offsets": [[-0.8, -0.9], [0.8, -0.9], [-1.2, 0.1], [1.2, 0.1], [-0.8, 1.1], [0.8, 1.1]],
@@ -586,6 +626,7 @@ const CARDS := {
 		"cost": 2,
 		"type": "troop",
 		"blurb": "Four flyers in a diamond. The red i'iwi leads and soaks two tower shots; the rest die to one.",
+		"draws": 1,
 		"hp": 10.0, "dmg": 6.0, "speed": 1.9, "reach": 0.7, "interval": 1.0,
 		"radius": 0.26, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
 		"buildings_only": false,
@@ -793,6 +834,52 @@ const CARDS := {
 		"buildings_only": false,
 		"accent": Color(0.72, 0.45, 0.95),
 	},
+	# Man-Mantis's drone: what bursts out of an infected troop when it dies, on
+	# the caster's side. The more damage the drone did inside it, the bigger it
+	# is (arena.PARASITE_TIERS): a worm at first, more like Man-Mantis each step.
+	"parasite1": {
+		"name": "Drone Larva",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Burst out of a troop the drone barely had time in. A red worm with a bite.",
+		"hp": 30.0, "dmg": 5.0, "speed": 1.3, "reach": 0.35, "interval": 0.8,
+		"radius": 0.3, "splash": 0.0, "aggro": 5.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"no_presence": true,
+		"accent": Color(0.85, 0.25, 0.18),
+	},
+	"parasite2": {
+		"name": "Drone Nymph",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Burst out after the drone fed for a while: a worm that has grown a head, feelers and two hooked forelegs.",
+		"hp": 80.0, "dmg": 10.0, "speed": 1.25, "reach": 0.45, "interval": 0.9,
+		"radius": 0.38, "splash": 0.0, "aggro": 5.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"no_presence": true,
+		"accent": Color(0.85, 0.25, 0.18),
+	},
+	"parasite3": {
+		"name": "Drone Stalker",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "Burst out of a big meal: up on two legs, hunched, scythe-armed, with Man-Mantis's goggling eyes.",
+		"hp": 170.0, "dmg": 22.0, "speed": 1.15, "reach": 0.6, "interval": 1.0,
+		"radius": 0.45, "splash": 0.0, "aggro": 5.5, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"no_presence": true,
+		"accent": Color(0.85, 0.25, 0.18),
+	},
+	"parasite4": {
+		"name": "Drone Monstrosity",
+		"cost": 0,
+		"type": "troop",
+		"blurb": "What comes out of a giant: a second Man-Mantis, tall, ragged-caped and antlered with feelers.",
+		"hp": 380.0, "dmg": 40.0, "speed": 1.0, "reach": 0.8, "interval": 1.1,
+		"radius": 0.55, "splash": 0.0, "aggro": 6.0, "stationary": false, "lifetime": 0.0,
+		"buildings_only": false,
+		"accent": Color(0.85, 0.25, 0.18),
+	},
 	"boulder": {
 		"name": "Boulder",
 		"cost": 0,
@@ -805,7 +892,7 @@ const CARDS := {
 	},
 }
 
-const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider", "mantis", "elf", "militia", "ballista"]
+const ORDER := ["hero", "snowman", "slate", "alchemist", "idol", "fireball", "firebolt", "dragon", "chicken", "fu", "hawk", "zombie", "hedgehog", "lizard", "warren", "penny", "aphid", "ovomachine", "snowball", "laniakea", "femme", "troll", "obsidian", "wu", "neko", "gilgamesh", "frog", "phalanx", "wolves", "meerkats", "anthill", "goatrider", "mantis", "elf", "militia", "ballista", "brawler", "dominion_puissance", "dominion_armor"]
 
 
 ## The pool a run's card reward draws from: ORDER less `exclude` (the run passes
@@ -868,6 +955,8 @@ const SHORT := {
 	"snowman": "Snowman",
 	"fireball": "Fireball",
 	"firebolt": "Firebolt",
+	"dominion_puissance": "Puissance",
+	"dominion_armor": "Armor",
 }
 
 
@@ -881,6 +970,8 @@ const TINY := {
 	"zombie": "Zombs",
 	"hedgehog": "Hogs",
 	"firebolt": "Bolt",
+	"dominion_puissance": "Might",
+	"dominion_armor": "Armor",
 }
 
 

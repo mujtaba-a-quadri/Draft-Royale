@@ -13,9 +13,11 @@ static func draw_all(ci: CanvasItem, a) -> void:
 	_deploy_hint(ci, a)
 	_bot_intent(ci, a)
 	a._draw_ability_button(0)
-	if a.selection_kind() == "" and not a.match_over:
+	a._draw_ability_aim()
+	if a.selection_kind() == "" and a.ability_aim < 0 and not a.match_over:
 		_hover(ci, a, a.get_global_mouse_position())
 	_hud(ci, a)
+	a._draw_relics()
 	_result(ci, a)
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -56,11 +58,12 @@ static func _board(ci: CanvasItem, a) -> void:
 			var x2: float = river_span.position.x + fmod(phase * 26.0, river_span.size.x)
 			ci.draw_line(Vector2(x2, y2), Vector2(x2 + 34.0, y2), a.WATER_HI, 2.0, true)
 	# bridges
-	for bx in [a.BRIDGE_COL_A, a.BRIDGE_COL_B]:
-		# 3 tiles wide: the two whole tiles and half a tile of water each side
-		var br: Rect2 = a.bridge_rect(float(bx))
+	for b in a.bridges:
+		# whole tiles you can play on, plus part tiles at the edges you can't
+		var br: Rect2 = a.bridge_rect(float(b[0]), float(b[1]))
 		ci.draw_rect(br, a.WOOD)
-		for k in 5:
+		var planks: int = maxi(2, int(roundf(float(b[1]) * 2.0 * 5.0 / 3.0)))
+		for k in planks:
 			if a.LANDSCAPE:
 				var x3: float = br.position.x + 6.0 + float(k) * 16.0
 				ci.draw_line(Vector2(x3, br.position.y + 2.0), Vector2(x3, br.end.y - 2.0), Color(0.45, 0.31, 0.2), 1.5, true)
@@ -76,6 +79,9 @@ static func _board(ci: CanvasItem, a) -> void:
 	var start: float = bd.position.x if a.LANDSCAPE else bd.position.y
 	var mid: float = bd.get_center().y if a.LANDSCAPE else bd.get_center().x
 	var k2 := 0.0
+	# three bridges make three lanes: no single middle line to draw
+	if a.bridges.size() != 2:
+		k2 = length
 	while k2 < length:
 		var seg_end: float = minf(k2 + 9.0, length)
 		if a.LANDSCAPE:

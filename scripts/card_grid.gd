@@ -25,6 +25,12 @@ var active := {}
 ## collection screen uses fewer, taller cards
 var cols := COLS
 var aspect := 0.82
+## full: each card's full face with its description (DDCardFace.draw_full; the
+## text only shows on faces at least 260 px wide). backing: the dark panel
+## behind the grid; off, whatever is behind shows through and the header
+## switches to dark ink.
+var full := false
+var backing := true
 var selected_kind := "":
 	set(value):
 		if value == selected_kind:
@@ -32,19 +38,57 @@ var selected_kind := "":
 		selected_kind = value
 		queue_redraw()
 
+## Smooth scrolling: the wheel moves scroll_target, and scroll eases toward it
+## (SCROLL_EASE per second, framerate independent).
 var scroll := 0.0
+var scroll_target := 0.0
+const SCROLL_EASE := 14.0
 var hover_index := -1
 var hover_filter := ""
+var _mouse := Vector2(-1.0, -1.0)
+
+
+## The cards are drawn on this child, clipped to the list area under the
+## header, so a card scrolling up slides under the filter bar instead of over
+## it (which shows when there is no backing). Redrawn with the grid.
+var _list: Control = null
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = true
+	_list = Control.new()
+	_list.name = "List"
+	_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_list.clip_contents = true
+	_list.draw.connect(_draw_list)
+	add_child(_list)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAW and _list != null:
+		_list.position = Vector2(0.0, list_top())
+		_list.size = Vector2(size.x, maxf(0.0, size.y - list_top()))
+		_list.queue_redraw()
+
+
+func _process(delta: float) -> void:
+	if absf(scroll - scroll_target) < 0.5:
+		if scroll != scroll_target:
+			scroll = scroll_target
+			queue_redraw()
+		return
+	scroll = lerpf(scroll, scroll_target, 1.0 - exp(-SCROLL_EASE * delta))
+	# the card under a still cursor changes as the list glides past it
+	if _mouse.x >= 0.0:
+		hover_index = _card_at(_mouse)
+	queue_redraw()
 
 
 func set_kinds(list: Array) -> void:
 	kinds = list.duplicate()
 	scroll = 0.0
+	scroll_target = 0.0
 	queue_redraw()
 
 
@@ -82,6 +126,7 @@ func toggle_filter(f: String) -> void:
 	else:
 		active[f] = true
 	scroll = 0.0
+	scroll_target = 0.0
 	queue_redraw()
 
 
@@ -127,7 +172,13 @@ func cell_rect(i: int) -> Rect2:
 
 
 func _clamp_scroll() -> void:
-	scroll = clampf(scroll, 0.0, max_scroll())
+	scroll_target = clampf(scroll_target, 0.0, max_scroll())
+
+
+## Move the list by `px` (positive: down the list), eased.
+func scroll_by(px: float) -> void:
+	scroll_target += px
+	_clamp_scroll()
 
 
 # ---------------------------------------------------------------------- input
@@ -167,16 +218,12 @@ func _card_at(p: Vector2) -> int:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			scroll -= cell_height() * 0.6
-			_clamp_scroll()
-			queue_redraw()
-			accept_event()
-			return
-		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			scroll += cell_height() * 0.6
-			_clamp_scroll()
-			queue_redraw()
+		if event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			# a notch is a fixed distance, not a share of a card: tall full faces
+			# would otherwise jump half a row at a time. Touchpads send a factor.
+			var factor: float = float(event.factor) if float(event.factor) > 0.0 else 1.0
+			var notch: float = minf(cell_height() * 0.6, 150.0) * factor
+			scroll_by(-notch if event.button_index == MOUSE_BUTTON_WHEEL_UP else notch)
 			accept_event()
 			return
 		if event.button_index != MOUSE_BUTTON_LEFT:
@@ -190,7 +237,11 @@ func _gui_input(event: InputEvent) -> void:
 				if i >= 0:
 					card_pressed.emit(String(filtered()[i]))
 		accept_event()
+	elif event is InputEventPanGesture:
+		scroll_by(event.delta.y * 40.0)
+		accept_event()
 	elif event is InputEventMouseMotion:
+		_mouse = event.position
 		hover_filter = _filter_at(event.position)
 		hover_index = _card_at(event.position)
 		queue_redraw()
@@ -200,38 +251,58 @@ func _gui_input(event: InputEvent) -> void:
 
 func _draw() -> void:
 	var font := ThemeDB.fallback_font
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.09, 0.08, 0.13, 0.97), true)
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.34, 0.34, 0.44, 0.95), false, 2.0)
-	draw_string(font, Vector2(PAD, 22.0), header_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE,
-		Color(0.9, 0.92, 1.0))
+	# with no backing the header sits on light paper: dark ink
+	var ink := Color(0.9, 0.92, 1.0) if backing else Color(0.16, 0.13, 0.2)
+	if backing:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.09, 0.08, 0.13, 0.97), true)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.34, 0.34, 0.44, 0.95), false, 2.0)
+	draw_string(font, Vector2(PAD, 22.0), header_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, ink)
 	var btns := _filter_buttons()
 	for f in FILTERS:
 		var r: Rect2 = btns[f]
 		var on: bool = active.has(f)
 		var hot := String(hover_filter) == String(f)
-		draw_rect(r, Color(0.42, 0.62, 0.95, 0.92) if on else Color(0.16, 0.17, 0.23, 1.0), true)
-		draw_rect(r, Color(0.74, 0.88, 1.0, 0.9) if (on or hot) else Color(0.4, 0.42, 0.5), false, 1.5)
+		var off_fill := Color(0.16, 0.17, 0.23, 1.0) if backing else Color(1, 1, 1, 0.92)
+		draw_rect(r, Color(0.42, 0.62, 0.95, 0.92) if on else off_fill, true)
+		var edge := Color(0.74, 0.88, 1.0, 0.9) if (on or hot) else Color(0.4, 0.42, 0.5)
+		if not backing and not on:
+			edge = ink if hot else Color(ink.r, ink.g, ink.b, 0.55)
+		draw_rect(r, edge, false, 1.5)
+		var off_text := Color(0.82, 0.85, 0.95) if backing else ink
 		draw_string(font, r.position + Vector2(9.0, 14.5), _filter_label(f),
 			HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 18.0, 13,
-			Color(0.06, 0.07, 0.1) if on else Color(0.82, 0.85, 0.95))
+			Color(0.06, 0.07, 0.1) if on else off_text)
 	var list: Array = filtered()
-	draw_rect(Rect2(PAD * 0.5, list_top() - 3.0, size.x - PAD, 1.0), Color(1, 1, 1, 0.07), true)
+	draw_rect(Rect2(PAD * 0.5, list_top() - 3.0, size.x - PAD, 1.0),
+		Color(1, 1, 1, 0.07) if backing else Color(ink.r, ink.g, ink.b, 0.15), true)
+	if max_scroll() > 0.0:
+		var track := Rect2(size.x - 8.0, list_top(), 4.0, list_height())
+		draw_rect(track, Color(1, 1, 1, 0.08) if backing else Color(ink.r, ink.g, ink.b, 0.1), true)
+		var frac: float = clampf(list_height() / content_height(), 0.08, 1.0)
+		var h: float = track.size.y * frac
+		var y: float = track.position.y + (track.size.y - h) * clampf(scroll / max_scroll(), 0.0, 1.0)
+		draw_rect(Rect2(track.position.x, y, track.size.x, h),
+			Color(0.72, 0.82, 1.0, 0.55) if backing else Color(ink.r, ink.g, ink.b, 0.5), true)
+	if list.is_empty():
+		draw_string(font, Vector2(PAD, list_top() + 30.0), "no cards match those filters",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.7, 0.72, 0.8) if backing else ink)
+
+
+## The cards themselves, on the clipped list child (its origin is list_top()).
+func _draw_list() -> void:
+	var hilite := Color(0.92, 0.95, 1.0, 0.5) if backing else Color(0.16, 0.13, 0.2, 0.55)
+	var list: Array = filtered()
+	var shift := Vector2(0.0, -list_top())
 	for i in list.size():
 		var cr := cell_rect(i)
 		if cr.end.y < list_top() or cr.position.y > size.y:
 			continue
-		DDCardFace.draw(self, String(list[i]), cr, 1.0)
+		cr.position += shift
+		if full:
+			DDCardFace.draw_full(_list, String(list[i]), cr, 1.0)
+		else:
+			DDCardFace.draw(_list, String(list[i]), cr, 1.0)
 		if String(list[i]) == String(selected_kind):
-			draw_rect(cr, Color(1, 1, 1, 0.85), false, 3.0)
+			_list.draw_rect(cr, Color(1, 1, 1, 0.85), false, 3.0)
 		elif i == hover_index:
-			draw_rect(cr, Color(0.92, 0.95, 1.0, 0.5), false, 2.0)
-	if max_scroll() > 0.0:
-		var track := Rect2(size.x - 8.0, list_top(), 4.0, list_height())
-		draw_rect(track, Color(1, 1, 1, 0.08), true)
-		var frac: float = clampf(list_height() / content_height(), 0.08, 1.0)
-		var h: float = track.size.y * frac
-		var y: float = track.position.y + (track.size.y - h) * clampf(scroll / max_scroll(), 0.0, 1.0)
-		draw_rect(Rect2(track.position.x, y, track.size.x, h), Color(0.72, 0.82, 1.0, 0.55), true)
-	if list.is_empty():
-		draw_string(font, Vector2(PAD, list_top() + 30.0), "no cards match those filters",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.7, 0.72, 0.8))
+			_list.draw_rect(cr, hilite, false, 2.0)

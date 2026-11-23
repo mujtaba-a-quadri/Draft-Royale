@@ -26,7 +26,7 @@ half-finished in the tree.
 | `art.gd` | 738 | procedural outlined art; `creature()` for units, `icon()` for previews/cards |
 | `card_face.gd` | 660 | `DDCardFace` — the trading-card face (hand, next slot, deck grid, reward screen), its attribute icons, `ATTACK_NAMES`, multi-hit `ATTACKS` |
 | `hand_panel.gd` / `hand_card.gd` | 509 / 351 | per-player hand; `DDHandCard` owns a card's rect, hover, drag, fly-back tween |
-| `card_grid.gd` | 233 | `DDCardGrid` — reusable filtered, scrolling card grid (debug overlay today; collection/deck view later) |
+| `card_grid.gd` | 300 | `DDCardGrid` — reusable filtered, smooth-scrolling card grid (debug overlay; the title screen's collection with `full` faces and no `backing`). Cards draw on a clipped `List` child so they slide under the filter bar |
 | `bot.gd` / `bot2.gd` | 295 / 304 | v1 flat utility scorer (baseline) / v2 perception+states |
 | `bot_matrix.gd` | 61 | card roles (from card data) + the answers table |
 | `bot_sim.gd` | 93 | headless A/B harness |
@@ -130,7 +130,7 @@ card cycles back as the same id, and a `becomes` / `gives` card (Pen, either
 whelp) is a new id. `--scenario=cardcycle` checks the Penny / Pen / whelp hand
 and deck, the draft pool and Esc pause. Anything that rewrites a hand or deck wholesale gets fresh ids from
 `_sync_ids()`; code that moves single cards must move the id with the kind.
-`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 36).
+`arena.deck_lists[p]` sets a deck (empty = one of each in `ORDER`, currently 37).
 Opening hand `OPENING_HAND` 3, `HAND_MAX` 6. Draws every `DRAW_INTERVAL` 12 s, and every gold spent
 takes `DRAW_PER_GOLD` 1 s off the wait (`spend_gold_draw()`; overflow carries) —
 except a `draws` card, whose gold pulls nothing: its one drawn card is all it gives.
@@ -241,7 +241,8 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   each play; Pen itself never enters the deck. The whelps swap in the hand
   forever and never return to the deck either.
 * **Hot Chicken pecks first**: three fireballs on one target, *then* the kamikaze ram.
-* **The ability card draws are payload-gated**: tentacle on death, and Shiesty on
+* **The ability card draw is a relic's, and payload-gated**: off by default
+  (`arena.ability_draws[team]`, through `arena.ability_payoff()`); when on, tentacle on death, and Shiesty on
   *either* outcome — he pays a card when he gets home **and** when he is caught. Only
   the coin depends on delivery (death hands it back to the enemy).
 * **The Obsidian Whelp curls under tower fire.** Any hit (towers included) keeps
@@ -315,7 +316,7 @@ Useful flags: `--bots=both|off`, `--ability=tentacle|shiesty`, `--colors=#hex,#h
   (`scripts/sfx.gd`) is a child of the arena created in `_build_sfx()`; the opening
   deal slices the eight draws in `opening hand` down to a random four, placement
   plays `oxidvideos-place cardmp3.mp3` from `deploy()`. Every later draw, either
-  player's (the timer, ability payoffs), goes through `arena.draw_card()`, which
+  player's (the timer, ability payoffs with the relic), goes through `arena.draw_card()`, which
   calls `DDSfx.take_card()`: one of the three `taking-playing-card` takes at
   random, and draws within 3 physics frames of each other play once. The opening
   hand is sliced straight from the deck in `_build_decks`, never through
@@ -540,7 +541,7 @@ Start it with **Tab, then K** (`arena.start_kraken_encounter()`), or
   because both need to strike towers as well as units on contact. Arrows never
   turn; the first enemy body within 0.3 tiles of its edge takes it.
 * **Burrow reuses `DDTentacle`** (the hero ability) on team 1 with the arena's
-  `TENTACLE_*` constants. Its `draw_card(1)` is a no-op on the empty queue. The
+  `TENTACLE_*` constants. Its `ability_payoff(1)` draws nothing (no relic, and an empty queue anyway). The
   mark is fixed where the troop stood when the arm went under.
 * **Seeded RNG** only for the orb split count and the split's starting angle.
 * **Design choices that were mine, not specified:** all the numbers and the
@@ -609,6 +610,7 @@ survives `reload_current_scene()`, which is how a run moves between fights.
   x = bx (it used to be bx + 0.5) and count anything within `BRIDGE_HALF - 0.3`
   as lined up, so a sideways shove on the deck no longer sends a troop back to
   its bank. This moved every crossing path: bot-sim lines differ from before.
+* **Three bridges** (plain matches only): `arena.bridges` is a list of [middle x, half width]; `TWO_BRIDGES` is the old pair, `THREE_BRIDGES` = [2.25, 1.25], [9, 2], [15.75, 1.25]. `_pick_bridges()` picks it after `_apply_run()`: three unless in a run, the bot sim, a scenario/shots/demo; `--bridges=2|3` overrides. Everything reads the list: `is_water` (a tile is dry only when it lies wholly on a deck), `on_bridge_deck`, `bridge_half(bx)` (route tolerance), `nearest_bridge_col` (with three, distance to the deck's edge, so the wide middle one takes cols 5-12), the drawing, Shiesty's `_pick_bridge` (threat counted per bridge), the spider's river gaps and her traps (outer two bridges). `BRIDGE_COL_A/B` and `BRIDGE_HALF` remain for the two-bridge layout. The bots know nothing of lanes beyond `route_point`; they have not been tuned for three. `--scenario=bridges3 --bridges=3`.
 * **Lane pocket** (`arena.POCKET`, `pocket_tiles`, `in_pocket()`): rebuilt by
   `_tick_pockets()` only when the set of fallen DDTower side towers changes; the
   taker can deploy there regardless of presence (still subject to the 3.5-tile
@@ -644,7 +646,7 @@ survives `reload_current_scene()`, which is how a run moves between fights.
   ends the run. That is not §8's design, where losing activates a relic and you
   are out only when all of them are; when relics exist, `Run.report()` is where a
   loss becomes "lose a relic" instead of "run over". The four `ACT` fights and the
-  `STARTER_DECK` (10 plain cards: 3 Militia, 2 Elf Archers, Firebolt, Alchemist,
+  `STARTER_DECK` (10 plain cards: 3 Militia, Elf Archer, Honeycreepers, Firebolt, Alchemist,
   Hot Chicken, Snowman, and Humbaba as the one win condition; Border Skirmish's bot
   plays basics too) are placeholders for steps 3 and 4.
 * The opening deal's sound stopper is a child `Timer` of `DDSfx`, not a
@@ -762,3 +764,66 @@ route planning at the start; that is the thing to avoid, without falling back to
     ╱
   ⚀
   ```
+
+## 12. Commanders: Flammenmeister and Man-Mantis (built)
+
+* **Four commanders** in `arena.ABILITIES`; a plain match deals each side a different random one
+  (`--ability=` fixes yours); a run picks yours from the pool at start and the enemy's per fight
+  (`Run.enemy_ability`, seeded by run and fight). The bot sim still forces Tentacle vs Shiesty, so the
+  A/B harness is unchanged. `tower.is_goblin()` is now `== "shiesty"` (it was `!= "tentacle"`).
+* **Aimed abilities** (`AIMED_ABILITIES`: `flame`, `drone`): `use_ability` only arms
+  `arena.ability_aim`; the next board click on a valid unit (`ability_target_at`) calls
+  `use_ability_on`, which pays and starts the cooldown. Gold and cooldown are not spent on arming.
+  Right-click, Esc, picking a card or clicking the button again disarms. The bot skips arming and calls
+  `use_ability_on` with `bot._aimed_pick()`. Targets are `DDUnit`s only (no towers, Shiesty, tentacles).
+* **Flammenmeister** (`FLAME_*`): cost 1; friend → `unit.start_regen` (6/s for 4 s, replaces any
+  running one); foe → a `firebolt` projectile from his crown tower with 30 burn and `seek`.
+* **Man-Mantis** (`DRONE_DPS`, `PARASITE_TIERS`): `unit.infect_drone`; one bite a second from inside
+  (attacker null, from its own spot, so it passes a spartan shield like poison). `take_damage` tallies
+  bites into `drone_dealt` *before* `hp` drops, so the killing bite counts. Any death through
+  `_die` bursts the parasite (`_burst_parasite`); the male mantis's `lose_head` does not go through
+  `_die` and so frees no parasite. The parasite tokens `parasite1-4` are not in `ORDER`.
+* **Art**: `DDArt.flammenmeister`, `man_mantis` (commander towers, `pose.cast` from
+  `tower.play_cast`), `parasite(stage)` worm → Man-Mantis, `drone_bug`, and `flame_tongue`.
+* **Check**: `--scenario=commanders --log` (warmth +24, bolt burns, hosts of 15/45/120/200 HP give
+  larva/nymph/stalker/monstrosity).
+
+## 13. Per-fight scaling: Puissance and Armor (built, no sources yet)
+
+* `arena.puissance[team]` / `arena.armor[team]`; `add_puissance` / `add_armor`. Reset with the arena
+  every fight; `_apply_run` seeds side 0 from `Run.puissance` / `Run.armor` (the relic hook, 0 today).
+* **One chokepoint**: every `take_damage` that lowers hp (unit, tower, Shiesty, tentacle, spider, kraken,
+  kraken arm) runs `arena.scale_hit(amount, own team)`: `amount + puissance[other side] - armor[own side]`,
+  floor 1. A direct hit always comes from the other side, so no attacker or team needs plumbing through
+  projectiles, splashes or spells. In `unit.take_damage` it applies before curl and shield.
+* **Damage over time** goes through `arena.tick_damage(body, amount)` (burn, poison, drone ticks in unit,
+  tower, Shiesty, spider, kraken, kraken arm), which sets `dot_hit`; `scale_hit` consumes the flag on the
+  first hit that reads it, so a death blast set off by a tick (snowman) still scales. A new DoT must use
+  `tick_damage`, or it will be scaled.
+* **At zero it is a no-op bit for bit** (`scale_hit` returns the amount untouched): botsim seed 3 was
+  byte-identical with `scale_hit` bypassed. `bot._dps_of` adds its side's Puissance per hit.
+* Debug: Tab view, P / O (+Shift for player 2). Badge: `DDArt.scaling_badges` over the commander.
+* Not done: sources (power cards, relics, elite ramps), bosses' own badges, damage-number tint.
+
+## 14. Relics and Dominion cards (built)
+
+* `relic_db.gd` (no class_name; preloaded by arena, Run, the reward screen) holds every relic and the
+  data its effect reads (see its header). `Run.relics` (starter from `starter_for(ability)` at `Run.start`;
+  `--ability=` now fixes a run's commander too) is copied to `arena.relics[0]` in `_apply_run`.
+* **Awards**: `Run.report` on a won, non-final fight: an elite always, a regular one on every 2nd regular
+  win (`normal_wins`). `_award_relic` picks from `award_pool()` less owned, seeded by run and fight, and
+  notes it in `last.relic` for the reward screen.
+* **In the fight** (`arena.gd`, relics section): `_apply_relics_start` (Puissance, Armor, commander heal),
+  `_relics_card_played` (called from `deploy`, so every cast including each Firebolt charge counts),
+  `_tick_relics` (windows pruned every tick, the Hourglass, the Ledger on gross natural income),
+  `king_mult` (read by `tower.gd` for the crown's shots). All on `fight_t`, the fight's physics clock.
+  `relic_fires` counts firings for tests. Side 1 has no relics yet; the code is per team.
+* **Fuel for the Fire**: `Run.fueled` set by `skip_reward` when the relic is held; `reward_choices` then
+  offers 4; `take_reward` refuses; `take_two(a, b, removed)` removes from the deck as it was, adds both,
+  clears it. Reward screen: `fueled` / `picked` / `phase` (`pick` / `remove`), read in `_ready`:
+  `setup` runs before the screen is in the tree, where `/root/Run` cannot be reached.
+* **Dominion cards** (`dominion` flag, type spell, `spent`): `spawn_troop` raises the stat and returns null.
+  In `ORDER`, so plain-match and bot-sim decks hold them; both bots skip them in `_decide` and cast them via
+  `DDBot._play_dominion` (gold >= cost + 3, on their own king). Bot sim after: seed 3 `winner=1 time=135.0
+  hp0=318 hp1=578`, seed 4 `winner=0 time=135.0 hp0=537 hp1=500` (seed 3 before: `winner=1 time=83.4`).
+* Check: `--scenario=relics --log` (add `--shots=<dir>` for the column at 2 columns).

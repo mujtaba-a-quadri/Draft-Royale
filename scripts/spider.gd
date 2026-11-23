@@ -200,16 +200,21 @@ func _physics_process(delta: float) -> void:
 		if burn_timer <= 0.0:
 			var tick_dmg := floorf(burn_stack * BURN_RATE)
 			burn_ticks += 1
-			if tick_dmg <= 0.0 or burn_ticks >= burn_max_ticks:
+			if tick_dmg <= 0.0:
 				burn_stack = 0.0
 				burn_ticks = 0
 				burn_timer = 0.0
 			else:
 				burn_stack = maxf(0.0, burn_stack - tick_dmg)
 				burn_timer = 1.0
-				take_damage(tick_dmg, position)
+				arena.tick_damage(self, tick_dmg)
 				if dead:
 					return
+				# the last tick still lands, as on a troop; then the fire is out
+				if burn_ticks >= burn_max_ticks:
+					burn_stack = 0.0
+					burn_ticks = 0
+					burn_timer = 0.0
 	_tick_skitter(delta)
 	_tick_ooze(delta)
 	_tick_legs(delta)
@@ -567,7 +572,8 @@ func lay_web_ahead_of(walker: Node) -> void:
 # ------------------------------------------------------------------------ traps
 
 func bridge_point(bridge: int) -> Vector2:
-	var col: float = float(arena.BRIDGE_COL_A) if bridge == 0 else float(arena.BRIDGE_COL_B)
+	# the outer two bridges (a plain match's middle one is never trapped)
+	var col: float = float(arena.bridges[0][0]) if bridge == 0 else float(arena.bridges[arena.bridges.size() - 1][0])
 	return arena.tile_center(col + 0.5, float(arena.RIVER_TOP) + 0.5).lerp(
 		arena.tile_center(col + 0.5, float(arena.RIVER_BOTTOM) + 0.5), 0.5)
 
@@ -634,7 +640,7 @@ func apply_burn(amount: float, max_ticks: int = 4) -> void:
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0:
 		return
-	hp -= amount
+	hp -= arena.scale_hit(amount, team)
 	flash = 0.5
 	if arena.show_damage():
 		arena.spawn_damage_text(position + Vector2(0.0, -radius_t * float(arena.TILE) - 8.0), amount,
@@ -761,8 +767,8 @@ func _draw_river() -> void:
 		return
 	var tile: float = float(arena.TILE)
 	var gaps: Array = []
-	for bx in [float(arena.BRIDGE_COL_A), float(arena.BRIDGE_COL_B)]:
-		gaps.append([bx - float(arena.BRIDGE_HALF), bx + float(arena.BRIDGE_HALF)])
+	for b in arena.bridges:
+		gaps.append([float(b[0]) - float(b[1]), float(b[0]) + float(b[1])])
 	# split the wet span around the bridges
 	var spans: Array = [[river_a, river_b]]
 	for g in gaps:

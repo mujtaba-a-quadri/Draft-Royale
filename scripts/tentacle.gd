@@ -93,7 +93,7 @@ func _physics_process(delta: float) -> void:
 func take_damage(amount: float, _from: Vector2, _attacker: Node = null) -> void:
 	if dead or amount <= 0.0:
 		return
-	hp -= amount
+	hp -= arena.scale_hit(amount, team)
 	if hp <= 0.0:
 		arena.banner_flash("The tentacle is cut apart!")
 		_release()
@@ -106,8 +106,8 @@ func _release() -> void:
 	dead = true
 	if is_instance_valid(ensnared) and ensnared.get("stunned") != null:
 		ensnared.stunned = 0.0
-	# the card is the payoff for the cast, and it arrives when the tentacle is done
-	arena.draw_card(team)
+	# the card (with the relic: arena.ability_draws) arrives when the tentacle is done
+	arena.ability_payoff(team)
 	arena.unregister(self)
 	queue_free()
 

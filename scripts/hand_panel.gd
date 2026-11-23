@@ -15,7 +15,8 @@ extends Control
 const GAP := 5.0
 const HAND_LEFT := 249.0
 const NEXT_CX := 1351.0
-const NEXT_W := 100.0
+## The NEXT card is a square of two thirds the height it used to be (176 px).
+const NEXT_W := 176.0 * 2.0 / 3.0
 
 ## A hovered card is solid until troops stand behind it, then see-through (its
 ## art also drops while they are behind the art window: hand_card.gd).
@@ -119,7 +120,11 @@ func column_rect(i: int) -> Rect2:
 ## The NEXT card's box. The "next up" progress line will trace this rect,
 ## starting and ending at its top-left corner.
 func next_rect() -> Rect2:
-	return Rect2(NEXT_CX - NEXT_W * 0.5, 96.0, NEXT_W, 88.0)
+	# the strip's own panel: its bottom edge lines up with the hand's bottom edge
+	var top := 16.0
+	if not compact:
+		top = size.y - 6.0 - NEXT_W
+	return Rect2(NEXT_CX - NEXT_W * 0.5, top, NEXT_W, NEXT_W)
 
 
 ## Panel accent: the colour of the team this hand belongs to.
@@ -178,6 +183,49 @@ func _tick_deal(delta: float) -> void:
 			continue
 		var from: Vector2 = Vector2(size.x * 0.5, -30.0) if compact else next_rect().get_center()
 		pending_arrivals[id] = global_position + from
+
+
+## Cards a full hand just threw away, as they leave: kicked off the left end of
+## the hand (over the DISCARD arrow), spinning up and over, then falling off the
+## bottom of the screen as they fade. Cosmetic only: one Boot node per card, so
+## the face (which resets the draw transform around its art) turns as a whole.
+const BOOT_TIME := 1.1
+const BOOT_KICK := Vector2(-400.0, -380.0)
+const BOOT_GRAVITY := 1500.0
+const BOOT_SPIN := -2.6
+
+
+## Called by the arena just before it drops the hand's leftmost card.
+func note_discard(kind: String) -> void:
+	if compact or shelf_mode() or hand().is_empty():
+		return
+	var b := Boot.new()
+	b.kind = kind
+	b.size = card_rect(0).size
+	b.start = card_rect(0).get_center()
+	b.position = b.start
+	b.z_index = 2
+	add_child(b)
+
+
+class Boot extends Node2D:
+	var kind := ""
+	var size := Vector2.ZERO
+	var start := Vector2.ZERO
+	var t := 0.0
+
+	func _process(delta: float) -> void:
+		t += delta
+		if t >= BOOT_TIME:
+			queue_free()
+			return
+		position = start + BOOT_KICK * t + Vector2(0.0, 0.5 * BOOT_GRAVITY * t * t)
+		rotation = BOOT_SPIN * t
+		queue_redraw()
+
+	func _draw() -> void:
+		var alpha: float = clampf(1.0 - pow(t / BOOT_TIME, 1.6), 0.0, 1.0)
+		DDCardFace.draw(self, kind, Rect2(-size * 0.5, size), alpha)
 
 
 func _process(delta: float) -> void:
@@ -323,9 +371,14 @@ func _draw_next(font: Font) -> void:
 	if arena.queues[player].is_empty():
 		return
 	var r := next_rect()
-	draw_string(font, Vector2(r.position.x, 90.0), "NEXT", HORIZONTAL_ALIGNMENT_CENTER, NEXT_W, 11,
+	draw_string(font, Vector2(r.position.x, r.position.y - 3.0), "NEXT", HORIZONTAL_ALIGNMENT_CENTER, NEXT_W, 10,
 		Color(0.62, 0.64, 0.74))
 	DDCardFace.draw(self, String(arena.queues[player][0]), r, 0.9)
+	# greyed a little: it is not in the hand yet
+	var tint := StyleBoxFlat.new()
+	tint.bg_color = Color(0.42, 0.43, 0.48, 0.38)
+	tint.set_corner_radius_all(int(14.0 * r.size.x / 300.0))
+	draw_style_box(tint, r)
 	var frac: float = 1.0 - clampf(float(arena.draw_timer[player]) / float(arena.draw_interval()), 0.0, 1.0)
 	# the edge trace is the draw timer: no bar underneath it any more
 	_next_progress_line(frac, hand().size() >= arena.HAND_MAX)
@@ -360,23 +413,56 @@ func _next_progress_line(frac: float, full: bool) -> void:
 	draw_polyline(pts, col, 2.5, true)
 
 
-## Red arrow pointing at the card that a draw would throw away.
+## Seconds between the discard arrow's throbs.
+const DISCARD_PULSE := 2.0
+
+## Arrow pointing away from the card that a draw would throw away. Its tip is
+## a red warning sign lying on its side (apex pointing left, the "!" lying
+## along it). Every DISCARD_PULSE seconds the whole arrow throbs: it swells
+## from its right end, brightens, and a halo of the sign spreads and fades.
 func _draw_discard_warning(font: Font) -> void:
 	var r := card_rect(0)
 	var y := r.position.y + r.size.y * 0.5
-	var pulse := 0.55 + 0.45 * absf(sin(clock * 5.0))
-	var col := Color(1.0, 0.3, 0.3, 0.5 + 0.5 * pulse)
-	# arrow points left, away from the card: triangle head on the far left,
+	var phase: float = fmod(clock, DISCARD_PULSE)
+	var beat: float = exp(-phase * 5.0)  # 1 at the throb, gone in about half a second
+	var s: float = 1.0 + 0.14 * beat
+	# everything is laid out from the arrow's right end, so it swells away from the card
+	var anchor := Vector2(r.position.x - 6.0, y)
+	var at := func(v: Vector2) -> Vector2: return anchor + v * s
 	# dark grey body carrying the word
-	var head := Vector2(r.position.x - 118.0, y)
-	draw_colored_polygon(PackedVector2Array([
-		head, head + Vector2(22.0, -16.0), head + Vector2(22.0, 16.0),
-	]), col)
-	var body := Rect2(head + Vector2(20.0, -9.0), Vector2(92.0, 18.0))
+	var body := Rect2(at.call(Vector2(-92.0, -9.0)), Vector2(92.0, 18.0) * s)
 	draw_rect(body, Color(0.18, 0.18, 0.22, 0.95), true)
-	draw_rect(body, Color(1.0, 0.35, 0.35, 0.9), false, 1.5)
-	draw_string(font, body.position + Vector2(0, 14), "DISCARD", HORIZONTAL_ALIGNMENT_CENTER, body.size.x, 13,
-		Color(0.82, 0.82, 0.86, 0.75 + 0.25 * pulse))
+	draw_rect(body, Color(1.0, 0.35, 0.35, 0.75 + 0.25 * beat), false, 1.5)
+	draw_string(font, at.call(Vector2(-92.0, 5.0)), "DISCARD", HORIZONTAL_ALIGNMENT_CENTER, body.size.x,
+		int(round(13.0 * s)), Color(0.82, 0.82, 0.86).lerp(Color(1, 1, 1), beat))
+	# the sign: apex left, base overlapping the body's end
+	var apex := Vector2(-128.0, 0.0)
+	var top := Vector2(-90.0, -20.0)
+	var bot := Vector2(-90.0, 20.0)
+	var mid := (apex + top + bot) / 3.0
+	# halo: the sign's outline spreading out from its middle as the throb fades
+	if beat > 0.02:
+		var grow: float = 1.0 + 0.7 * (1.0 - beat)
+		var halo := PackedVector2Array()
+		for v in [apex, top, bot, apex]:
+			halo.append(at.call(mid + (v - mid) * grow))
+		draw_polyline(halo, Color(1.0, 0.25, 0.2, 0.6 * beat), 2.5, true)
+	var corners := PackedVector2Array([at.call(apex), at.call(top), at.call(bot)])
+	var rim := Color(0.42, 0.03, 0.03)
+	var red := Color(0.86, 0.12, 0.1).lerp(Color(1.0, 0.32, 0.26), beat)
+	# rounded corners: a thick rim with a disc at each corner, the red laid over it
+	draw_colored_polygon(corners, rim)
+	draw_polyline(PackedVector2Array([corners[0], corners[1], corners[2], corners[0]]), rim, 6.0 * s, true)
+	for c in corners:
+		draw_circle(c, 3.0 * s, rim)
+	draw_colored_polygon(corners, red)
+	draw_polyline(PackedVector2Array([corners[0], corners[1], corners[2], corners[0]]), red, 2.0 * s, true)
+	# the "!" on its side: the bar toward the apex, the dot toward the base
+	var glyph := Color(1.0, 0.97, 0.92)
+	draw_line(at.call(Vector2(-116.0, 0.0)), at.call(Vector2(-106.0, 0.0)), glyph, 4.6 * s, true)
+	draw_circle(at.call(Vector2(-116.0, 0.0)), 2.3 * s, glyph)
+	draw_circle(at.call(Vector2(-106.0, 0.0)), 2.3 * s, glyph)
+	draw_circle(at.call(Vector2(-98.0, 0.0)), 2.6 * s, glyph)
 
 
 ## The opponent does not show a hand: their gold reads as ten coins instead.
@@ -418,7 +504,9 @@ func _draw_ability(font: Font) -> void:
 	draw_rect(ability_rect, Color(0.4, 0.85, 0.5, 0.9) if ready else Color(0.45, 0.45, 0.55, 0.8), false, 2.0)
 	draw_string(font, ability_rect.position + Vector2(10, 24), label, HORIZONTAL_ALIGNMENT_LEFT,
 		ability_rect.size.x - 20.0, 15, Color(0.92, 0.94, 1.0))
-	var status := "READY · %d gold" % arena.ABILITY_COST if ready else "%.0fs" % ceilf(cd)
+	var status := "READY · %d gold" % arena.ability_cost(player) if ready else "%.0fs" % ceilf(cd)
+	if int(arena.ability_aim) == player:
+		status = "PICK A UNIT"
 	draw_string(font, ability_rect.position + Vector2(10, 46), status, HORIZONTAL_ALIGNMENT_LEFT,
 		ability_rect.size.x - 20.0, 12, Color(0.7, 0.85, 0.72) if ready else Color(0.7, 0.7, 0.8))
 	if not ready:

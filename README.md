@@ -34,7 +34,7 @@ the axes and grows it**, and a click or Enter takes it:
 | --- | --- |
 | 2nd, top left (peach) | **Play a match**: one plain match, both decks the whole collection |
 | 1st, top right (lavender) | **Start a run** |
-| 3rd, bottom left (mint) | **Collection**: every card, large (click one to see it with its description; Esc or Back returns) |
+| 3rd, bottom left (mint) | **Collection**: every card's full face with its description, as many to a row as fit at full size (5 at 1600 px), straight on the graph paper; the wheel scrolls smoothly (click one to see it larger; Esc or Back returns) |
 | 4th, bottom right (blue) | **Exit** to the desktop |
 
 The pause menu (Esc) has a **Title screen** button, which abandons the match or run. Launching with
@@ -44,7 +44,7 @@ The pause menu (Esc) has a **Title screen** button, which abandons the match or 
 
 A run is a string of fights with **one deck** against bots, one after another:
 Border Skirmish, Swamp Patrol, an elite (the **Ballista Matriarch** or the **South Sea Kraken**, drawn from the run seed), The Chained
-Keep. You start with a deliberately plain **10 card deck**: three Militia, two Elf Archers, a
+Keep. You start with a deliberately plain **10 card deck**: three Militia, an Elf Archer, a Honeycreeper Flock, a
 Firebolt, the Alchemist, two cards that draw (Hot Chicken, Snowman) and **Humbaba** as the one win
 condition, so every card you draft is a visible step up. Border Skirmish's bot plays the same kind of
 basics.
@@ -100,6 +100,7 @@ is the same size, shrunk so the whole column fits the panel.
 * **30 rows tall.** Rows 1-10 (top) and 19-28 (bottom) are 16 tiles wide; the
   middle band of 8 rows (11-18) bulges out to 18 tiles, so the board reads as a
   plus. River at rows 14-15, bridges at columns 4-5 and 12-13, each deck **3 tiles wide**: those two columns plus half a tile of the water on either side. The half tiles can be walked on but **nothing can be played there**, and a troop shoved sideways on the bridge stays on it and keeps crossing instead of turning back to its bank.
+  A **plain match** (Play a match, `--match`) has **three bridges** instead: a **4-tile** one in the middle (columns 7-10) and a **2.5-tile** one a tile in from each edge (columns 1-3 and 14-16; the part tiles at their inner edges can be walked on but not played on). Every troop crosses by the bridge nearest its lane, and there is no single midline. Runs, elites, the bot sim and the dev scenarios keep the two bridges; `--bridges=2|3` forces either.
 * **Hover preview** — armed cards preview on the grid: tile outline plus a tinted ghost (or the
   whole swarm formation) and, for spells, the splash radius.
 * **No-man's land** — the middle band of 8 rows. Each player may **always** deploy
@@ -129,7 +130,9 @@ is the same size, shrunk so the whole column fits the panel.
 * Three towers per side: two princess towers and one **commander (king) tower**, **250 HP each**. Princess towers shoot **7 tiles**, the commander tower **8**.
   The princess towers stand in line with the bridges (centred on columns 5 and 13,
   rows 6 and 24); the commanders sit at rows 3 and 27. Their hitbox is a circle of
-  0.9 tiles. `--towers=diamond` draws the princess towers as diamond keeps (looks
+  0.9 tiles. A princess tower is drawn as an **8/2 eight-pointed star** (two squares, one turned
+  45°, outline only) with its tips 1.0 tile out (`DDTower.STAR_TIP_T`), so the hitbox comes close
+  to the tips without reaching them (`--scenario=towerstar` draws the hitbox rings). `--towers=diamond` draws the princess towers as diamond keeps (looks
   only; `res://scenes/tower_mock.tscn` compares the shapes against the hitbox).
   **Taking the commander tower wins the match outright** — princess towers alone never end it.
 * **The clock runs in three phases**, each announced in big letters across the middle of the board
@@ -143,7 +146,7 @@ is the same size, shrunk so the whole column fits the panel.
   From double gold on, ability cooldowns are halved and card draws come **two seconds faster**.
   If sudden death runs out: in a **run** that is a loss (an elite has to be killed); in a plain match
   it goes to **more tower HP left** (all standing towers summed), and level on that is a draw.
-* **38 cards in the game, 36 in each deck** — Pen and the Magma Whelp are not dealt out; they only
+* **41 cards in the game, 39 in each deck** — Pen and the Magma Whelp are not dealt out; they only
   arrive when Penny / the Obsidian Whelp is played. (The Nekomancer's Rat Skeletons and the Ant Hill's ants are summons, not cards.) **3 cards dealt** at the start (`OPENING_HAND`), **at most 6 in hand** (`HAND_MAX`), 1 "next", cycling exactly like
   Clash Royale: play a card and it goes to the back of the queue. Both decks are
   **shuffled fresh every match**, independently of each other. **A deck may hold several copies
@@ -186,6 +189,8 @@ every size into `mockups/tcg/`, with an icon legend.
 | The Chained Dragon | 9 | **420** | claw 45 / 1.4 s → **25 fire per second** | A green brute with his **wings** chained (the hands are free — it can still claw). At half HP the chains burst, he takes the sky and **breathes straight down** in **your team's colour**: a **2 tile burning patch** under and just ahead of him doing **25 damage a second**. It **burns friend and foe alike** — anything on the ground under him, your own troops included — but flyers are above it. He flies until the fire is landing on his target, so **the tower he is attacking burns too**, and he hovers there pouring it on |
 | Alchemist | 4 | 55 | 45 splash (1.4 tiles) / 2.0 s | At ≤50% HP it flips team, charges the nearest **tower or building** at high speed and detonates for 100. After turning it ignores troops entirely |
 | Fireball | 5 | – | 40 splash + **70 burn**, shoves loose units 1.2 tiles out, then **10 burn a second** from the ground | Fired from your **king tower**; `tower_mult` cuts tower damage. The blast leaves the ground **burning for 4.2 s** across its whole 2.2 tile radius: every second (4 doses) it adds **10 burn** to each enemy troop, building or tower standing in it |
+| Dominion of Puissance | 2 | – | **+1 Puissance** for the rest of the fight | A **Dominion** (power) card: cast anywhere, it raises your side's Puissance by 1 until the fight ends, and is **used up** until the next fight. The bot casts one as soon as it has 3 gold to spare |
+| Dominion of Armor | 2 | – | **+1 Armor** for the rest of the fight | The Dominion card for Armor: same rules |
 | Firebolt | 2 | – | **No damage — 60 burn**, one target | An arrow of fire from your **nearest tower**. The only card that **locks on**: while you hold it, hovering any enemy body — **troop, building, tower or boss** — rings it and pins the cast to it. **It can only be played locked on**: over bare ground there is no preview and a click does nothing (no gold spent). It has **no radius**: the arrow **follows its target all the way in and always lands on it**, burning that one body and nothing beside it (if the target dies first, it lands where it was)  **Two casts**: after the first throw the card stays in your hand and stays armed, so clicking again throws again — right click (or picking another card) puts it back with one charge left, shaded over the spent half (the triangle below the bottom-left → top-right diagonal). Only the **second** cast consumes it |
 | Snowball | 4 | – | **10 × height** while rolling, **30** on the burst | You pick a tile; it is **thrown in an arc** from your **nearest tower** onto it, lands as **one tile of snow**, then rolls forward in a straight line along that row, growing **smoothly, a tile of height for every two tiles it covers** (its size and the lane it flattens grow continuously; damage and shove count whole tiles of height). That means it can be cast **on their side** — it simply starts rolling where it lands. Rolling strikes deal **10 per tile of current height** and shove things back that many tiles, **once per enemy** (the roll never hits the same thing twice). It rolls **8 tiles** from where it lands, **straight over the river**, then bursts (sooner at the back of the board) for **30** and a **3.5 s slow** on everything in its lane from its own size behind to **1.5 tiles past its front**, so the burst catches what the roll shoved ahead of it. Troops only |
 | Golden Idol | 4 | 35 | – | Stationary, taunts, **10 s lifetime**. On death it **drags enemies within 3 tiles inward at 1 tile/s** for a 1 s rumble, then breaks loose as a boulder **2.5 tiles behind the idol** and rolls through the spot at its killer, locked to **16 compass directions**: 80 damage, **2 tile knockback and a 2 s stun** to everything it passes |
@@ -195,7 +200,7 @@ every size into `mockups/tcg/`, with an icon legend.
 | Lizard Soldiers | 3 | 55 ×3 | 10 every 1.0 s **rifle at 3.5 tiles** | Wedge of three. **Always retargets the weakest thing in range — troops, buildings and towers alike** — not the nearest, and its presence cone sits **one row further forward**. With nothing in range it **advances on the nearest enemy tower** instead of standing still |
 | Lizard Warren | 4 | 130 | – | Stationary burrow with a **60 s lifetime**. When an enemy comes within **6 tiles** it empties out **3 Lizard Soldiers**, then waits 6 s |
 | In-Ovo Machine | 6 | 240 | – | A **2 × 2** industrial hatchery with a **60 s lifetime** that pushes a **Hot Chicken** out of its front hatch **1 second after it is deployed and every 12 seconds after that** (five on the clock), plus **one more when it dies** — whether the timer takes it or it is destroyed early — front and centre, facing whichever way your push is going. It runs on its own clock: unlike the Warren it does not need company |
-| Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn; **then 30 burn splash** on contact | Two phases. It **pecks fireballs from range**, and after **three hits on one target** it takes to the air: a **fire spirit that flies **twice as fast** at that target and rams it, setting everything in a 1.4 tile radius alight with **30 burn** (no direct damage), dying in its own blast**. It becomes a flyer for the ram, so ground troops without anti-air cannot stop it — but it is **killable in flight** by anything that hits air, and shooting it down means no burst at all. **Playing it draws one card** at once, and that is all: its gold does not pull the next draw closer, and the draw clock is left where it was |
+| Hot Chicken | 2 | 45 | 5 fireball (3.5 tiles) + 5 burn; **then 30 burn splash** on contact | Two phases. It **pecks fireballs from range**, and after **three hits on one target** it takes to the air: a red-gold rooster whose wings and comb are tongues of fire, that **climbs straight up on the spot for 0.6 s** (`chicken.takeoff`; already a flyer, so anti-air can catch it there), then **dives nose-down, trailing fire, **twice as fast** at that target and rams it, setting everything in a 1.4 tile radius alight with **30 burn** (no direct damage), dying in its own blast**. It becomes a flyer for the ram, so ground troops without anti-air cannot stop it — but it is **killable in flight** by anything that hits air, and shooting it down means no burst at all. **Playing it draws one card** at once, and that is all: its gold does not pull the next draw closer, and the draw clock is left where it was |
 | Penny | 3 | 90 | 10 / 0.7 s, melee; **20 leap** | Calico blur. She fights **anything, buildings and towers included**, but **a flyer in sight always comes first**, ahead of any nearer ground target. She **never swipes a flyer**: she runs in under it and, within **2.5 tiles**, **leaps at it**, grabbing it and carrying it the full 2.5 tiles for a **double hit** (20) while untargetable, then waits **1.4 s** before her next leap. On the ground, after **2 swipes** she goes **invincible and untargetable**: she steps **half a tile back** and **strafes a quarter circle** around her target (first strafe turns toward the outside of the board, later ones keep turning the same way), then leaps at the nearest air unit within 2.5 tiles, otherwise the closest body, the same grab. **Giants and buildings cannot be carried** (she stops on their hitbox instead), and with nothing to grab she simply does not jump. **Playing Penny gives you Pen on the spot**: his card flies from where she landed into the hand slot she left, and Penny goes to the back of the deck like any card |
 | Pen | 2 | 100 | 10 / 1.8 s, **5 tile blowgun** | Penny's other half: slow, calm, wrapped in a yellow toga. Every **dart paralyses** whatever it hits for **0.5 s** (units only — towers have nothing to paralyse). **Used up when played**: Pen never goes into the deck, so each Penny play gives exactly one Pen  **Hits air** — a dart to a honeycreeper paralyses it mid-dive |
 | Primal Aphid | 3 | 110 | **5 × 8** in a 45° cone, every 2 s | A flyer that **hovers in to 2 tiles and stops** — it never closes. From there it spits a **five pellet shotgun** across a 45° cone aimed at its target. Each pellet flies **3.5 tiles**, so it reaches a full tile and a half past the aphid's own stance, and it can hit **ground or air**. Pellets **do not pierce**: the first body a pellet crosses eats it and the pellet is spent |
@@ -206,6 +211,7 @@ every size into `mockups/tcg/`, with an icon legend.
 | Wu Cheng'en | 4 | 140 | **16** per staff hit / 1.4 s, melee (1 tile) | A bonobo who **knuckle-walks on all fours**. In reach he stands and **pulls a tiny staff from behind his ear that grows to full size in both hands** (0.4 s, no swing until it is out; it stays out while he closes a step or two, and goes back once the fight is more than 1.5 tiles past his reach). Then he alternates: a **poke** that goes through the target and **2 tiles on**, hitting and **pushing 0.5 tiles** everything on the ground in that line, and a **sweep** across a **120° cone** (1.8 tiles) centred on the target. Ground only. **Every enemy struck banks one rage.** Under **25 % HP** (a tick in the opponent's colour on his HP bar) he **rages once for 5 s**: **+25 % move and attack speed** and regen by banked rage: **5 HP/s**, **15** from 4 hits, **25** from 8, **40** from 12. A second bar under his HP fills once per rage level, each pass redder |
 | Nekomancer | 5 | 100 | **14 beam** / 1.2 s, **4 tiles** | A black cat in a ragged green cloak and a pointed wizard's hat, with a crescent-headed staff. The staff fires an **instant single-target beam** in **your team's colour** at **ground or air**. **1.5 s after she is played, then every 4 s**, the wind catches her cloak and **two pentagrams** open on the ground **on her forward diagonals, a tile further ahead** (1.85 tiles in front, 0.85 to each side), so the rats climb out in front of her; **1 s later a Rat Skeleton climbs out of each**. The pentagrams belong to the board, so **a ritual already glowing still finishes if she dies** |
 | Gilgamesh & Enkidu | 6 | **320 + 280** | lash **22** / 1.3 s (**2.5 tiles**); spear **24** / 1.2 s, **45 thrown** | One card, **two bodies** landing a tile apart, both tanky and quick (1.3 and 1.45). **Gilgamesh**, in teal plate with a lion's head on his shoulder, lashes with **a snake in your colour**: an instant hit out to **2.5 tiles**, ground only. **Enkidu**, the horned bull-man, **throws his spear** (45) at the nearest **ground troop** whose centre is **3 – 4.5 tiles** away — never a flyer, building or tower, and not at all if anything is already **inside 3 tiles**, which he fights with the spear in hand instead (24, **reaches air**). After a throw he fights with a **short sword** (16 / 0.9 s, 0.5 reach, ground only) for **3.5 s**, then the spear is back and can be thrown again |
+| Lizard Brawlers | 4 | 95 ×2 | **14** / 1.0 s each, melee claws | Two frilled lizards in belted gis, landing side by side. Plain melee: no weapon, no trick, they go for the nearest thing and claw it. Each keeps its own HP |
 | Militia | 2 | 80 | **9** / 1.0 s, 0.6 tile spear | A farmhand with a spear and a pot-lid shield: the plain melee basic of the starter deck. Never offered as a card reward (every card not in the starter deck can be) |
 | Ballista | 5 | 220 | **34** siege bolt / 3.0 s, **7.5 tiles**, buildings and towers only | **The first moving building.** A lizardfolk engineer lifts the back of the stock and **wheels it forward** (0.45 tiles/s); once something is in reach he sets it down and winds the string back for each shot. It is a building by every rule (building-hunters go for it, shoves do nothing, it holds no tile) but it walks, and it has **no lifetime**. Up a lane it **sets down on the middle of the bridge, 9 tiles from the enemy side tower's centre: out of that tower's 7-tile reach**, so only troops can stop it. Uncontested it takes about 22 s to bring a side tower down |
 | Elf Archer | 4 | 110 | **20** / 1.3 s, **5.5 tiles**, hits air | A hooded elf with a longbow: a plain ranged troop with the longest reach of any troop, shooting **ground or air**. The string comes back as the next shot comes due. In the run's starter deck, never offered as a card reward |
@@ -386,18 +392,62 @@ B  -> toggle the bot
 
 The keys are listed on a hint line under the match clock in dual view.
 
+## Relics
+
+A run gives you relics (`scripts/relic_db.gd`): your commander's own at the start, then one more after **every 2nd
+regular fight won** and **every elite won** (drawn from the ones you lack, fixed by the run seed; shown on the reward
+screen). They sit in a column left of the board, a second column once you hold more than six; hover one for what it does.
+
+| Relic | Effect |
+| --- | --- |
+| **Whetstone** | Start each fight with 1 Puissance |
+| **Tortoise Shell** | Start each fight with 1 Armor |
+| **Metronome** | Play 3 cards within 9 s: gain 1 gold |
+| **Sleight of Hand** | Play 4 cards within 12 s: draw a card |
+| **Hourglass** | Go 9 s without playing a card: draw a card (and again every 9 s) |
+| **Miser's Ledger** | Every 4th gold you earn over time comes as 2 |
+| **Lucky 7** | Whenever your gold climbs from 7 to 8 over time, you get 2 gold instead of 1 (gifts like the Metronome's do not count). Its ring fills with your gold on the way to 8 |
+| **Field Dressing** | Your commander heals 10 at the start of each fight |
+| **Fuel for the Fire** (Flammenmeister's own) | Skip a card reward and the next one shows **4 cards**, but you cannot take just 1: **skip** (and the next stays this way) or **take 2 and remove a card** from your deck (then the next is normal) |
+| **Warlord's Horn** (the Goblin Warlord's own) | Your king tower deals 1.5x damage |
+| **Abyssal Pearl** (the Jelly's own), **Hive Shard** (Man-Mantis's own) | Placeholders: no effect yet |
+
+**The timer relics show their clock.** A windowed relic (Metronome, Sleight of Hand) has a ring that fills with the age of
+the **oldest card still counting**, and a badge with **how many cards count**; when the ring fills, that card drops out, the
+count goes down by one and the ring jumps back to the next oldest. When the count reaches its target the relic fires
+(it glows) and empties. The Hourglass's ring is the wait since your last card; the Ledger's is the way to the next doubled
+gold, with the count of gold toward it. Test them in a plain match with `--relics=metronome,hourglass,...`; the dev
+scenario `--scenario=relics --log` checks them all, and the run's awards and Fuel for the Fire.
+
+## Puissance and Armor
+
+Per-fight scaling, after Slay the Spire's Strength and Dexterity. Each side has two counters that start every fight
+at the run's base (0 for now; relics will raise it) and build up during the fight:
+
+* **Puissance** adds that much to **every direct hit** the side lands: troops, towers and spells alike. It is flat,
+  so it favours fast and many-bodied attackers (Militia, Lizards, swarms) the way Strength favours multi-hit cards.
+* **Armor** takes that much off **every direct hit** the side takes, never below 1. Flat again, so it blunts swarms
+  and chip damage far more than one big hit.
+* **Damage over time is untouched**: burn, poison and the drone tick at full value either way.
+
+A side's non-zero values show as a sword and a shield badge over its commander. The **Dominion** cards and the Whetstone / Tortoise Shell relics grant them (scaling elites are still the plan); in the Tab view **P** adds 1 Puissance and **O** 1 Armor to
+player 1, with **Shift** for player 2. Check: `--scenario=scaling --log`.
+
 ## Hero abilities
 
-Each player is assigned **one** of two abilities at random per match. Both cost
-**2 gold** and share a **15 s cooldown** (**7.5 s from double gold on**). The button sits in the
+Each player gets **one commander** at random per match, out of four: the Celestial Jelly (**Tentacle**),
+the Goblin Warlord (**Shiesty**), **Flammenmeister** (**Kindle**) and **Man-Mantis** (**Drone**); the two sides never get the same one.
+Kindle costs **1 gold**, the rest **2 gold**, and all share a **15 s cooldown** (**7.5 s from double gold on**). The button sits in the
 top-right of your panel and shows the cooldown, or the reason it cannot fire (`2g`, `no target`,
-`no tower`). Both also pay out **one card draw**, but only when the payload actually lands —
-the tentacle's draw arrives when it dies, Shiesty's **either way** — caught or home.
+`no tower`). Neither draws a card on its own. A relic (not in yet) will add **one card draw** when the payload lands —
+the tentacle's when it dies, Shiesty's **either way**, caught or home (`arena.ability_draws`).
 
 | Ability | Effect |
 | --- | --- |
-| **Tentacle** | Bursts from the ground under the enemy troop with the most HP, **coils round it** (more turns for a bigger body, drawn in the caster's team colour) and holds it for **4 s**, **squeezing for 7 on the grab and every 1.6 s after** (21 over a full hold; the coil visibly tightens on each squeeze). The kraken elite's burrowing arms use the same tentacle. The tentacle has **20 HP**; the ensnared side's own units or towers can kill it to free their troop early. **Its card draw comes when it dies** |
-| **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). The flight out is **invincible and untargetable** — nothing can see or touch him until he lands. He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot (**and pays the card draw**), being killed on the way hands it back and pays nothing. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him, and only on the way home. **He picks his way home as he lands**: the bridge whose half of the board holds fewer enemy troops that could attack him (the nearer bridge on a tie), and he **never turns back** once he has chosen, whatever gets played after  **Either outcome pays one card draw** — getting home or being cut down on the way; only the **coin** has to reach your tower, so a dead Shiesty hands the gold back and still brings a card |
+| **Tentacle** | Bursts from the ground under the enemy troop with the most HP, **coils round it** (more turns for a bigger body, drawn in the caster's team colour) and holds it for **4 s**, **squeezing for 7 on the grab and every 1.6 s after** (21 over a full hold; the coil visibly tightens on each squeeze). The kraken elite's burrowing arms use the same tentacle. The tentacle has **20 HP**; the ensnared side's own units or towers can kill it to free their troop early. (With the draw relic, its card comes when it dies) |
+| **Kindle** (Flammenmeister, a flame elemental) | **Aimed**: the button arms it, then click a unit. On a **friendly** troop or building: **6 HP a second for 4 s** (24 in all). On an **enemy** one: a **weaker Firebolt** from his own tower, homing on it, **30 burn** (the card's is 60). Right-click or Esc puts it away unspent |
+| **Drone** (Man-Mantis, a humanoid mantis) | **Aimed**: click an enemy troop or building (not one already carrying a drone). The drone eats **5 HP a second** out of it **until it dies**, whatever kills it; then a **parasite bursts out on your side**, sized by the damage the drone did: **up to 20 — Drone Larva** (a worm, 30 HP, 5 dmg), **up to 60 — Drone Nymph** (reared up, head, feelers, hooks; 80 HP, 10), **up to 150 — Drone Stalker** (on two legs, scythe arms; 170 HP, 22), **over 150 — Drone Monstrosity** (a second Man-Mantis, caped; 380 HP, 40). Big hosts make big parasites, but take longer to die |
+| **Shiesty** | Launches **Shiesty** from your king tower at the enemy tower with the most HP (leftmost on a tie). The flight out is **invincible and untargetable** — nothing can see or touch him until he lands. He hits once for 30 and **steals 1 gold**, then runs home: reaching your tower keeps the loot, being killed on the way hands it back. He is a thief, not a soldier — **towers ignore him entirely** and he **gives you no map presence**; only troops can stop him, and only on the way home. **He picks his way home as he lands**: the bridge whose half of the board holds fewer enemy troops that could attack him (the nearer bridge on a tie), and he **never turns back** once he has chosen, whatever gets played after. With the draw relic, **either outcome pays one card** — getting home or being cut down; only the **coin** has to reach your tower |
 
 The bot holds the ability until it will pay off (it still needs gold ≥ 5 first):
 
@@ -407,9 +457,13 @@ The bot holds the ability until it will pay off (it still needs gold ≥ 5 first
   standing over — that tentacle dies on reveal for nothing.
 * **Shiesty** — never fires while enemy units and towers near the target will meet him, and never
   fires when the enemy has no gold to steal (nothing to deliver means no card either).
+* **Kindle** (gold ≥ 3) — burns an enemy its 30 burn would kill; else warms a friend that is fighting and
+  has lost at least 24 HP; else, with 8 gold or more, burns the enemy deepest into its half.
+* **Drone** — plants it in the enemy with the most HP, if that is over 40.
 
-Force a specific assignment for testing: `--ability=tentacle` or `--ability=shiesty`
-(player 1 gets it, player 2 gets the other).
+Force your commander for testing: `--ability=tentacle`, `shiesty`, `flame` (or `flammenmeister`) or
+`drone` (or `manmantis`); player 2 gets a random other one. The bot sim still plays Tentacle against Shiesty.
+The dev scenario `--scenario=commanders --log` checks the warmth, the bolt and all four parasite sizes.
 
 ### Buildings
 
@@ -436,7 +490,9 @@ Only **one** status can be on a unit; the newest application replaces whatever w
   flashing **white** on the tick that ends it. Each second it deals `floor(rate × stack)` and removes
   that much from the stack: **40 % for troops, 20 % for towers**. Ticks without a fresh application
   and the whole thing goes out — the duration is per card (`burn_ticks`, default 4). Towers can burn.
-  A 40 burn on a 90 hp troop ticks 16 / 10 / 6 / 4; on a tower 8 / 6 / 5 / 4.
+  A 40 burn on a troop ticks 16 / 9 / 6 / 3 (34); on a tower 8 / 6 / 5 / 4 (23). A fresh application
+  adds to what is left and restarts the count, so burn spread over several hits deals a little more
+  than the same amount at once (20 + 20 two seconds apart: 35 on a troop).
 * **Slow** — dark blue tint; movement only, for a fixed duration.
 
 ### Orientation
@@ -487,9 +543,11 @@ while you drag the card over the arena**, so the placement preview is the only c
   Esc, or when it is carried back off the board after being on it.
 * **Drawing while you hold a card keeps holding it**: when a full hand throws its leftmost card away
   every slot shifts, and the selection follows the card (that exact copy) rather than the slot.
-* **NEXT** — the next card's edge is traced by a progress line that starts and ends at its top-left
+* **NEXT** — the next card stands at the right end of the hand, **full height and tinted grey** (it is not yours yet). Its edge is traced by a progress line that starts and ends at its top-left
   corner and fills with the draw timer. It is your team colour, and your opponent's while the hand
   is full (the next draw throws the leftmost card away).
+* **A discarded card is kicked away**: it flies up off the left end of the hand, over the DISCARD arrow, spinning, then falls off the bottom of the screen as it fades.
+* **Small faces name their attacks**: icon, name and damage, one attack per row while the rows fit. When they do not, a second column starts just right of the card's middle (the second attack beside the first).
 
 ### Hover previews
 

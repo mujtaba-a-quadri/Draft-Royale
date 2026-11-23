@@ -122,7 +122,10 @@ var devour_from := Vector2.ZERO
 var held := false
 var corpse_t := 0.0
 var headless := false
-const CLAW_SHOW := 0.22
+## the mantis swing (picture only): scythes lifted over the last CLAW_WINDUP of
+## the cooldown, chopped down through CLAW_SHOW after the hit
+const CLAW_SHOW := 0.34
+const CLAW_WINDUP := 0.35
 var claw_t := 0.0
 var base_dmg := 0.0
 var base_interval := 0.0
@@ -181,6 +184,23 @@ var chicken_cfg: Dictionary = {}
 var chicken_hits := 0
 var chicken_target := 0
 var airborne := false
+## Hot Chicken going up: seconds of the takeoff left (it hangs where it was,
+## climbing, before the dive), and the distance to its target when the dive
+## began (the picture comes down from its height as that distance closes).
+var takeoff_t := 0.0
+var dive_dist0 := 0.0
+## Flammenmeister's warmth: regen_rate hp a second for regen_t more seconds
+## (a new one replaces the old).
+var regen_t := 0.0
+var regen_rate := 0.0
+## Man-Mantis's drone: the team that planted it (-1: none), the damage it has
+## done so far, and the clock to its next bite (one DRONE_DPS bite a second).
+## When this unit dies, however it dies, a parasite of drone_team's bursts out,
+## sized by drone_dealt (arena.parasite_for).
+var drone_team := -1
+var drone_dealt := 0.0
+var drone_timer := 0.0
+var drone_biting := false
 var burn_per_hit := 0.0
 ## Second phase of a chicken: fly at the target and burst on contact.
 var kamikaze_cfg: Dictionary = {}
@@ -448,7 +468,7 @@ func slow(amount: float, seconds: float) -> void:
 	slow_time = maxf(slow_time, seconds)
 
 
-## Burn: a stack that eats 30 % of itself per second. Four seconds without a
+## Burn: a stack that eats BURN_RATE (40 %) of itself per second. Four seconds without a
 ## fresh application and the whole thing goes out.
 func apply_burn(amount: float, max_ticks: int = 4) -> void:
 	if dead or amount <= 0.0:
@@ -506,9 +526,24 @@ func _physics_process(delta: float) -> void:
 		poison_timer -= delta
 		if poison_timer <= 0.0:
 			poison_timer += POISON_PERIOD
-			take_damage(poison * POISON_MULT * (POISON_BUILDING if is_building() else 1.0), position)
+			arena.tick_damage(self, poison * POISON_MULT * (POISON_BUILDING if is_building() else 1.0))
 			if dead:
 				return
+	if drone_team >= 0:
+		# a bite a second from inside: like poison, it gets past a shield
+		drone_timer -= delta
+		if drone_timer <= 0.0:
+			drone_timer += 1.0
+			# take_damage tallies the bite (drone_biting) before any death, so
+			# the parasite that bursts out counts the killing bite too
+			drone_biting = true
+			arena.tick_damage(self, arena.DRONE_DPS)
+			drone_biting = false
+			if dead:
+				return
+	if regen_t > 0.0:
+		regen_t = maxf(0.0, regen_t - delta)
+		hp = minf(max_hp, hp + regen_rate * delta)
 	swing_t = maxf(0.0, swing_t - delta)
 	slam_t = maxf(0.0, slam_t - delta)
 	staff_anim_t = maxf(0.0, staff_anim_t - delta)
@@ -637,7 +672,7 @@ func _physics_process(delta: float) -> void:
 				burn_stack = maxf(0.0, burn_stack - tick_dmg)
 				burn_ticks += 1
 				burn_pulse = 1.0
-				take_damage(tick_dmg, position)
+				arena.tick_damage(self, tick_dmg)
 				if dead or burn_ticks >= burn_max_ticks or burn_stack <= 0.0:
 					clear_status()
 	elif status == Status.SLOW:
@@ -732,7 +767,15 @@ func _physics_process(delta: float) -> void:
 
 	var gap: float = arena.gap_between(position, target.position, radius_t, float(target.get_radius_t()))
 	if not kamikaze_cfg.is_empty() and airborne:
-		# airborne: it flies at whatever it picked and bursts on contact
+		# airborne: first the climb straight up, on the spot; then it dives at
+		# whatever it picked and bursts on contact
+		if takeoff_t > 0.0:
+			takeoff_t = maxf(0.0, takeoff_t - delta)
+			state = S.APPROACH
+			if takeoff_t <= 0.0:
+				dive_dist0 = maxf(1.0, position.distance_to(target.position))
+			queue_redraw()
+			return
 		if gap <= reach:
 			_burst()
 			return
@@ -1595,6 +1638,7 @@ func _attack_chicken() -> void:
 		flying = true
 		reach = float(chicken_cfg["burst_reach"])
 		atk_cd = 0.0
+		takeoff_t = float(chicken_cfg.get("takeoff", 0.0))
 
 
 ## Hot Chicken's air phase: fly into the target and burst, killing itself.
@@ -1760,6 +1804,8 @@ func _attack_mantis() -> void:
 			arena.release_reservation(get_instance_id())
 		return
 	atk_cd = interval / faster
+	# the throw is the same chop as the claws: the scythe leaves at the bottom
+	claw_t = CLAW_SHOW
 	arena.spawn_projectile(position, target.position, team, dmg, 0.0, shoots,
 		get_instance_id(), "bolt", false, self, 620.0, target, shoot_payload)
 
@@ -2577,7 +2623,8 @@ func _acquire() -> Node:
 func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 	if dead or amount <= 0.0 or invincible:
 		return
-	var taken := amount
+	# the attacker's Puissance and this side's Armor (direct hits only)
+	var taken: float = arena.scale_hit(amount, team)
 	if curled and not curl_cfg.is_empty():
 		taken *= float(curl_cfg["damage_mult"])
 	if curled and not guard_cfg.is_empty():
@@ -2607,6 +2654,8 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 	last_from = from
 	if attacker != null:
 		last_attacker = attacker
+	if drone_biting:
+		drone_dealt += minf(taken, maxf(hp, 0.0))
 	hp -= taken
 	flash = 0.5
 	hurt_frames = 2
@@ -2646,6 +2695,38 @@ func take_damage(amount: float, from: Vector2, attacker: Node = null) -> void:
 		_enter_phase2()
 	if hp <= 0.0:
 		_die()
+
+
+## Flammenmeister's warmth on a friendly unit.
+func start_regen(rate: float, seconds: float) -> void:
+	if dead:
+		return
+	regen_rate = rate
+	regen_t = seconds
+
+
+## Man-Mantis's drone goes in: first bite a second from now.
+func infect_drone(by_team: int) -> void:
+	if dead or drone_team >= 0:
+		return
+	drone_team = by_team
+	drone_dealt = 0.0
+	drone_timer = 1.0
+
+
+## The drone's parasite comes out of the body, on the planter's side.
+func _burst_parasite() -> void:
+	var pk: String = arena.parasite_for(drone_dealt)
+	var spot: Vector2 = position
+	var born = arena.spawn_troop(pk, drone_team, spot, true)
+	if born != null and is_instance_valid(born):
+		# on the spot, unless the host died over the river (a flyer)
+		if not arena.is_water(arena.tile_of(spot)):
+			born.position = spot
+		born.deploy_timer = 0.0
+	arena.spawn_splash_ring(position, radius_t * 1.4, drone_team)
+	arena.banner_flash("A %s bursts out of %s" % [DDCard.pretty(pk), DDCard.pretty(String(kind))])
+	arena.ability_payoff(drone_team)
 
 
 func hit_by_hero(amount: float, stun_seconds: float) -> void:
@@ -2695,6 +2776,8 @@ func _die() -> void:
 	if dead:
 		return
 	dead = true
+	if drone_team >= 0:
+		_burst_parasite()
 	if devour_phase == 1 and mate != null and is_instance_valid(mate):
 		# shot down in mid-leap: he is let go and fights on
 		mate.held = false
@@ -2893,6 +2976,13 @@ func _draw() -> void:
 		DDArt.ballista(self, px, facing, clock, {"move": moved_this_frame, "draw": wind}, ink)
 	elif kind == "militia":
 		DDArt.militia(self, px, facing, clock, attack_stretch / ATTACK_STRETCH, ink)
+	elif kind == "brawler":
+		# picture only: the claw rakes down on the hit and is back up a quarter
+		# second later
+		var rake := 0.0
+		if state == S.ATTACK and interval > 0.0:
+			rake = clampf(1.0 - (interval - atk_cd) / 0.25, 0.0, 1.0)
+		DDArt.lizard_brawler(self, px, facing, clock, rake, ink)
 	elif kind == "elf":
 		# picture only: the string comes back as the next shot comes due
 		var pull := 0.0
@@ -2903,13 +2993,16 @@ func _draw() -> void:
 		if rage_t > 0.0:
 			var mp: float = 0.5 + 0.5 * sin(clock * 14.0)
 			draw_circle(Vector2.ZERO, px * (1.25 + 0.1 * mp), Color(1.0, 0.15, 0.1, 0.18 + 0.14 * mp))
-		var strike := 0.0
+		# scythes up as the next hit comes due, down on the hit (claws or throw)
+		var chop := -1.0
 		if claw_t > 0.0:
-			strike = sin((1.0 - claw_t / CLAW_SHOW) * PI)
+			chop = 1.0 - claw_t / CLAW_SHOW
+		var raise := 0.0
+		if state == S.ATTACK and target != null and is_instance_valid(target):
+			raise = clampf(1.0 - atk_cd / CLAW_WINDUP, 0.0, 1.0)
 		DDArt.mantis(self, px, facing, clock, {"female": kind == "mantisf",
-			"walk": state == S.APPROACH and moved_this_frame, "strike": strike,
-			"leap": devour_phase == 1, "bite": devour_phase == 2,
-			"throw": kind == "mantisf" and attack_stretch > 0.0 and claw_t <= 0.0}, ink)
+			"walk": state == S.APPROACH and moved_this_frame, "chop": chop, "raise": raise,
+			"leap": devour_phase == 1, "bite": devour_phase == 2}, ink)
 	elif kind == "ant":
 		DDArt.ant(self, px, facing, clock, ink)
 	elif kind == "anthill":
@@ -2980,8 +3073,47 @@ func _draw() -> void:
 			if absf(dodge_center.x - position.x) > 1.0:
 				look = signf(dodge_center.x - position.x)
 		DDArt.penny(self, px, look, clock, ppose, ppf, ink, arena.team_color(int(team)))
+	elif kind == "lizard":
+		# the rifle kicks back (with a muzzle flash) for a moment after each shot
+		DDArt.ink = ink
+		DDArt._lizard(self, px, clock, facing, attack_stretch / ATTACK_STRETCH)
+		DDArt.ink = DDArt.OUTLINE
+	elif kind == "chicken":
+		# on the ground; climbing on the spot; then diving, coming down from the
+		# top of the climb as the distance to its target closes
+		var climb: float = px * 1.7
+		var copts := {"pose": 0}
+		if airborne:
+			var tk: float = maxf(0.01, float(chicken_cfg.get("takeoff", 0.0)))
+			if takeoff_t > 0.0:
+				var k: float = 1.0 - takeoff_t / tk
+				copts = {"pose": 1, "lift": climb * (1.0 - (1.0 - k) * (1.0 - k))}
+			else:
+				var left := 1.0
+				if dive_dist0 > 0.0 and target != null and is_instance_valid(target):
+					left = clampf(position.distance_to(target.position) / dive_dist0, 0.0, 1.0)
+				copts = {"pose": 2, "lift": climb * left}
+		DDArt.rooster(self, px, facing, clock, copts, ink)
 	else:
 		DDArt.creature(self, kind, px, facing, clock, 0.0, phase2, ink, flying)
+	if regen_t > 0.0:
+		# Flammenmeister's warmth: a soft glow and little flames rising off it
+		var gl: float = 0.5 + 0.5 * sin(clock * 6.0)
+		draw_circle(Vector2.ZERO, px * 1.2, Color(1.0, 0.6, 0.2, 0.1 + 0.08 * gl))
+		for i in 3:
+			var p: float = fmod(clock * 0.9 + float(i) / 3.0, 1.0)
+			var at := Vector2((float(i) - 1.0) * px * 0.55, px * (0.4 - 1.5 * p))
+			DDArt.flame_tongue(self, at, at + Vector2(0.0, -px * 0.45 * (1.0 - p)), px * 0.12, clock, float(i) * 2.0)
+	if drone_team >= 0:
+		# the drone, riding on its host: a little red goggle-eyed bug, its veins
+		# showing through, pulsing with each bite
+		var bite: float = clampf(drone_timer, 0.0, 1.0)
+		var pulse: float = 1.0 - bite
+		var vein := Color(0.6, 0.05, 0.1, 0.35 + 0.35 * pulse * pulse)
+		for i in 4:
+			var a: float = TAU * float(i) / 4.0 + 0.6
+			draw_line(Vector2(px * 0.2, -px * 0.2), Vector2(px * 0.2, -px * 0.2) + Vector2.from_angle(a) * px * 0.7, vein, 1.6, true)
+		DDArt.drone_bug(self, Vector2(px * 0.2, -px * 0.2), px * 0.32, clock)
 	if status == Status.SLOW:
 		draw_circle(Vector2.ZERO, px * 1.15, Color(0.18, 0.32, 0.85, 0.45))
 		draw_arc(Vector2.ZERO, px * 1.15, 0.0, TAU, 20, Color(0.35, 0.55, 1.0, 0.6), 2.0, true)

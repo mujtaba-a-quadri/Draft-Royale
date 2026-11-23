@@ -22,12 +22,12 @@ extends Node
 const COMMANDER_MAX := 250.0
 
 ## What you start with: ten cards, repeats allowed. Deliberately plain basics
-## (Militia, Elf Archers, a Firebolt, the Alchemist), two that draw a card (Hot
-## Chicken, Snowman) and one blunt win condition, Humbaba: weak enough that every
-## card you draft is a visible step up, but always with a way to take a tower.
-## Every card not in it can be drafted (draft_pool).
+## (Militia, an Elf Archer, Honeycreepers, a Firebolt, the Alchemist), two that
+## draw a card (Hot Chicken, Snowman) and one blunt win condition, Humbaba: weak
+## enough that every card you draft is a visible step up, but always with a way
+## to take a tower. Every card not in it can be drafted (draft_pool).
 const STARTER_DECK := ["troll", "alchemist", "chicken", "snowman", "militia", "militia", "militia",
-	"elf", "elf", "firebolt"]
+	"elf", "hawk", "firebolt"]
 
 ## The elite pool: which boss an "elite" fight can be, and its name. One is
 ## picked per run and fight from the run seed (encounter_at).
@@ -56,6 +56,18 @@ var commander_hp := COMMANDER_MAX
 var floor_index := 0
 ## your hero ability for the whole run
 var ability := "tentacle"
+## Puissance and Armor every fight of the run starts with (relics will raise
+## these); the arena copies them in and builds on them for that fight only.
+var puissance := 0.0
+var armor := 0.0
+## Relics held (ids in scripts/relic_db.gd): your commander's own from the
+## start, then one after every 2nd regular fight won and every elite won.
+const RELIC_DB := preload("res://scripts/relic_db.gd")
+var relics: Array = []
+var normal_wins := 0
+## Fuel for the Fire: a reward was skipped, so the next one is the 4-card kind
+## (take 2 and remove 1, or skip again).
+var fueled := false
 ## the match just played: {"won", "winner", "commander_hp", "name"}; empty while playing
 var last: Dictionary = {}
 ## one entry per finished fight
@@ -83,7 +95,24 @@ func start(p_seed: int = -1) -> void:
 	deck = STARTER_DECK.duplicate()
 	commander_hp = COMMANDER_MAX
 	floor_index = 0
-	ability = "tentacle" if rng.randf() < 0.5 else "shiesty"
+	puissance = 0.0
+	armor = 0.0
+	normal_wins = 0
+	fueled = false
+	# your commander for the whole run, out of the whole pool (Arena.ABILITIES);
+	# --ability= fixes it (the rng draw is made either way, so seeds stay put)
+	ability = String(Arena.ABILITIES[rng.randi() % Arena.ABILITIES.size()])
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--ability="):
+			var want := String(a.substr(10))
+			want = {"goblin": "shiesty", "flammenmeister": "flame", "manmantis": "drone", "mantis": "drone"}.get(want, want)
+			if Arena.ABILITIES.has(want):
+				ability = want
+	# and its own relic
+	relics = []
+	var own := String(RELIC_DB.starter_for(ability))
+	if own != "":
+		relics.append(own)
 	last = {}
 	history = []
 	over = false
@@ -132,9 +161,14 @@ func encounter_at(i: int) -> Dictionary:
 	return e
 
 
-## The enemy's ability for this fight: whichever one you do not have.
+## The enemy's commander for this fight: one of the others in the pool, seeded
+## by the run and the fight (the same one every time it is asked for).
 func enemy_ability() -> String:
-	return "shiesty" if ability == "tentacle" else "tentacle"
+	var rest: Array = Arena.ABILITIES.duplicate()
+	rest.erase(ability)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("enemy:%d:%d" % [run_seed, floor_index])
+	return String(rest[rng.randi_range(0, rest.size() - 1)])
 
 
 ## The seed this fight's decks are shuffled from (same run seed, same fight,
@@ -157,6 +191,33 @@ func report(winner: int, commander_left: float) -> void:
 	elif floor_index >= ACT.size() - 1:
 		over = true
 		won_run = true
+	else:
+		# a relic after every elite, and after every 2nd regular fight won
+		var due := false
+		if String(encounter().get("type", "battle")) == "elite":
+			due = true
+		else:
+			normal_wins += 1
+			due = normal_wins % 2 == 0
+		if due:
+			_award_relic()
+
+
+## One relic you do not have yet, out of the award pool, the same one every
+## time for this run and fight. Noted in `last` for the reward screen.
+func _award_relic() -> void:
+	var pool: Array = RELIC_DB.award_pool()
+	for id in relics:
+		pool.erase(id)
+	if pool.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("relic:%d:%d" % [run_seed, floor_index])
+	var id := String(pool[rng.randi_range(0, pool.size() - 1)])
+	relics.append(id)
+	last["relic"] = id
+	if not history.is_empty():
+		history[-1]["relic"] = id
 
 
 ## A won fight is behind us and the run goes on.
@@ -187,6 +248,7 @@ func draft_pool() -> Array:
 ## ones every time for this run and fight. A card already in the deck can be
 ## offered again (duplicates are allowed).
 func reward_choices() -> Array:
+	var n := REWARD_CHOICES + (1 if fueled_now() else 0)
 	var pool: Array = draft_pool()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(run_seed % 1000000) * 31 + floor_index * 7 + 3
@@ -195,11 +257,17 @@ func reward_choices() -> Array:
 		var tmp = pool[i]
 		pool[i] = pool[j]
 		pool[j] = tmp
-	return pool.slice(0, mini(REWARD_CHOICES, pool.size()))
+	return pool.slice(0, mini(n, pool.size()))
+
+
+## Fuel for the Fire is lit: this reward is the 4-card kind.
+func fueled_now() -> bool:
+	return fueled and relics.has("fuel")
 
 
 func take_reward(kind: String) -> void:
-	if not reward_pending() or not reward_choices().has(kind):
+	# a fueled reward cannot be taken one card at a time (take_two)
+	if not reward_pending() or fueled_now() or not reward_choices().has(kind):
 		return
 	deck.append(kind)
 	rewarded = true
@@ -207,10 +275,33 @@ func take_reward(kind: String) -> void:
 		history[-1]["reward"] = kind
 
 
+## The fueled reward: two different cards offered go in, `removed` (a card in
+## the deck as it was) comes out, and the next reward is a normal one again.
+func take_two(a: String, b: String, removed: String) -> bool:
+	var offered := reward_choices()
+	if not reward_pending() or not fueled_now() or a == b or not offered.has(a) or not offered.has(b):
+		return false
+	var at := deck.find(removed)
+	if at < 0:
+		return false
+	deck.remove_at(at)
+	deck.append(a)
+	deck.append(b)
+	rewarded = true
+	fueled = false
+	if not history.is_empty():
+		history[-1]["reward"] = "%s+%s -%s" % [a, b, removed]
+	return true
+
+
 func skip_reward() -> void:
 	if not reward_pending():
 		return
 	rewarded = true
+	# with Fuel for the Fire, skipping lights it: the next reward is the 4-card
+	# kind (and skipping that keeps it lit)
+	if relics.has("fuel"):
+		fueled = true
 	if not history.is_empty():
 		history[-1]["reward"] = ""
 

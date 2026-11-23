@@ -141,6 +141,16 @@ func _ready() -> void:
 	elif scenario == "chicken":
 		shot_times = []
 		run_time = 6.0
+	elif scenario == "commanders":
+		shot_times = []
+		run_time = 47.0
+	elif scenario == "scaling":
+		shot_times = []
+		run_time = 9.0
+	elif scenario == "relics":
+		# with --shots: the relic column mid-window (2 columns: 8 relics)
+		shot_times = [4.6, 12.0]
+		run_time = 30.0
 	elif scenario == "lizard":
 		shot_times = []
 		run_time = 7.5
@@ -277,6 +287,15 @@ func _ready() -> void:
 	elif scenario == "pennyair":
 		shot_times = []
 		run_time = 7.2
+	elif scenario == "towerstar":
+		shot_times = [1.2]
+		run_time = 1.3
+	elif scenario == "boot":
+		shot_times = [1.95, 2.15, 2.4, 2.75]
+		run_time = 2.8
+	elif scenario == "bridges3":
+		shot_times = [5.5]
+		run_time = 9.0
 	elif scenario == "rewardui":
 		# needs --run=7: the first fight is won at 0.6 and the reward screen is up
 		# from 0.9; its cards are in by about 2.0
@@ -446,6 +465,12 @@ func _process(delta: float) -> void:
 		_burn_steps()
 	elif scenario == "chicken":
 		_chicken_steps()
+	elif scenario == "commanders":
+		_commander_steps()
+	elif scenario == "scaling":
+		_scaling_steps()
+	elif scenario == "relics":
+		_relic_steps()
 	elif scenario == "lizard":
 		_lizard_steps()
 	elif scenario == "cross":
@@ -522,6 +547,12 @@ func _process(delta: float) -> void:
 		_snowroll_steps()
 	elif scenario == "pennyair":
 		_pennyair_steps()
+	elif scenario == "towerstar":
+		_towerstar_steps()
+	elif scenario == "boot":
+		_boot_steps()
+	elif scenario == "bridges3":
+		_bridges3_steps()
 	elif scenario == "rewardui":
 		_rewardui_steps()
 	elif scenario == "goatart":
@@ -1313,10 +1344,257 @@ func _chicken_steps() -> void:
 		alch = arena.spawn_troop("hero", 1, arena.tile_center(3.5, 17.8))
 		alch.deploy_timer = 0.0
 		print("[chicken] chicken vs hero, 2.7 tiles apart (hero hp %d)" % int(alch.hp))
-	if _at(1.6) or _at(2.8) or _at(4.2) or _at(5.6):
-		print("[chicken] t%.1f hero_hp=%d hero_status=%d | chicken flying=%s alive=%s" % [
-			elapsed, int(alch.hp), int(alch.status),
-			str(probe.flying), str(is_instance_valid(probe) and not bool(probe.get("dead")))])
+	if _at(1.6) or _at(2.0) or _at(2.4) or _at(2.8) or _at(4.2) or _at(5.6):
+		var alive: bool = is_instance_valid(probe) and not bool(probe.get("dead"))
+		print("[chicken] t%.1f hero_hp=%d hero_status=%d | chicken alive=%s flying=%s takeoff=%.2f" % [
+			elapsed, int(alch.hp) if is_instance_valid(alch) else -1, int(alch.status) if is_instance_valid(alch) else -1,
+			str(alive), str(probe.flying) if alive else "-", float(probe.takeoff_t) if alive else 0.0])
+
+
+## Flammenmeister and Man-Mantis: warmth on a friend, the weak firebolt on a
+## foe, and drones planted in hosts of different sizes, each bursting into its
+## tier of parasite. Bodies are frozen dummies so the numbers are the
+## abilities' alone.
+var cm_friend: Node = null
+var cm_foe: Node = null
+var cm_hosts: Array = []
+var cm_seen := {}
+var cm_dead := {}
+var cm_last: Array = []
+
+
+## A body on `team` that neither walks nor hits back.
+func _cm_body(kind: String, team: int, at: Vector2) -> Node:
+	var u = arena.spawn_troop(kind, team, at, true)
+	u.position = at
+	u.deploy_timer = 0.0
+	u.speed = 0.0
+	u.dmg = 0.0
+	return u
+
+
+func _commander_steps() -> void:
+	if _at(0.3):
+		arena.ability = ["flame", "drone"]
+		arena.gold = [10.0, 10.0]
+		for b in arena.bots:
+			if b != null and is_instance_valid(b):
+				b.enabled = false
+		print("[cmd] tiers: 5->%s 20->%s 21->%s 60->%s 61->%s 150->%s 151->%s" % [arena.parasite_for(5.0),
+			arena.parasite_for(20.0), arena.parasite_for(21.0), arena.parasite_for(60.0), arena.parasite_for(61.0),
+			arena.parasite_for(150.0), arena.parasite_for(151.0)])
+		cm_friend = _cm_body("troll", 0, arena.tile_center(4.5, 20.5))
+		cm_friend.hp = cm_friend.max_hp - 40.0
+		cm_foe = _cm_body("militia", 1, arena.tile_center(12.5, 20.5))
+		arena.ability_cd = [0.0, 0.0]
+		var before := float(arena.gold[0])
+		var ok1: bool = arena.use_ability_on(0, cm_friend)
+		print("[cmd] warmth on friend: ok %s, gold %.0f -> %.0f, cd %.1f, regen %.1f/s for %.1f s" % [
+			str(ok1), before, float(arena.gold[0]), float(arena.ability_cd[0]), cm_friend.regen_rate, cm_friend.regen_t])
+		print("[cmd] Man-Mantis may not target his own side: %s; may target foe: %s" % [
+			str(arena.ability_can_target(1, cm_foe)),
+			str(arena.ability_can_target(1, cm_friend))])
+	if _at(0.8) or _at(1.6) or _at(4.4):
+		print("[cmd] t%.1f friend hp %.0f, regen left %.1f" % [elapsed, cm_friend.hp, cm_friend.regen_t])
+	if _at(2.5):
+		print("[cmd] t2.5 friend hp %.0f / %.0f (expect +%.0f over the warmth)" % [cm_friend.hp, cm_friend.max_hp,
+			arena.FLAME_REGEN * arena.FLAME_REGEN_TIME])
+		arena.ability_cd[0] = 0.0
+		var ok2: bool = arena.use_ability_on(0, cm_foe)
+		print("[cmd] firebolt on foe: ok %s, gold now %.0f" % [str(ok2), float(arena.gold[0])])
+	if _at(4.5):
+		if is_instance_valid(cm_foe) and not cm_foe.dead:
+			print("[cmd] t4.5 foe hp %.0f / %.0f, status %d (burn = 2)" % [cm_foe.hp, cm_foe.max_hp, int(cm_foe.status)])
+		else:
+			print("[cmd] t4.5 foe is dead (burnt, and in range of our towers)")
+		# drones in hosts of four sizes: each one bites until its host is gone
+		var hp_list := [15.0, 45.0, 120.0, 200.0]
+		for i in hp_list.size():
+			var h: Node = _cm_body("troll", 0, arena.tile_center(2.5 + 4.0 * float(i), 26.5))
+			h.hp = float(hp_list[i])
+			cm_last.append(0.0)
+			arena.ability_cd[1] = 0.0
+			arena.gold[1] = 10.0
+			var ok3: bool = arena.use_ability_on(1, h)
+			cm_hosts.append(h)
+			print("[cmd] drone into a %.0f hp host: ok %s" % [float(hp_list[i]), str(ok3)])
+	# every parasite as it appears: logged once, then frozen and made harmless
+	# so it cannot bite the other hosts
+	for u in arena.units:
+		if is_instance_valid(u) and String(u.kind).begins_with("parasite") and not cm_seen.has(u.get_instance_id()):
+			cm_seen[u.get_instance_id()] = true
+			u.speed = 0.0
+			u.dmg = 0.0
+			print("[cmd] t%.1f %s burst out for team %d (hp %.0f)" % [elapsed, String(u.kind), int(u.team), u.hp])
+	for i in cm_hosts.size():
+		var h = cm_hosts[i]
+		if cm_dead.has(i):
+			continue
+		if not is_instance_valid(h) or h.dead:
+			cm_dead[i] = true
+			print("[cmd] t%.1f host %d died; its drone had done %.0f+" % [elapsed, i, float(cm_last[i])])
+		else:
+			cm_last[i] = float(h.drone_dealt)
+
+
+## Puissance and Armor: a real Militia jab on a dummy with neither, with
+## Puissance, with Armor on top; a burn tick that ignores both; the floor of 1;
+## a hit on a tower.
+var sc_mil: Node = null
+var sc_dummy: Node = null
+var sc_hp := 0.0
+
+
+func _sc_jab(label: String) -> void:
+	sc_hp = float(sc_dummy.hp)
+	sc_mil.atk_cd = 0.0
+	sc_mil.target = sc_dummy
+	sc_mil._attack()
+	print("[scale] %s: P %d / A %d -> took %.0f" % [label, int(arena.puissance[0]), int(arena.armor[1]),
+		sc_hp - float(sc_dummy.hp)])
+
+
+func _scaling_steps() -> void:
+	if _at(0.3):
+		for b in arena.bots:
+			if b != null and is_instance_valid(b):
+				b.enabled = false
+		sc_mil = _cm_body("militia", 0, arena.tile_center(9.5, 20.5))
+		sc_mil.dmg = float(DDCard.get_card("militia")["dmg"])
+		sc_dummy = _cm_body("troll", 1, arena.tile_center(9.5, 20.0))
+		sc_mil.state = DDUnit.S.ATTACK
+		print("[scale] militia hit is %.0f" % sc_mil.dmg)
+		_sc_jab("plain")
+		arena.add_puissance(0, 3.0)
+		_sc_jab("Puissance 3")
+		arena.add_armor(1, 5.0)
+		_sc_jab("Puissance 3, Armor 5")
+		arena.add_armor(1, 20.0)
+		_sc_jab("Armor 25 (floor)")
+		arena.armor[1] = 0.0
+		# a burn tick ignores both
+		sc_hp = float(sc_dummy.hp)
+		arena.tick_damage(sc_dummy, 6.0)
+		print("[scale] burn tick of 6 with P 3: took %.0f (expect 6); dot flag left %s" % [sc_hp - float(sc_dummy.hp),
+			str(arena.dot_hit)])
+		# a hit on a tower: the side's Puissance counts there too
+		var tw: Node = arena.crown_tower(1)
+		var thp: float = float(tw.hp)
+		tw.take_damage(10.0, tw.position + Vector2(40, 0), sc_mil)
+		print("[scale] tower hit of 10 with P 3: took %.0f (expect 13)" % (thp - float(tw.hp)))
+		arena.add_armor(1, 2.0)
+		thp = float(tw.hp)
+		tw.take_damage(10.0, tw.position + Vector2(40, 0), sc_mil)
+		print("[scale] same with tower side Armor 2: took %.0f (expect 11)" % (thp - float(tw.hp)))
+
+
+## Relics and Dominion cards. Plain match, side 0 handed every in-fight relic;
+## card plays are fed straight to the relic hook at set times so the windows
+## are exact. Then the run side: starting relics, awards, Fuel for the Fire.
+var rl_gold := 0.0
+
+
+func _relic_line(label: String) -> void:
+	print("[relic] t%.1f %s | fires %s | metronome %s sleight %s idle %.1f" % [arena.fight_t, label,
+		str(arena.relic_fires), str(arena.relic_window(0, "metronome").size()),
+		str(arena.relic_window(0, "sleight").size()), float(arena.relic_idle[0])])
+
+
+func _relic_steps() -> void:
+	if _at(0.3):
+		for b in arena.bots:
+			if b != null and is_instance_valid(b):
+				b.enabled = false
+		arena.relics[0] = ["whetstone", "tortoise_shell", "metronome", "sleight", "hourglass", "ledger",
+			"field_dressing", "warhorn"]
+		arena.puissance = [0.0, 0.0]
+		arena.armor = [0.0, 0.0]
+		var king: Node = arena._king_of(0)
+		king.hp = float(king.max_hp) - 25.0
+		var before_hp: float = king.hp
+		arena._apply_relics_start()
+		print("[relic] start: Puissance %d Armor %d, commander %.0f -> %.0f (+10), king mult %.2f" % [
+			int(arena.puissance[0]), int(arena.armor[0]), before_hp, float(king.hp), arena.king_mult(0)])
+		arena.relic_idle[0] = 0.0
+		arena.relic_income[0] = 0.0
+		arena.relic_fires = {}
+		# a Dominion card from the hand: Puissance up, the card gone for the fight
+		arena.hands[0][0] = "dominion_puissance"
+		arena.gold[0] = 10.0
+		var p_before := float(arena.puissance[0])
+		var q_before: int = arena.queues[0].count("dominion_puissance")
+		arena.deploy(0, 0, arena.tile_center(9.0, 22.0))
+		print("[relic] Dominion of Puissance: Puissance %d -> %d; copies in the queue %d -> %d (spent: no change)" % [
+			int(p_before), int(arena.puissance[0]), q_before, arena.queues[0].count("dominion_puissance")])
+		# that deploy was a card play too: start the windows clean
+		arena.relic_plays = [{}, {}]
+		arena.relic_fires = {}
+		arena.relic_idle[0] = 0.0
+		_relic_line("after setup")
+	# Metronome: 3 within 9 s -> 1 gold; Sleight: 4 within 12 s -> a card
+	if _at(1.0) or _at(2.0):
+		arena._relics_card_played(0)
+		_relic_line("card played")
+	if _at(3.0):
+		rl_gold = float(arena.gold[0])
+		arena._relics_card_played(0)
+		_relic_line("3rd card (metronome should fire: gold %.2f -> %.2f)" % [rl_gold, float(arena.gold[0])])
+	if _at(4.0):
+		arena._relics_card_played(0)
+		_relic_line("4th card (sleight should fire)")
+	# a lone play, then the window lets it go after 9 s
+	if _at(5.0):
+		arena._relics_card_played(0)
+		_relic_line("lone card")
+	if _at(13.5):
+		_relic_line("8.5 s later: metronome still holds it")
+	if _at(14.6):
+		_relic_line("9.6 s later: metronome has let it go")
+	# no card since t5.0: the Hourglass fires at t14.0 and again at t23.0
+	if _at(24.0):
+		_relic_line("idle since t5 (hourglass should have fired twice)")
+		print("[relic] ledger: income %.2f gold over the fight -> %d doubled (every 4th)" % [float(arena.relic_income[0]),
+			int(arena.relic_fires.get("ledger", 0))])
+	# Lucky 7: income carrying gold from 7.95 past 8 gives one more
+	if _at(24.3):
+		arena.relics[0].append("lucky7")
+		arena.gold[0] = 7.95
+		arena.relic_fires.erase("lucky7")
+	if _at(24.8):
+		print("[relic] lucky7: gold from 7.95 -> %.2f half a second later (about 8.2 without it, 9.2 with), fired %d" % [
+			float(arena.gold[0]), int(arena.relic_fires.get("lucky7", 0))])
+	if _at(25.0):
+		_run_relic_checks()
+
+
+func _run_relic_checks() -> void:
+	Run.start(77)
+	Run.ability = "flame"
+	Run.relics = [Run.RELIC_DB.starter_for("flame")]
+	print("[run] starters: flame %s, shiesty %s, tentacle %s, drone %s" % [Run.RELIC_DB.starter_for("flame"),
+		Run.RELIC_DB.starter_for("shiesty"), Run.RELIC_DB.starter_for("tentacle"), Run.RELIC_DB.starter_for("drone")])
+	# fight 1 (regular) won: no relic yet; skip the card -> fueled
+	Run.report(0, 200.0)
+	print("[run] fight 1 won: relic %s, %d choices" % [str(Run.last.get("relic", "-")), Run.reward_choices().size()])
+	Run.skip_reward()
+	print("[run] skipped: fueled %s" % str(Run.fueled_now()))
+	Run.advance()
+	# fight 2 (regular) won: 2nd regular -> a relic; this reward is the fueled kind
+	Run.report(0, 180.0)
+	var ch: Array = Run.reward_choices()
+	print("[run] fight 2 won: relic %s, %d choices %s" % [str(Run.last.get("relic", "-")), ch.size(), str(ch)])
+	Run.take_reward(String(ch[0]))
+	print("[run] take one on a fueled reward refused: rewarded %s" % str(Run.rewarded))
+	var deck_before: int = Run.deck.size()
+	var gone := String(Run.deck[0])
+	var ok: bool = Run.take_two(String(ch[0]), String(ch[1]), gone)
+	print("[run] take two, remove %s: ok %s, deck %d -> %d, fueled now %s" % [gone, str(ok), deck_before, Run.deck.size(),
+		str(Run.fueled_now())])
+	Run.advance()
+	# fight 3 (the elite) won -> a relic
+	Run.report(0, 150.0)
+	print("[run] elite won: relic %s; relics %s" % [str(Run.last.get("relic", "-")), str(Run.relics)])
+	Run.stop()
 
 
 ## A body for Laniakea to hit that neither walks nor hits back.
@@ -1868,6 +2146,70 @@ func _drawfx_steps() -> void:
 			if n.get_script() == load("res://scripts/pentagram.gd"):
 				print("[drawfx] pentagram %.2f tiles ahead of her, %.2f across" % [
 					(n.position.x - dfx_neko.position.x) / float(arena.TILE), (n.position.y - dfx_neko.position.y) / float(arena.TILE)])
+
+
+## The star side towers, one burning, each with its hitbox (radius_t) drawn as
+## a ring over it: the ring should come close to the tips without reaching.
+func _towerstar_steps() -> void:
+	if _at(0.3):
+		for tw in arena.towers:
+			if not tw.crown:
+				var ring := HitRing.new()
+				ring.r = float(tw.radius_t) * float(arena.TILE)
+				ring.position = tw.position
+				ring.z_index = 20
+				arena.add_child(ring)
+				print("[towerstar] hitbox %.2f tiles, tips %.2f tiles" % [float(tw.radius_t), DDTower.STAR_TIP_T])
+		arena.towers[1].apply_burn(40.0)
+
+
+class HitRing extends Node2D:
+	var r := 0.0
+	func _draw() -> void:
+		draw_arc(Vector2.ZERO, r, 0.0, TAU, 48, Color(1, 1, 0.2, 0.9), 1.5, true)
+
+
+## A full hand draws: the leftmost card is kicked off over the DISCARD arrow and
+## falls away. Also shows the tall grey NEXT card and the small faces' attack
+## names (two-attack cards in two columns).
+func _boot_steps() -> void:
+	if _at(1.6):
+		arena.hands[0] = ["fu", "chicken", "mantis", "phalanx", "neko", "gilgamesh"]
+		arena.queues[0] = ["frog", "aphid", "slate"]
+		arena.hand_ids[0] = []
+		arena.queue_ids[0] = []
+		arena.draw_timer[0] = 99.0
+	if _at(2.0):
+		arena.draw_card(0)
+		var boots := 0
+		for n in arena.panels[0].get_children():
+			if n is HandPanel.Boot:
+				boots += 1
+		print("[boot] drew: hand %s, cards in flight %d" % [str(arena.hands[0]), boots])
+
+
+## Three bridges (run with --bridges=3): which tiles are water, which bridge each
+## column crosses by, and a troop from each lane walking over.
+var b3_units: Array = []
+func _bridges3_steps() -> void:
+	if _at(0.3):
+		var row := ""
+		for x in arena.GRID_W:
+			row += "~" if arena.is_water(Vector2i(x, 14)) else "#"
+		var near := []
+		for x in arena.GRID_W:
+			near.append(arena.nearest_bridge_col(x))
+		print("[bridges3] bridges %s  row 14: %s" % [str(arena.bridges), row])
+		print("[bridges3] nearest by column: %s" % str(near))
+		for x in [1.5, 5.5, 9.5, 12.5, 16.5]:
+			var u: Node = arena.spawn_troop("militia", 0, arena.tile_center(x, 20.5))
+			u.deploy_timer = 0.0
+			b3_units.append(u)
+	if _at(8.5):
+		for u in b3_units:
+			if is_instance_valid(u):
+				var t: Vector2i = arena.tile_of(u.position)
+				print("[bridges3] militia now at col %.2f row %d (crossed %s)" % [arena.col_f(u.position), t.y, str(t.y < arena.RIVER_TOP)])
 
 
 ## Penny: a flyer outranks a nearer ground troop, she reaches it only by
@@ -2694,13 +3036,25 @@ func _kraken_steps() -> void:
 			str(kr.dead), str(arena.match_over), arena.winner, str(kr.arms.map(func(a): return a.down))])
 
 
+var burn_tower_hp := 0.0
 func _burn_steps() -> void:
 	if _at(0.3):
 		alch = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 18.5))
 		alch.deploy_timer = 0.0
 		alch.apply_burn(40.0)
 		print("[burn] 40 burn applied to a 90 hp dummy")
+		burn_tower_hp = float(arena.towers[1].hp)
+		arena.towers[1].apply_burn(40.0)
+	if _at(5.3):
+		# a tower takes 20 % a tick for all four ticks: 8+6+5+4 = 23
+		print("[burn] tower took %d from 40 burn (expect 23)" % int(burn_tower_hp - float(arena.towers[1].hp)))
 	if _at(1.2) or _at(2.2) or _at(3.2) or _at(4.2) or _at(5.4):
+		if not is_instance_valid(alch):
+			# the tower shoots the dummy too; a fresh one keeps the slow checks below alive
+			print("[burn] t%.1f the dummy is dead" % elapsed)
+			alch = arena.spawn_troop("snowman", 1, arena.tile_center(9.5, 18.5))
+			alch.deploy_timer = 0.0
+			return
 		print("[burn] t%.1f hp=%d stack=%.1f ticks=%d status=%d" % [
 			elapsed, int(alch.hp), alch.burn_stack, alch.burn_ticks, int(alch.status)])
 	if _at(5.8):
